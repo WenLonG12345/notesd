@@ -1,0 +1,33 @@
+.dialog {
+  width: min(400px, calc(100vw - 32px));
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 24px;
+}
+
+.dialog::backdrop {
+  background: color-mix(in srgb, var(--ink) 25%, transparent);
+}
+
+.dialog[open] {
+  animation: dialog-in 140ms ease-out;
+}
+
+.dialog h1 {
+  font-size: 1.3rem;
+  margin: 0;
+}
+
+.dialog form {
+  display: grid;
+  gap: 16px;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}

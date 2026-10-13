@@ -1,6 +1,12 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "react", "oxc", "unicorn", "import"],
+  "plugins": [
+    "typescript",
+    "react",
+    "oxc",
+    "unicorn",
+    "import"
+  ],
   "categories": {
     "correctness": "error",
     "suspicious": "error",
@@ -11,7 +17,17 @@
     "react/exhaustive-deps": "error",
     "react/react-in-jsx-scope": "off",
     "typescript/no-explicit-any": "error",
-    "typescript/no-non-null-assertion": "warn"
+    "typescript/no-non-null-assertion": "warn",
+    "import/no-unassigned-import": [
+      "error",
+      {
+        "allow": [
+          "**/*.css"
+        ]
+      }
+    ]
   },
-  "env": { "browser": true }
+  "env": {
+    "browser": true
+  }
 }

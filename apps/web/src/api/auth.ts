@@ -1,0 +1,17 @@
+import { request } from './client'
+import type { Session, SessionInfo } from './types'
+
+export const auth = {
+  status: () => request<{ setupRequired: boolean }>('GET', '/auth/status'),
+  setup: (setupToken: string, username: string, password: string) =>
+    request<{ status: 'created' }>('POST', '/auth/setup', { setupToken, username, password }),
+  login: (username: string, password: string) =>
+    request<SessionInfo>('POST', '/auth/login', { username, password, client: 'web' }),
+  logout: () => request<undefined>('POST', '/auth/logout'),
+  session: () => request<SessionInfo>('GET', '/auth/session'),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<undefined>('POST', '/auth/password', { currentPassword, newPassword }),
+  sessions: () => request<{ sessions: Session[]; currentId: string }>('GET', '/auth/sessions'),
+  revokeSession: (id: string) =>
+    request<undefined>('DELETE', `/auth/sessions/${encodeURIComponent(id)}`),
+}
