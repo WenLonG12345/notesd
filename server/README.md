@@ -2,27 +2,35 @@
 
 The backend from [docs/architecture.md](../docs/architecture.md): one Go binary
 serving the JSON API, the sync feed, full-text search and the embedded web
-app, backed by one SQLite database. This is roadmap step 2 (backend
-foundation).
+app, backed by one SQLite database. Roadmap step 2 (backend foundation)
+and the server half of step 3 (the web app, in [apps/web](../apps/web/README.md)).
 
 ## Build and test
 
-Requires Go 1.23+. No cgo: the SQLite driver is `modernc.org/sqlite` (pure Go,
-FTS5 included), so cross-compiling for a Raspberry Pi is a plain `GOARCH`
-switch.
+Requires Go 1.23+, and Node 22+ with pnpm 10 for the web app. No cgo: the
+SQLite driver is `modernc.org/sqlite` (pure Go, FTS5 included), so
+cross-compiling for a Raspberry Pi is a plain `GOARCH` switch.
 
 ```bash
 cd server
-go mod tidy                 # first time: fetches modules and writes go.sum
-go test -race ./...
-make web                    # builds apps/web into internal/web/dist (needs Node 22+, pnpm)
-make build                  # ./bin/notes-server
-make release                # linux/amd64 and linux/arm64 binaries in ./bin
+make web build              # web app into internal/web/dist, then ./bin/notes-server
+make test                   # go test -race ./...
 ```
 
-`internal/web/dist` is build output and is gitignored except for a `.gitkeep`
-(`//go:embed` needs the directory to exist). A binary built without `make web`
-still works; web pages show a "web app not built" placeholder with status 503.
+| Target | What it does |
+| --- | --- |
+| `make web` | `pnpm install --frozen-lockfile && pnpm build` in `apps/web`, writing `internal/web/dist` |
+| `make build` | `./bin/notes-server`, embedding whatever is in `internal/web/dist` |
+| `make release` | linux/amd64 and linux/arm64 binaries in `./bin`; run `make web` first |
+| `make test` | the Go tests with the race detector |
+| `make clean` | removes `./bin` |
+
+The web app is embedded at compile time, so rebuild the binary after
+`make web`. `internal/web/dist` is build output and is gitignored except for
+a `.gitkeep` (`//go:embed` needs the directory to exist). A binary built
+without `make web` still works; web pages show a "web app not built"
+placeholder with status 503. For working on the web app with hot reload,
+see [apps/web/README.md](../apps/web/README.md).
 
 ## Run
 
