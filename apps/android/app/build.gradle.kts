@@ -25,8 +25,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 
     buildFeatures {
@@ -38,6 +38,11 @@ android {
         unitTests.all {
             // Fixtures shared with the web app and the server.
             it.systemProperty("notes.sharedDir", rootProject.file("../../shared").absolutePath)
+            // Robolectric reaches into JDK internals (FileDescriptor, SharedSecrets) that are closed by default.
+            it.jvmArgs(
+                "--add-opens=java.base/java.io=ALL-UNNAMED",
+                "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED"
+            )
         }
     }
 
@@ -50,7 +55,7 @@ android {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 dependencies {
