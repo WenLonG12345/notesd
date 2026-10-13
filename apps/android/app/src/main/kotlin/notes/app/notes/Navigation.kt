@@ -1,6 +1,7 @@
 package notes.app.notes
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
@@ -11,6 +12,7 @@ import androidx.navigation3.ui.NavDisplay
 import kotlinx.serialization.Serializable
 import notes.app.AppGraph
 import notes.app.settings.SettingsScreen
+import notes.app.ui.hideKeyboard
 import notes.core.text.Uuid7
 
 @Serializable
@@ -26,9 +28,17 @@ data object SettingsKey : NavKey
 @Composable
 fun NotesNavigation(graph: AppGraph) {
     val backStack = rememberNavBackStack(NotesKey)
+    val view = LocalView.current
+
+    // The keyboard belongs to the window, not the screen being left: hide it as back starts, not after the
+    // exit animation, or it hangs over the list.
+    fun pop() {
+        view.hideKeyboard()
+        backStack.removeLastOrNull()
+    }
     NavDisplay(
         backStack = backStack,
-        onBack = { backStack.removeLastOrNull() },
+        onBack = { pop() },
         entryDecorators = listOf(
             rememberSaveableStateHolderNavEntryDecorator(),
             rememberViewModelStoreNavEntryDecorator()
@@ -45,15 +55,15 @@ fun NotesNavigation(graph: AppGraph) {
             entry<EditorKey> { key ->
                 EditorScreen(
                     vm = viewModel { EditorViewModel(graph.store, key.id, graph.scope) },
-                    onBack = { backStack.removeLastOrNull() },
+                    onBack = { pop() },
                     onDelete = {
                         graph.deletions.request(key.id)
-                        backStack.removeLastOrNull()
+                        pop()
                     }
                 )
             }
             entry<SettingsKey> {
-                SettingsScreen(graph.appearance, graph.store, onBack = { backStack.removeLastOrNull() })
+                SettingsScreen(graph.appearance, graph.store, onBack = { pop() })
             }
         }
     )
