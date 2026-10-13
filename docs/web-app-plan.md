@@ -168,11 +168,11 @@ apps/web/src/
 │   ├── onboarding.tsx       guided first-run flow (§4)
 │   └── login.tsx
 ├── notes/
-│   ├── shell.tsx            two-pane layout: sidebar (list/search) + editor
-│   ├── note-list.tsx        list with cursor pagination, selection, previews
-│   ├── search.tsx           search box + results with <mark> excerpts
-│   ├── note-view.tsx        loads a note, owns the save state machine (§5)
-│   ├── empty.tsx            empty states (no notes yet / nothing selected)
+│   ├── shell.tsx            glass header (brand, search, New note, account) + grid; hosts the sheets
+│   ├── note-grid.tsx        bento grid of note tiles, cursor pagination
+│   ├── search.tsx           search state + results tiles with <mark> excerpts
+│   ├── note-sheet.tsx       editor sheet over the grid; owns the save state machine (§5)
+│   ├── empty.tsx            first-run / no-notes / no-results states
 │   └── use-autosave.ts      debounce + per-note serialized saving
 ├── editor/
 │   ├── editor.tsx           Tiptap editor + toolbar
@@ -180,13 +180,14 @@ apps/web/src/
 │   ├── markdown.ts          parse(markdown) → ProseMirror doc; serialize(doc) → markdown
 │   └── markdown.test.ts     round-trip tests against shared fixtures
 ├── settings/
-│   └── settings.tsx         change password, active sessions, sign out
-├── ui/                      small primitives: button, field, dialog, toast, status pill
+│   └── settings.tsx         settings sheet: account, appearance, password, sessions, sign out
+├── ui/                      primitives from the design system (§6)
 └── styles/                  tokens.css, base.css, (component css modules)
 ```
 
 Routes (client side, via `history` API or a tiny router; no need for a
-routing library): `/` (notes), `/notes/:id`, `/settings`. Onboarding and
+routing library): `/` (notes grid), `/notes/:id` (grid with the editor
+sheet open), `/settings` (grid with the settings sheet open). Onboarding and
 login are not routes: the auth gate renders them whenever the auth status
 says so, then returns to wherever the user was.
 
@@ -241,30 +242,56 @@ or password." `429` → "Too many attempts. Try again in N seconds" using
 
 ## 5. Notes interface
 
+Follows the `design-system/` prototype (§6); copy below is from it unless
+noted.
+
 ### Layout
 
-Two panes on desktop: a 19–21rem sidebar (search box on top, note list
-below, "New note" button) and the editor filling the rest. On narrow
-screens (< 48em) the panes stack: list screen ↔ editor screen with a back
-button. Settings opens as a route in the editor pane.
+- A sticky glass header: brand on the left, search field in the middle,
+  "New note" (accent button) and an account button (the username's
+  initial, opens settings) on the right. On narrow screens (< 600px) the
+  header stacks brand + account above a full-width search field, and
+  "New note" becomes a floating accent button bottom right.
+- Below it, a heading ("All notes", or "Results" while searching) with a
+  count ("12 notes", "3 matches") and the notes as a **bento grid** of
+  glass tiles: `repeat(auto-fill, minmax(230px, 1fr))` on desktop, two
+  columns on mobile, `grid-auto-flow: dense`. The most recently edited note
+  is a featured 2×2 tile ("Last edited" kicker, larger title) when there
+  are more than two notes; notes with long previews get a tall 1×2 tile.
+- The editor and settings open as **sheets** over the blurred grid
+  (full-screen on mobile). Escape or a click on the backdrop closes them
+  ("All notes" / "Notes" back button in the sheet header).
 
-### Note list
+### Note grid
 
-- `GET /notes?limit=50` on mount; "Load more" / infinite scroll via
-  `nextCursor` while `hasMore`.
-- Each row: title (or "Untitled" in muted style when empty), one line of
-  `preview`, relative time from `updatedAt` ("just now", "3 min", "Tue",
-  "12 Mar"). Selected row highlighted.
+- `GET /notes?limit=50` on mount; infinite scroll (sentinel at the end of
+  the grid) via `nextCursor` while `hasMore`.
+- Each tile: title (or "Untitled" in muted style when empty), `preview`
+  clamped to the tile's lines ("No additional text" when empty), relative
+  time from `updatedAt` ("Just now", "5 min ago", "3 h ago", "Yesterday",
+  weekday within a week, then "Mar 12"). Tiles are links to `/notes/:id`
+  (keyboard reachable, Enter opens).
 - Keep the list in client state and update it in place after saves
   (title/preview/updatedAt, move to top) and deletes, rather than refetching
   on every change. Refetch on window focus if the list is older than
   ~30 s (other devices may have synced).
+- Empty states: right after onboarding, a 2-wide tile with the kicker
+  "You're all set, <username>", "Your first note starts here." and a
+  "Write a note" button, next to dashed placeholder tiles; later, the same
+  with the kicker "No notes yet".
 - "New note": create locally with a fresh `crypto.randomUUID()`, empty
-  title/content, select it, focus the title. Do **not** POST yet — POST on
-  the first autosave that has content (an abandoned empty note never hits
-  the server). If the user navigates away from an empty, never-saved note,
-  drop it. Don't push `/notes/:id` to the URL until the first POST
-  succeeds, so a reload never points at a note the server doesn't have.
+  title/content, open the sheet, focus the title. Do **not** POST yet — POST
+  on the first autosave that has content (an abandoned empty note never
+  hits the server). If the user closes an empty, never-saved note, drop it.
+  Don't push `/notes/:id` to the URL until the first POST succeeds, so a
+  reload never points at a note the server doesn't have.
+
+### Editor sheet
+
+Header row: back button, status pill, "Delete" (danger text button). Under
+it, the save banners (below), then the title input (serif, ~46px, Enter or
+↓ moves into the body) with a meta line ("Edited 5 min ago" / "New note"),
+the formatting toolbar in a chip-style bar, and the body.
 
 ### Editor (Tiptap)
 
@@ -332,44 +359,60 @@ Per open note, keep: `serverRevision`, `lastSavedTitle/Content`,
   list row.
 - Network failure / 5xx: `failed`, retry with backoff (2 s, 4 s, … max 30
   s) **reusing the same operationId and payload** so a lost response
-  replays safely. Show "Couldn't save — retrying" with a manual "Retry now".
+  replays safely. Error banner: "Couldn't reach the server. Your changes
+  are kept here and will be retried." with "Retry".
 - `409 revision_conflict`: the note changed on another device. Do not
   overwrite and do not lose the local edit. First try the §6.1 field
   merge (base = `lastSaved*`): a field changed on one side only takes that
   side's value; identical changes are resolved; re-save against
   `current.revision` and repeat if it moves again. Only when both sides
-  changed the content differently, show a conflict banner with the two
-  choices the spec allows for the web client:
+  changed the content differently, show a warning banner "Changed on
+  another device while you were editing." (the API doesn't say which
+  device) with the two choices the spec allows for the web client:
   - "Keep mine": save the local version as a **new note** titled
     `<Title> (Conflicted copy)` via `POST` with `conflictOf: <id>`, then
     reload the original note from `current`.
   - "Use theirs": discard local edits and load `current`.
-- `409 note_deleted`: show "This note was deleted on another device" with
-  "Keep as new note" (POST as `<Title> (Recovered copy)`) or "Discard".
+- `409 note_deleted`: warning banner "This note was deleted on another
+  device." with "Keep as new note" (POST as `<Title> (Recovered copy)`) or
+  "Discard".
 - `401`: keep everything in memory, show login, retry after sign-in.
-- Status pill in the editor header shows the state: Saved / Unsaved /
-  Saving… / Couldn't save / Conflict. No toasts for routine saves.
+- Status pill in the sheet header shows the state: Saved / Unsaved /
+  Saving / Couldn't save / Conflict, the dot breathing while saving and
+  settling when saved. No toasts for routine saves.
 
 ### Delete
 
-"Delete note" in a note menu → confirm → `DELETE` with the current
-revision → remove from list, select the next note. `409` on delete means
+"Delete" in the sheet header → confirm dialog → `DELETE` with the current
+revision → remove from the grid, close the sheet. `409` on delete means
 it changed elsewhere: reload it and ask again.
 
 ### Search
 
-Search box in the sidebar; while it has ≥ 1 character the list is replaced
-by results. Debounce 150 ms, abort the previous request
-(`AbortController`), ignore stale responses. Rows show title and the
-excerpt with `<mark>` highlighted (styled, not default yellow). Escape
-clears. Empty results → "No notes match “…”".
+Search field in the header; while it has ≥ 1 character the grid shows
+results instead ("Results", "N matches"). Debounce 150 ms, abort the
+previous request (`AbortController`), ignore stale responses. Result tiles
+show title and the excerpt with `<mark>` highlighted (styled with the
+accent, not default yellow). Escape clears. No results → "Nothing matches
+“…”." with "Search looks through titles and note text."
 
 ### Settings
 
-Route `/settings`: username (read-only), change password form, active
-sessions list (kind, name, last used; "Sign out" per session, the current
-one labelled), and "Sign out" for this browser. After changing the
-password the server has signed out every *other* session — say so.
+Route `/settings`, a sheet of glass cards with a "Done" button:
+
+- "Signed in as": initial avatar, username, "Owner · <host>".
+- "Appearance": segmented System / Light / Dark (System is the default and
+  follows the OS; the prototype only has Light / Dark).
+- "Password": a change-password form (current, new, confirm). The server
+  supports it, so it stays in the app even though the prototype says
+  passwords can only be changed on the server. After a change, say that
+  every other device was signed out. Below the form, for a forgotten
+  password: the `notes-server reset-password` command with Copy.
+- "Sign out of this browser. Your notes stay on the server." with a danger
+  "Sign out" button.
+- "Signed-in devices": one row per session (kind abbreviation, name, last
+  used); the current one gets a "This browser" badge, the others a "Sign
+  out" button.
 
 ### Connection status
 
@@ -409,12 +452,14 @@ In code:
 2. API client + auth context + auth gate; onboarding and login screens,
    tested end to end against a fresh `server/data` (delete it to re-run
    first-run).
-3. Shell + note list + empty states; create/select/delete without the rich
-   editor (plain textarea), with autosave and the state machine. Verify
-   conflict handling by editing the same note with curl.
+3. Shell (header, bento grid, editor sheet) + empty states; create/open/
+   delete without the rich editor (plain textarea), with autosave and the
+   state machine; desktop and mobile layout. Integration tests cover
+   conflicts by editing the same note through the API from a second
+   client.
 4. Markdown parse/serialize + tests; swap the textarea for Tiptap; toolbar;
    links; task lists.
-5. Search; settings; connection banner; mobile layout.
+5. Search; settings sheet; connection banner.
 6. Polish pass against §6; keyboard audit; dark mode; `pnpm build` →
    Go binary → manual run-through of every screen from first run.
 7. Update `server/README.md` (build steps) and add `apps/web/README.md`
