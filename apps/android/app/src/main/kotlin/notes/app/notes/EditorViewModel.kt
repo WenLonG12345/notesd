@@ -32,6 +32,10 @@ class EditorViewModel(private val store: NoteStore, val id: String, private val 
     private val _status = MutableStateFlow(SaveStatus.Blank)
     val status: StateFlow<SaveStatus> = _status
 
+    /** The store had no such note when it was opened: a new note. Set before [document]. */
+    var isNew = false
+        private set
+
     private val saveLock = Mutex()
     private var edits = 0
     private var saved = 0
@@ -39,6 +43,7 @@ class EditorViewModel(private val store: NoteStore, val id: String, private val 
     init {
         viewModelScope.launch {
             val note = store.get(id)
+            isNew = note == null
             _document.value = if (note == null) {
                 Document.forNote("", Document.EMPTY)
             } else {

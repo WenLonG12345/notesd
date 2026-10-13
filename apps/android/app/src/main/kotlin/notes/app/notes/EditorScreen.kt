@@ -1,8 +1,11 @@
 package notes.app.notes
 
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -42,6 +46,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.doOnAttach
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -87,12 +95,15 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit) 
         save()
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val root = LocalView.current
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) save() }
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
             save()
+            // The keyboard belongs to the window, not this screen: without this it stays up over the list.
+            root.windowInsetsController()?.hide(WindowInsetsCompat.Type.ime())
         }
     }
 
@@ -158,7 +169,16 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit) 
                         onFormatState = { state = it }
                         onLinkTap = { linkTap = it }
                         editor = this
-                        if (text.isNullOrEmpty()) requestFocus()
+                        // A new note opens ready to type the title. Focus alone doesn't raise the keyboard, and
+                        // neither works before the view is attached.
+                        if (vm.isNew) {
+                            doOnAttach {
+                                requestFocus()
+                                // After focus: gaining focus moves the cursor to the end (the body).
+                                setSelection(0)
+                                windowInsetsController()?.show(WindowInsetsCompat.Type.ime())
+                            }
+                        }
                     }
                 },
                 onRelease = { editor = null },
@@ -221,6 +241,12 @@ private fun exportMarkdown(doc: Document): String {
     val title = doc.title.orEmpty().trim()
     val body = Markdown.serialize(doc)
     return if (title.isEmpty()) body else "# $title\n\n$body"
+}
+
+private fun View.windowInsetsController(): WindowInsetsControllerCompat? {
+    var c = context
+    while (c is ContextWrapper && c !is Activity) c = c.baseContext
+    return (c as? Activity)?.window?.let { WindowCompat.getInsetsController(it, this) }
 }
 
 private fun share(context: Context, doc: Document) {

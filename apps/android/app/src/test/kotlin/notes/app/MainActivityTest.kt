@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.core.view.children
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import notes.app.editor.NoteEditText
 import org.junit.After
@@ -45,7 +46,12 @@ class MainActivityTest {
         compose.onNodeWithText("New note").performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription("Back"))
         val editor = editor()
-        compose.runOnUiThread { editor.text!!.insert(0, "Packing list") }
+        compose.waitForIdle()
+        compose.runOnUiThread {
+            assertTrue(editor.isFocused, "a new note opens with the cursor in the title")
+            assertEquals(0, editor.selectionStart)
+            editor.text!!.insert(0, "Packing list")
+        }
         compose.onNodeWithContentDescription("Back").performClick()
         compose.waitUntilExactlyOneExists(hasText("Packing list"))
         compose.onNodeWithText("Packing list").performClick()
