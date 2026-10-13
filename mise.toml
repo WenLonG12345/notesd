@@ -4,10 +4,13 @@ node = "24.21.0"
 pnpm = "10.18.1"
 watchexec = "2.8.0"
 golangci-lint = "2.14.0"
+java = "temurin-17.0.20+8"
 
 [env]
 # Static, cgo-free binaries; test:go turns cgo back on for -race.
 CGO_ENABLED = "0"
+# Android Studio's default SDK location on macOS; set ANDROID_HOME to override.
+ANDROID_HOME = "{{ get_env(name='ANDROID_HOME', default=env.HOME ~ '/Library/Android/sdk') }}"
 
 [tasks.install]
 description = "Install web dependencies"
@@ -66,6 +69,20 @@ run = "go test -race ./..."
 dir = "apps/web"
 depends = ["install"]
 run = "pnpm test"
+
+[tasks."test:android"]
+description = "Android unit tests (JVM and Robolectric); emulator tests stay manual"
+dir = "apps/android"
+run = "./gradlew :core:test :app:testDebugUnitTest"
+
+[tasks."lint:android"]
+dir = "apps/android"
+run = "./gradlew ktlintCheck :app:lintDebug"
+
+[tasks."build:android"]
+description = "Debug APK in apps/android/app/build/outputs/apk/debug"
+dir = "apps/android"
+run = "./gradlew :app:assembleDebug"
 
 [tasks."build:web"]
 description = "Build the web app into server/internal/web/dist"
