@@ -104,10 +104,10 @@ for native apps).
 ## 2. Stack and project setup
 
 `apps/web/package.json` and `tsconfig.json` are already written:
-React 18, **TypeScript 7** (the Go-based compiler, now published as the
+React 19, **TypeScript 7** (the Go-based compiler, now published as the
 normal `typescript` package; `strict` and `esnext` are its defaults and
 6.0's deprecations such as `baseUrl` are hard errors, so keep `tsconfig`
-minimal and never add deprecated options), Vite 5, Tiptap 2 (ProseMirror),
+minimal and never add deprecated options), Vite 8, Tiptap 3 (ProseMirror),
 `prosemirror-markdown` + `markdown-it` for Markdown ⇄ document conversion,
 Vitest. The package manager is **pnpm** (`packageManager` field pins it;
 `corepack enable` or `npm i -g pnpm` if it is missing). Node is only a
@@ -118,7 +118,8 @@ Dependencies use `^` ranges; `pnpm-lock.yaml` is what pins them.
 Type checking is `pnpm typecheck`: `tsc --noEmit` for `src`, plus
 `tsconfig.node.json` for `vite.config.ts` (Node types stay out of browser
 code; no `-b`, no project references); Vite does
-the transpiling. If TypeScript 7 rejects a type from a dependency, fix it
+the transpiling. Lint is `pnpm lint` (oxlint, `.oxlintrc.json`):
+typescript-eslint cannot load TypeScript 7, and oxlint needs no TS API. If TypeScript 7 rejects a type from a dependency, fix it
 with a local `.d.ts` shim, not by downgrading.
 
 Setup tasks:
@@ -266,9 +267,12 @@ Allowed extensions, exactly the §7.1 subset: Document, Paragraph, Text,
 HardBreak, Bold, Italic, Strike, Heading (levels 1–3), BulletList,
 OrderedList, ListItem, TaskList, TaskItem (nested: true), Link
 (openOnClick: false, autolink, validate http/https/mailto), Blockquote,
-History, Placeholder. Explicitly **exclude** Code, CodeBlock,
-HorizontalRule, Image, Table, Underline, Highlight, etc. (StarterKit must be
-configured with those turned off.)
+UndoRedo (Tiptap 3's name for History), Placeholder. Explicitly
+**exclude** Code, CodeBlock, HorizontalRule, Image, Table, Underline,
+Highlight, etc. Tiptap 3's StarterKit also bundles Link, Underline,
+ListKeymap and TrailingNode: turn off what isn't allowed and configure Link
+through StarterKit rather than adding it twice. TaskList/TaskItem live in
+`@tiptap/extension-list` in v3.
 
 Title is a separate plain `<input>` above the editor (not part of the
 document). Content is the Tiptap document.
@@ -424,4 +428,4 @@ Notes can be managed entirely in a browser served by the single Go binary
 with no separate frontend process: first-run setup, sign in, create, edit
 with formatting, autosave, search, delete, handle a conflict without losing
 text, change password, sign out. `pnpm build` output is what the binary
-serves. `pnpm typecheck`, `pnpm test` and `go test ./...` pass.
+serves. `pnpm lint`, `pnpm typecheck`, `pnpm test` and `go test ./...` pass.
