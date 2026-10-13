@@ -15,8 +15,8 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  min-height: 53px;
-  padding: 8px 10px;
+  min-height: 47px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--hair);
 }
 
@@ -31,7 +31,7 @@
   flex: none;
   width: 1px;
   height: 18px;
-  margin: 0 6px;
+  margin: 0 5px;
   background: var(--hair);
 }
 
@@ -51,8 +51,8 @@
 }
 
 .delete {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 10px;
   color: var(--ink-2);
 }
@@ -70,12 +70,12 @@
 
 .aa {
   width: auto;
-  padding: 0 10px;
-  font: 500 15px var(--font-serif);
+  padding: 0 9px;
+  font: 500 14px var(--font-serif);
 }
 
 .aaBig {
-  font-size: 19px;
+  font-size: 17px;
 }
 
 .back {
@@ -111,27 +111,27 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 26px 48px 80px;
+  padding: 20px 36px 64px;
 }
 
 .page {
-  max-width: 720px;
+  max-width: 680px;
   margin: 0 auto;
 }
 
 .date {
-  padding-bottom: 18px;
+  padding-bottom: 14px;
   text-align: center;
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--ink-3);
 }
 
 .popover {
   position: absolute;
   z-index: 10;
-  top: 52px;
-  left: 58px;
-  width: 260px;
+  top: 46px;
+  left: 50px;
+  width: 240px;
   padding: 8px;
   border-radius: 18px;
   background: var(--glass-hi);

@@ -22,14 +22,14 @@
 
 .text h2 {
   margin: 0;
-  font: 400 40px/1.05 var(--font-serif);
+  font: 400 34px/1.05 var(--font-serif);
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
 
 .text p {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--ink-2);
 }
@@ -37,8 +37,8 @@
 .write {
   margin-top: 6px;
   align-self: flex-start;
-  height: 46px;
-  padding: 0 20px;
-  border-radius: 15px;
-  font-size: 15px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 13px;
+  font-size: 14px;
 }
