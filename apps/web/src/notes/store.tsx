@@ -9,6 +9,8 @@ type ListState = {
   items: ListItem[]
   status: 'loading' | 'ready' | 'error'
   hasMore: boolean
+  /** Bumped on every local change, so derived views (search) can refresh. */
+  version: number
 }
 
 type NotesContextValue = ListState & {
@@ -29,7 +31,7 @@ const NotesContext = createContext<NotesContextValue | null>(null)
 const STALE_MS = 30_000
 
 export function NotesProvider({ children }: { children: ReactNode }) {
-  const [list, setList] = useState<ListState>({ items: [], status: 'loading', hasMore: false })
+  const [list, setList] = useState<ListState>({ items: [], status: 'loading', hasMore: false, version: 0 })
   const cursor = useRef('')
   const loadedAt = useRef(0)
   const loading = useRef(false)
@@ -49,7 +51,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         const kept = reset ? prev.items.filter((n) => !seen.has(n.id) && savers.current.has(n.id)) : prev.items
         const items = reset ? [...kept, ...page.notes] : [...kept, ...page.notes.filter((n) => !kept.some((k) => k.id === n.id))]
         items.sort((a, b) => b.updatedAt - a.updatedAt)
-        return { items, status: 'ready', hasMore: page.hasMore }
+        return { items, status: 'ready', hasMore: page.hasMore, version: prev.version }
       })
     } catch {
       setList((prev) => (prev.status === 'loading' ? { ...prev, status: 'error' } : prev))
@@ -73,7 +75,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         updatedAt,
         createdAt: old?.createdAt ?? updatedAt,
       }
-      return { ...prev, items: [item, ...prev.items.filter((n) => n.id !== id)] }
+      return { ...prev, items: [item, ...prev.items.filter((n) => n.id !== id)], version: prev.version + 1 }
     })
   }, [])
 
@@ -119,7 +121,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const removed = useCallback((id: string) => {
     savers.current.get(id)?.dispose()
     savers.current.delete(id)
-    setList((prev) => ({ ...prev, items: prev.items.filter((n) => n.id !== id) }))
+    setList((prev) => ({ ...prev, items: prev.items.filter((n) => n.id !== id), version: prev.version + 1 }))
   }, [])
 
   // Signed in again after the session ended: send what was waiting.
@@ -137,6 +139,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }
     const onOnline = () => {
       for (const s of all()) s.resume()
+      // Also confirms the server is reachable, which clears the offline banner.
+      void fetchPage(true)
     }
     const onHidden = () => {
       if (document.visibilityState === 'hidden') for (const s of all()) void s.flush()

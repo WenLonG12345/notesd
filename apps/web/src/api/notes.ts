@@ -1,5 +1,7 @@
 import { request } from './client'
-import type { MutationResult, Note, NoteList } from './types'
+import type { MutationResult, Note, NoteList, SearchResult } from './types'
+
+export const SEARCH_PAGE = 30
 
 const path = (id: string) => `/notes/${encodeURIComponent(id)}`
 
@@ -17,4 +19,11 @@ export const notes = {
     request<MutationResult>('PUT', path(id), body, { keepalive }),
   remove: (id: string, body: { operationId: string; baseRevision: number }) =>
     request<MutationResult>('DELETE', path(id), body),
+  search: (q: string, offset: number, signal: AbortSignal) =>
+    request<{ results: SearchResult[] }>(
+      'GET',
+      `/search?q=${encodeURIComponent(q)}&limit=${SEARCH_PAGE}&offset=${offset}`,
+      undefined,
+      { signal },
+    ),
 }

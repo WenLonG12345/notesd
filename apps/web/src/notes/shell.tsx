@@ -4,6 +4,7 @@ import { SettingsSheet } from '../settings/settings'
 import { Backdrop } from '../ui/backdrop'
 import { Brand } from '../ui/brand'
 import { Button } from '../ui/button'
+import { ConnectionBanner } from './connection'
 import { NoteGrid } from './note-grid'
 import { NoteSheet } from './note-sheet'
 import type { NoteSaver } from './saver'
@@ -23,6 +24,7 @@ function ShellView({ username }: { username: string }) {
   const { newDraft } = useNotes()
   // A note the server doesn't have yet: open, but not in the URL until it's saved.
   const [draft, setDraft] = useState<NoteSaver | null>(null)
+  const [query, setQuery] = useState('')
 
   const startNote = () => {
     navigate('/')
@@ -46,7 +48,25 @@ function ShellView({ username }: { username: string }) {
         <header className={styles.header}>
           <div className={styles.bar}>
             <Brand />
-            <div className={styles.spacer} />
+            <div className={styles.search}>
+              <span className={styles.searchIcon} aria-hidden="true" />
+              <label htmlFor="search" className="visually-hidden">
+                Search notes
+              </label>
+              <input
+                id="search"
+                type="search"
+                className={styles.searchInput}
+                placeholder="Search notes"
+                spellCheck={false}
+                autoComplete="off"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setQuery('')
+                }}
+              />
+            </div>
             <Button variant="accent" size="md" className={styles.newNote} onClick={startNote}>
               <span className={styles.plus} aria-hidden="true">
                 +
@@ -64,7 +84,8 @@ function ShellView({ username }: { username: string }) {
             </button>
           </div>
         </header>
-        <NoteGrid onNew={startNote} />
+        <ConnectionBanner />
+        <NoteGrid onNew={startNote} query={query} />
       </div>
       <button type="button" className={styles.fab} onClick={startNote} aria-label="New note" title="New note">
         +

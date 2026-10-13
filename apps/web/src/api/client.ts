@@ -43,6 +43,25 @@ export function onUnauthenticated(listener: Listener): () => void {
   return () => unauthenticatedListeners.delete(listener)
 }
 
+// Connection state, derived only from requests (no polling): a fetch that
+// gets no response means offline, any response means online.
+let reachable = true
+const connectivityListeners = new Set<() => void>()
+
+function setReachable(next: boolean) {
+  if (next === reachable) return
+  reachable = next
+  for (const l of connectivityListeners) l()
+}
+
+export const connectivity = {
+  get: () => reachable,
+  subscribe: (listener: () => void) => {
+    connectivityListeners.add(listener)
+    return () => connectivityListeners.delete(listener)
+  },
+}
+
 type Options = { signal?: AbortSignal; keepalive?: boolean }
 
 export async function request<T>(
@@ -66,9 +85,11 @@ export async function request<T>(
       keepalive: options.keepalive,
     })
   } catch (err) {
-        if (isAbort(err)) throw err
+    if (isAbort(err)) throw err
+    setReachable(false)
     throw new NetworkError(err)
   }
+  setReachable(true)
 
   if (res.ok) {
     if (res.status === 204) return undefined as T

@@ -95,6 +95,13 @@
   text-wrap: pretty;
 }
 
+.preview mark {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--ink);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
 .time {
   margin-top: auto;
   flex: none;
