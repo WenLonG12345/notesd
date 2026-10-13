@@ -270,12 +270,16 @@ noted.
 - `GET /notes?limit=50` on mount; infinite scroll (sentinel at the end of
   the grid) via `nextCursor` while `hasMore`.
 - Each tile: title (or "Untitled" in muted style when empty), `preview`
-  clamped to the tile's lines ("No additional text" when empty), relative
+  (one line per block) joined with " · " as in the prototype, clamped to
+  the tile's lines ("No additional text" when empty), relative
   time from `updatedAt` ("Just now", "5 min ago", "3 h ago", "Yesterday",
   weekday within a week, then "Mar 12"). Tiles are links to `/notes/:id`
   (keyboard reachable, Enter opens).
 - Keep the list in client state and update it in place after saves
-  (title/preview/updatedAt, move to top) and deletes, rather than refetching
+  (title/preview/updatedAt, move to top) and deletes. The local preview
+  comes from `src/notes/plaintext.ts`, a port of the server's extractor
+  pinned by the same `plaintext.json` fixtures, so it matches the next
+  refetch, rather than refetching
   on every change. Refetch on window focus if the list is older than
   ~30 s (other devices may have synced).
 - Empty states: right after onboarding, a 2-wide tile with the kicker

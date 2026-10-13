@@ -40,6 +40,9 @@ const (
 	MaxListLimit    = 200
 	DefaultListSize = 50
 	previewChars    = 160
+	// Raw indexed text read per note to build a preview: blank lines and
+	// runs of spaces shrink, so read more than the preview keeps.
+	previewFetch = 2 * previewChars
 	// Client-supplied timestamps further in the future than this are
 	// replaced by the server clock.
 	maxClockSkew = 24 * time.Hour
@@ -385,7 +388,7 @@ func (s *Store) List(ctx context.Context, limit int, cursor string) (items []Lis
 		  AND (? = 0 OR (n.updated_at, n.id) < (?, ?))
 		ORDER BY n.updated_at DESC, n.id DESC
 		LIMIT ?`,
-		previewChars+1, boolInt(cursor != ""), afterTime, afterID, limit+1)
+		previewFetch, boolInt(cursor != ""), afterTime, afterID, limit+1)
 	if err != nil {
 		return nil, "", err
 	}
@@ -396,7 +399,7 @@ func (s *Store) List(ctx context.Context, limit int, cursor string) (items []Lis
 		if err := rows.Scan(&it.ID, &it.Title, &it.Revision, &it.CreatedAt, &it.UpdatedAt, &it.Preview); err != nil {
 			return nil, "", err
 		}
-		it.Preview = preview(it.Preview)
+		it.Preview = preview(it.Preview, utf8.RuneCountInString(it.Preview) == previewFetch)
 		items = append(items, it)
 	}
 	if err := rows.Err(); err != nil {
@@ -543,13 +546,25 @@ func validateText(title, content string) error {
 	return nil
 }
 
-func preview(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if utf8.RuneCountInString(s) <= previewChars {
+// preview shortens indexed plain text for the list: one line per block
+// (clients choose how to show the breaks), whitespace collapsed within lines,
+// at most previewChars runes. more reports that the text was cut before this.
+func preview(s string, more bool) string {
+	var lines []string
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.Join(strings.Fields(l), " "); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	s = strings.Join(lines, "\n")
+	r := []rune(s)
+	if len(r) <= previewChars && !more {
 		return s
 	}
-	r := []rune(s)
-	return strings.TrimSpace(string(r[:previewChars])) + "…"
+	if len(r) > previewChars {
+		r = r[:previewChars]
+	}
+	return strings.TrimSpace(string(r)) + "…"
 }
 
 func encodeListCursor(updatedAt int64, id string) string {

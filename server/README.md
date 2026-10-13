@@ -85,7 +85,7 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | POST | `/auth/password` | `{currentPassword, newPassword}`; signs out other sessions |
 | GET | `/auth/sessions` | signed-in browsers and devices |
 | DELETE | `/auth/sessions/{id}` | revoke one |
-| GET | `/notes?limit=&cursor=` | live notes, newest first, with `preview`; `nextCursor` is opaque |
+| GET | `/notes?limit=&cursor=` | live notes, newest first, with `preview` (plain text, one line per block, ≤160 chars); `nextCursor` is opaque |
 | POST | `/notes` | `{operationId, id, title, content, createdAt?, updatedAt?, conflictOf?}` → 201 |
 | GET | `/notes/{id}` | 410 with the tombstone in `current` if deleted |
 | PUT | `/notes/{id}` | `{operationId, baseRevision, title, content, updatedAt?}`; both fields required |

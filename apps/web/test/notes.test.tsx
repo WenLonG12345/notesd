@@ -311,6 +311,27 @@ describe('deleting', () => {
 })
 
 describe('the grid', () => {
+  it('previews formatted notes block by block, the same before and after a refetch', async () => {
+    let id = ''
+    const { server, user } = await signedIn({
+      seed: async (s) => {
+        id = await createNote(s, 'Trip', '# Lisbon\n\nLanding **Friday**.\n\n```sh\nmake web\n```\n\n- [x] Book room\n')
+      },
+    })
+    expect(within(await screen.findByRole('link', { name: /Trip/ })).getByText('Lisbon · Landing Friday. · make web · Book room')).toBeTruthy()
+
+    await openTile(user, 'Trip')
+    await typeAtEnd(user, ' near the river')
+    await saved()
+    await user.keyboard('{Escape}')
+
+    const local = 'Lisbon · Landing Friday. · make web · Book room near the river'
+    expect(within(await screen.findByRole('link', { name: /Trip/ })).getByText(local)).toBeTruthy()
+    const [fromServer] = await listNotes(server)
+    expect(fromServer?.id).toBe(id)
+    expect(fromServer?.preview.split('\n').join(' · ')).toBe(local)
+  })
+
   it('pages through more than 50 notes', async () => {
     const server = await startServer()
     const { username, password } = await createOwner(server)

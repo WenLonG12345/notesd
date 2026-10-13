@@ -2,7 +2,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, 
 import { notes as api } from '../api/notes'
 import type { ListItem } from '../api/types'
 import { useAuth } from '../auth/auth-context'
-import { previewOf } from './preview'
+import { preview as previewOf } from './plaintext'
 import { NoteSaver, type Fields } from './saver'
 
 type ListState = {

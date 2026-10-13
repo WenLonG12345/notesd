@@ -66,11 +66,16 @@ function Tile({ note, feature }: { note: ListItem; feature: boolean }) {
         <span className={[styles.title, !title && styles.untitled].filter(Boolean).join(' ')}>
           {title || 'Untitled'}
         </span>
-        <span className={styles.preview}>{note.preview || 'No additional text'}</span>
+        <span className={styles.preview}>{note.preview ? previewLine(note.preview) : 'No additional text'}</span>
         <span className={styles.time}>{relativeTime(note.updatedAt)}</span>
       </a>
     </li>
   )
+}
+
+/** The preview has one line per block; tiles run them together as in the design. */
+function previewLine(preview: string): string {
+  return preview.split('\n').join(' · ')
 }
 
 /** Infinite scroll: loads the next page when this scrolls into view. */
