@@ -3,6 +3,9 @@ package notes.app.notes
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.view.ViewGroup
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -46,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -58,6 +62,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnAttach
+import androidx.core.widget.NestedScrollView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -192,6 +197,14 @@ fun EditorScreen(
         if (doc != null) {
             AndroidView(
                 factory = { ctx ->
+                    // The scroll view, not the EditText, scrolls: TextView's own scrolling has no fling or edge stretch.
+                    val scroller = NestedScrollView(ctx).apply {
+                        isFillViewport = true
+                        isVerticalScrollBarEnabled = true
+                        setOnScrollChangeListener { _: NestedScrollView, _: Int, y: Int, _: Int, _: Int ->
+                            scrolled = y > 0
+                        }
+                    }
                     NoteEditText(ctx).apply {
                         val pad = editorStyle.dp(22f).toInt()
                         setPadding(pad, editorStyle.dp(6f).toInt(), pad, editorStyle.dp(40f).toInt())
@@ -203,7 +216,6 @@ fun EditorScreen(
                         }
                         onFormatState = { state = it }
                         onLinkTap = { linkTap = it }
-                        setOnScrollChangeListener { _, _, y, _, _ -> scrolled = y > 0 }
                         editor = this
                         // A new note opens ready to type the title. Focus alone doesn't raise the keyboard, and
                         // neither works before the view is attached.
@@ -215,10 +227,13 @@ fun EditorScreen(
                                 windowInsetsController()?.show(WindowInsetsCompat.Type.ime())
                             }
                         }
+                        scroller.addView(this, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
                     }
+                    scroller
                 },
                 onRelease = { editor = null },
-                modifier = Modifier.weight(1f).fillMaxWidth()
+                // Compose doesn't clip a native view: the edge stretch would draw the text over the top bar.
+                modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()
             )
             Reveal(typing) {
                 FormattingBar(state, { editor }, onLink = { linkDialog = editor?.linkContext() })
