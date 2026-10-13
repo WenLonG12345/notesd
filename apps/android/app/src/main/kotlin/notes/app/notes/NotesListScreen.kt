@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
@@ -59,6 +61,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import notes.app.ui.LocalTokens
 import notes.core.db.Search
+import notes.core.db.SyncEvent
+import notes.core.sync.SyncStatus
 
 @Composable
 fun NotesListScreen(
@@ -81,6 +85,21 @@ fun NotesListScreen(
         if (latest == null) return@LaunchedEffect
         val result = snackbar.showSnackbar("Note deleted", actionLabel = "Undo", duration = SnackbarDuration.Indefinite)
         if (result == SnackbarResult.ActionPerformed) vm.deletions.undo(latest)
+    }
+    LaunchedEffect(vm) {
+        vm.events.collect { event ->
+            val message = when (event) {
+                is SyncEvent.ConflictedCopy -> "Changed in two places. Your version was kept as “${event.title}”."
+
+                is SyncEvent.RecoveredCopy ->
+                    "A note you edited was deleted elsewhere. It was kept as “${event.title}”."
+
+                is SyncEvent.Restored -> "“${event.title.ifBlank {
+                    "New note"
+                }}” changed on another device and wasn't deleted."
+            }
+            snackbar.showSnackbar(message, withDismissAction = true, duration = SnackbarDuration.Long)
+        }
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
@@ -134,6 +153,7 @@ fun NotesListScreen(
                     }
                 }
             }
+            SyncStatusLine(vm)
             if (signedOut) {
                 // Notes keep working; only syncing waits for the user to sign in.
                 Row(
@@ -262,6 +282,28 @@ private fun NoteRow(title: String, time: String, preview: AnnotatedString, onOpe
                 onDelete()
             })
         }
+    }
+}
+
+/** A quiet dot and word under the heading; nothing while not connected or signed out (the banner says that). */
+@Composable
+private fun SyncStatusLine(vm: NotesListViewModel) {
+    val t = LocalTokens.current
+    val line by vm.sync.collectAsStateWithLifecycle()
+    val pending = if (line.pending > 0) " · ${line.pending} to send" else ""
+    val (word, color) = when (val s = line.status) {
+        SyncStatus.NotConnected, SyncStatus.SignedOut -> return
+        SyncStatus.Syncing -> "Syncing…" to t.statusSaving
+        is SyncStatus.Synced -> "Synced$pending" to t.statusSaved
+        SyncStatus.Offline -> "Offline$pending" to t.statusUnsaved
+        is SyncStatus.Failed -> "Sync error$pending" to t.statusFailed
+    }
+    Row(
+        Modifier.padding(start = 20.dp, bottom = 4.dp).semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(7.dp).background(color, CircleShape))
+        Text(word, fontSize = 13.sp, color = t.ink2, modifier = Modifier.padding(start = 6.dp))
     }
 }
 

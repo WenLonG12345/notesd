@@ -4,23 +4,35 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import notes.core.db.Note
 import notes.core.db.NoteStore
 import notes.core.doc.Document
 import notes.core.markdown.Markdown
 
-enum class SaveStatus { Blank, Unsaved, Saved }
+enum class SaveStatus { Blank, Unsaved, Saved, Synced }
+
+/** The note a conflicted copy was split from. */
+data class Original(val id: String, val title: String)
 
 /**
  * One open note. Saves run on [appScope] so a save started as the screen
  * closes still lands; they're serialised, so an older text never overwrites a
  * newer one. A note that doesn't exist yet is created by its first non-blank
  * save.
+ *
+ * Sync can change the note while it's open. With no unsaved typing, the change
+ * goes straight into the editor ([incoming]). Otherwise the next save passes
+ * the stored version the typing grew from, and the store merges the two.
  */
 class EditorViewModel(private val store: NoteStore, val id: String, private val appScope: CoroutineScope) :
     ViewModel() {
@@ -29,8 +41,22 @@ class EditorViewModel(private val store: NoteStore, val id: String, private val 
     /** The text to show, null while loading. Kept current on every save so a recreated view picks it up. */
     val document: StateFlow<Document?> = _document
 
+    private val _incoming =
+        MutableSharedFlow<Document>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** Text that changed underneath the editor (sync, or a merge on save): show it, keeping the cursor. */
+    val incoming: SharedFlow<Document> = _incoming
+
     private val _status = MutableStateFlow(SaveStatus.Blank)
     val status: StateFlow<SaveStatus> = _status
+
+    private val _original = MutableStateFlow<Original?>(null)
+    val original: StateFlow<Original?> = _original
+
+    private val _gone = MutableStateFlow(false)
+
+    /** The note was deleted elsewhere; any unsaved typing was kept as a recovered copy. */
+    val gone: StateFlow<Boolean> = _gone
 
     /** The store had no such note when it was opened: a new note. Set before [document]. */
     var isNew = false
@@ -39,17 +65,19 @@ class EditorViewModel(private val store: NoteStore, val id: String, private val 
     private val saveLock = Mutex()
     private var edits = 0
     private var saved = 0
+    private var saving = 0
+
+    /** The stored title and content the editor's text grew from; null until the note exists. */
+    private var known: Pair<String, String>? = null
 
     init {
         viewModelScope.launch {
             val note = store.get(id)
             isNew = note == null
-            _document.value = if (note == null) {
-                Document.forNote("", Document.EMPTY)
-            } else {
-                withContext(Dispatchers.Default) { Document.forNote(note.title, Markdown.parse(note.content)) }
-            }
-            if (note != null) _status.value = SaveStatus.Saved
+            known = note?.let { it.title to it.content }
+            _document.value = if (note == null) Document.forNote("", Document.EMPTY) else parse(note)
+            if (note != null) show(note)
+            store.changes.conflate().collect { refresh() }
         }
     }
 
@@ -63,13 +91,79 @@ class EditorViewModel(private val store: NoteStore, val id: String, private val 
         if (edits == saved) return
         val edit = edits
         saved = edit
+        saving++
         _document.value = doc
         appScope.launch {
-            saveLock.withLock {
-                val content = withContext(Dispatchers.Default) { Markdown.serialize(doc) }
-                val note = store.save(id, doc.title.orEmpty(), content)
-                if (edit == edits) _status.value = if (note == null) SaveStatus.Blank else SaveStatus.Saved
+            try {
+                saveLock.withLock { store(doc, edit) }
+            } finally {
+                saving--
             }
         }
     }
+
+    private suspend fun store(doc: Document, edit: Int) {
+        val title = doc.title.orEmpty()
+        val content = withContext(Dispatchers.Default) { Markdown.serialize(doc) }
+        val basedOn = known
+        val note = store.save(id, title, content, basedOn)
+        if (note == null) {
+            if (basedOn != null && basedOn != (title to content)) {
+                // Deleted elsewhere while typed into here: keep the typing.
+                store.recover(title, content)
+                _gone.value = true
+            } else if (edit == edits) {
+                _status.value = SaveStatus.Blank
+            }
+            return
+        }
+        val stored = note.title to note.content
+        if (stored != (title to content) && edit == edits) {
+            // Merged with a sync change: the editor shows the result.
+            known = stored
+            parse(note).let {
+                _document.value = it
+                _incoming.tryEmit(it)
+            }
+        } else {
+            // If typing continued, the next save merges from what this one sent.
+            known = if (stored == (title to content)) stored else title to content
+        }
+        if (edit == edits) show(note)
+    }
+
+    private suspend fun refresh() {
+        if (edits != saved || saving > 0) return
+        val note = store.get(id) ?: return
+        if (note.deletedAt != null) {
+            _gone.value = true
+            return
+        }
+        val stored = note.title to note.content
+        val before = known
+        if (before != null && stored != before) {
+            known = stored
+            parse(note).let {
+                _document.value = it
+                _incoming.tryEmit(it)
+            }
+        }
+        show(note)
+    }
+
+    private suspend fun show(note: Note) {
+        if (edits ==
+            saved
+        ) {
+            _status.value =
+                if (!note.dirty && note.serverRevision != null) SaveStatus.Synced else SaveStatus.Saved
+        }
+        val originalId = note.conflictOf
+        if (originalId != null && _original.value?.id != originalId) {
+            _original.value = store.get(originalId)?.takeIf { it.deletedAt == null }?.let { Original(it.id, it.title) }
+        }
+    }
+
+    private suspend fun parse(note: Note) =
+        withContext(Dispatchers.Default) { Document.forNote(note.title, Markdown.parse(note.content)) }
 }

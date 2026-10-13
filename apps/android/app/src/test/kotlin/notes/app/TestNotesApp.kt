@@ -8,6 +8,8 @@ import notes.app.account.Sealer
 /** The app with an in-memory key instead of the Android Keystore, which Robolectric doesn't provide. */
 class TestNotesApp : NotesApp() {
     override fun createGraph() = AppGraph(this, TestSealer())
+
+    override fun startSync() = Unit
 }
 
 class TestSealer : Sealer {

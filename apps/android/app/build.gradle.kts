@@ -101,6 +101,8 @@ dependencies {
     implementation(libs.core.ktx)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.process)
+    implementation(libs.work.runtime)
     implementation(libs.lifecycle.viewmodel.navigation3)
     implementation(libs.navigation3.runtime)
     implementation(libs.navigation3.ui)

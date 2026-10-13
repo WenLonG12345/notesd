@@ -9,7 +9,11 @@ open class NotesApp : Application() {
     override fun onCreate() {
         super.onCreate()
         graph = createGraph()
+        startSync()
     }
+
+    /** Tests drive sync themselves, against their own servers. */
+    protected open fun startSync() = graph.scheduler.start()
 
     /** Tests swap in a graph without the Android Keystore, which Robolectric lacks. */
     protected open fun createGraph() = AppGraph(this)

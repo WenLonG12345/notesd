@@ -69,7 +69,7 @@ fun NotesNavigation(graph: AppGraph) {
         entryProvider = entryProvider {
             entry<NotesKey> {
                 NotesListScreen(
-                    vm = viewModel { NotesListViewModel(graph.store, graph.deletions) },
+                    vm = viewModel { NotesListViewModel(graph.store, graph.deletions, graph.sync) },
                     signedOut = account is Account.SignedOut,
                     onSignIn = { backStack += OnboardingKey(signInAgain = true) },
                     onOpen = { backStack += EditorKey(it) },
@@ -84,7 +84,8 @@ fun NotesNavigation(graph: AppGraph) {
                     onDelete = {
                         graph.deletions.request(key.id)
                         pop()
-                    }
+                    },
+                    onOpen = { backStack += EditorKey(it) }
                 )
             }
             entry<SettingsKey> {

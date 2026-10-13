@@ -18,6 +18,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import notes.app.editor.NoteEditText
+import notes.core.api.RemoteNote
+import notes.core.api.SyncPage
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -102,5 +104,46 @@ class MainActivityTest {
         compose.onNodeWithText("Search").performTextInput("lisb")
         compose.waitUntilDoesNotExist(hasText("Groceries"))
         compose.onNodeWithText("Trip").assertExists()
+    }
+
+    // Sync changing a note while it's open, simulated by applying feed pages as the engine would.
+
+    private fun remote(id: String, title: String, content: String, revision: Long, deleted: Boolean = false) =
+        runBlocking {
+            graph.sync.store.applyPage(
+                SyncPage(
+                    listOf(
+                        RemoteNote(id, title, content, revision, revision, 1, revision, if (deleted) revision else null)
+                    ),
+                    revision,
+                    false,
+                    "g"
+                )
+            )
+        }
+
+    @Test
+    fun `a sync change shows up in the open editor`() {
+        remote("n", "Trip", "Pack\n", 1)
+        compose.waitUntilExactlyOneExists(hasText("Trip"))
+        compose.onNodeWithText("Trip").performClick()
+        val editor = editor()
+        remote("n", "Trip", "Pack the tent\n", 2)
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.waitForIdle()
+            editor.text.toString().contains("Pack the tent")
+        }
+    }
+
+    @Test
+    fun `typing into a note deleted elsewhere is kept as a recovered copy`() {
+        remote("n", "Trip", "Pack\n", 1)
+        compose.waitUntilExactlyOneExists(hasText("Trip"))
+        compose.onNodeWithText("Trip").performClick()
+        val editor = editor()
+        compose.runOnUiThread { editor.text!!.append(" tent") }
+        remote("n", "", "", 2, deleted = true)
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Trip (Recovered copy)"))
     }
 }

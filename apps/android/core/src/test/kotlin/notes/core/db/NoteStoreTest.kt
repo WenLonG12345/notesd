@@ -174,4 +174,42 @@ class NoteStoreTest {
             again.close()
         }
     }
+
+    // The editor saves text it started from [basedOn]; sync may have changed the note since.
+
+    private suspend fun syncChanged(id: String, title: String, content: String) {
+        db.write { it.exec("UPDATE notes SET title = ?, content = ? WHERE id = ?", title, content, id) }
+    }
+
+    @Test
+    fun `an editor save merges with a sync change to another field`() = runBlocking {
+        store.save("a", "Title", "body\n")
+        syncChanged("a", "Title", "synced body\n")
+        store.save("a", "Typed title", "body\n", basedOn = "Title" to "body\n")
+        val a = store.get("a")!!
+        assertEquals("Typed title", a.title)
+        assertEquals("synced body\n", a.content)
+        assertEquals(1, store.list().size)
+    }
+
+    @Test
+    fun `an editor save over a sync change to the same field keeps both`() = runBlocking {
+        store.save("a", "Title", "body\n")
+        syncChanged("a", "Title", "synced body\n")
+        store.save("a", "Title", "typed body\n", basedOn = "Title" to "body\n")
+        assertEquals("typed body\n", store.get("a")!!.content)
+        val copy = store.list().single { it.id != "a" }
+        val stored = store.get(copy.id)!!
+        assertEquals("Title (Conflicted copy)", stored.title)
+        assertEquals("synced body\n", stored.content)
+        assertEquals("a", stored.conflictOf)
+    }
+
+    @Test
+    fun `local edits are announced, and only local edits`() = runBlocking {
+        val edited = async { store.localEdits.first() }
+        yield()
+        store.save("a", "Alpha", "")
+        edited.await()
+    }
 }

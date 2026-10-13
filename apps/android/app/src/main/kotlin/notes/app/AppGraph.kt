@@ -16,9 +16,11 @@ import notes.app.account.KeystoreSealer
 import notes.app.account.Sealer
 import notes.app.notes.Deletions
 import notes.app.settings.Appearance
+import notes.app.sync.SyncScheduler
 import notes.core.api.ApiClient
 import notes.core.db.Database
 import notes.core.db.NoteStore
+import notes.core.sync.SyncEngine
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /** The app's long-lived objects, wired by hand. One per process, owned by [NotesApp]. */
@@ -31,6 +33,10 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
     val deletions = Deletions(scope) { store.delete(it) }
     val appearance = Appearance(context)
     val accounts = AccountStore(File(context.filesDir, "account"), sealer)
+
+    /** Null server while never connected; signed out, its requests come back Unauthenticated. */
+    val sync = SyncEngine(database, { api() })
+    val scheduler = SyncScheduler(context.applicationContext, sync, store, accounts, scope)
 
     private val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
     private val _onboardingDismissed = MutableStateFlow(prefs.getBoolean(ONBOARDING_DISMISSED, false))

@@ -61,3 +61,32 @@ internal data class ErrorBody(
     val field: String? = null,
     val current: JsonObject? = null
 )
+
+/** A note as the server has it. A tombstone has [deletedAt] set and empty title and content. */
+@Serializable
+data class RemoteNote(
+    val id: String,
+    val title: String = "",
+    val content: String = "",
+    val revision: Long,
+    val changeSeq: Long = 0,
+    val createdAt: Long = 0,
+    val updatedAt: Long = 0,
+    val deletedAt: Long? = null,
+    val conflictOf: String? = null
+)
+
+/** The answer to a create, update or delete. */
+@Serializable
+data class MutationResult(
+    val id: String,
+    val status: String,
+    val revision: Long,
+    val changeSeq: Long,
+    val updatedAt: Long,
+    val deletedAt: Long? = null
+)
+
+/** One page of the change feed: latest state per note, ascending changeSeq. */
+@Serializable
+data class SyncPage(val changes: List<RemoteNote>, val nextCursor: Long, val hasMore: Boolean, val generation: String)

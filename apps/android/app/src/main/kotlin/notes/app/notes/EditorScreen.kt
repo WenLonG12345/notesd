@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -67,11 +68,13 @@ private const val SAVE_DELAY_MS = 700L
 
 /** A note, full screen. Saves locally shortly after typing stops, and at once on leaving or backgrounding. */
 @Composable
-fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit) {
+fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit, onOpen: (String) -> Unit) {
     val context = LocalContext.current
     val t = LocalTokens.current
     val loaded by vm.document.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
+    val original by vm.original.collectAsStateWithLifecycle()
+    val gone by vm.gone.collectAsStateWithLifecycle()
     var editor by remember { mutableStateOf<NoteEditText?>(null) }
     var state by remember { mutableStateOf(FormatState()) }
     var edits by remember { mutableIntStateOf(0) }
@@ -84,6 +87,8 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit) 
         editor?.let { vm.save(it.document()) }
     }
 
+    LaunchedEffect(gone) { if (gone) onBack() }
+    LaunchedEffect(vm) { vm.incoming.collect { editor?.setDocument(it, keepSelection = true) } }
     LaunchedEffect(edits) {
         if (edits == 0) return@LaunchedEffect
         delay(SAVE_DELAY_MS)
@@ -106,10 +111,14 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit) 
             GlyphButton("↷", "Redo", if (state.canRedo) t.ink else t.ink3, enabled = state.canRedo) { editor?.redo() }
             Spacer(Modifier.weight(1f))
             if (status != SaveStatus.Blank) {
-                val saved = status == SaveStatus.Saved
-                Box(Modifier.size(7.dp).background(if (saved) t.statusSaved else t.statusUnsaved, CircleShape))
+                val (word, color) = when (status) {
+                    SaveStatus.Synced -> "Synced" to t.statusSaved
+                    SaveStatus.Saved -> "Saved" to t.statusSaving
+                    else -> "Editing" to t.statusUnsaved
+                }
+                Box(Modifier.size(7.dp).background(color, CircleShape))
                 Text(
-                    if (saved) "Saved" else "Editing",
+                    word,
                     fontSize = 13.sp,
                     color = t.ink2,
                     modifier = Modifier.padding(start = 6.dp, end = 4.dp)
@@ -143,6 +152,24 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit) 
                         })
                     }
                 }
+            }
+        }
+        original?.let { o ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .background(t.hover, RoundedCornerShape(12.dp))
+                    .padding(start = 16.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Kept from a conflict with “${o.title.ifBlank { "New note" }}”",
+                    fontSize = 14.sp,
+                    color = t.ink2,
+                    modifier = Modifier.weight(1f).padding(vertical = 10.dp)
+                )
+                TextButton(onClick = { onOpen(o.id) }) { Text("Open", color = t.link) }
             }
         }
         val doc = loaded
