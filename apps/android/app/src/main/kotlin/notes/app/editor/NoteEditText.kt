@@ -1,6 +1,8 @@
 package notes.app.editor
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.text.Editable
 import android.text.InputFilter
@@ -316,6 +318,12 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
 
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
         super.onSelectionChanged(selStart, selEnd)
+        // Never past the end marker: typing there would land outside the block's content.
+        val marker = text?.let(::endMarkerStart) ?: -1
+        if (marker in 0 until maxOf(selStart, selEnd)) {
+            setSelection(minOf(selStart, marker), minOf(selEnd, marker))
+            return
+        }
         if (!ready || editing) return
         if (pendingStart >= 0 && (selStart != selEnd || selStart !in pendingStart..pendingEnd)) clearPending()
         publishState()
@@ -427,7 +435,7 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
         recordCommand()
         edits.outdent(k)
         edits.commit()
-        post(::afterStructureChange)
+        mainHandler.post(::afterStructureChange)
         return "\n"
     }
 
@@ -440,9 +448,12 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
         recordCommand()
         edits.outdent(k)
         edits.commit()
-        post(::afterStructureChange)
+        mainHandler.post(::afterStructureChange)
         return ""
     }
+
+    // Not View.post: that waits for the view to be attached, so a detached editor (tests) would skip the pass.
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private fun recordCommand() {
         undoStack.record(UndoStack.Kind.Command, SystemClock.uptimeMillis(), ::currentState)

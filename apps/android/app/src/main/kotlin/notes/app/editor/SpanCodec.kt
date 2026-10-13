@@ -162,11 +162,16 @@ object Blocks {
         val spans = text.getSpans(0, text.length, BlockSpan::class.java).sortedWith(
             compareBy({ text.getSpanStart(it) }, { text.getSpanEnd(it) })
         )
+        val marker = endMarkerStart(text)
         return spans.mapIndexed { i, span ->
             val start = text.getSpanStart(span)
             val end = text.getSpanEnd(span)
-            val last = i == spans.lastIndex
-            BlockRange(start, end, if (last || end == start) end else end - 1, span)
+            val contentEnd = when {
+                i < spans.lastIndex && end > start -> end - 1
+                marker >= start -> marker
+                else -> end
+            }
+            BlockRange(start, end, contentEnd, span)
         }
     }
 

@@ -288,5 +288,24 @@ class RawInlineSpan(val source: String, private val style: EditorStyle) :
     }
 }
 
+/**
+ * An invisible character at the very end of the text while the last block is
+ * an empty item, quote or heading. Android's Layout gives an empty last line
+ * no paragraph spans (so no marker or indent), and hands a zero-length span at
+ * the end to the line above instead; one character gives the block a real
+ * range. It isn't content: block ranges end before it and the cursor never
+ * goes past it.
+ */
+class EndMarkerSpan : EditorSpan
+
+const val END_MARKER = '\u200B'
+
+/** Where the end marker sits, or -1. */
+fun endMarkerStart(text: Spanned): Int {
+    val span = text.getSpans(0, text.length, EndMarkerSpan::class.java).firstOrNull() ?: return -1
+    val s = text.getSpanStart(span)
+    return if (s == text.length - 1 && text.getSpanEnd(span) == text.length && text[s] == END_MARKER) s else -1
+}
+
 /** Covers a raw block's source exactly, so edits inside it can be refused. */
 class RawBlockSpan(val source: String) : EditorSpan

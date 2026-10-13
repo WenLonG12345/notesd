@@ -1,6 +1,7 @@
 package notes.app.editor
 
 import android.text.Editable
+import android.text.Selection
 import android.text.Spanned
 import notes.core.doc.Container
 import notes.core.doc.Ids
@@ -34,8 +35,13 @@ class Normalizer(private val style: EditorStyle) {
         removeDamagedRaw(text, composingStart, composingEnd)
         splitRawBlocks(text)
         cleanHardBreaks(text)
-        val ranges = ranges(text)
-        val infos = assign(text, ranges)
+        cleanEndMarker(text)
+        var ranges = ranges(text)
+        var infos = assign(text, ranges)
+        if (fixEndMarker(text, ranges, infos)) {
+            ranges = ranges(text)
+            infos = assign(text, ranges)
+        }
         val markers = markers(infos)
         applyBlockSpans(text, ranges, infos, markers)
         applyLeafStyles(text, ranges, infos)
@@ -86,6 +92,47 @@ class Normalizer(private val style: EditorStyle) {
         }
     }
 
+    // --- end marker (see EndMarkerSpan) --------------------------------------
+
+    /** Drops a marker that is no longer a lone marker character at the end (text was typed or pasted around it). */
+    private fun cleanEndMarker(text: Editable) {
+        val valid = endMarkerStart(text)
+        for (span in text.getSpans(0, text.length, EndMarkerSpan::class.java)) {
+            val s = text.getSpanStart(span)
+            if (s == valid) continue
+            text.removeSpan(span)
+            if (s in 0 until text.length && text[s] == END_MARKER) text.delete(s, s + 1)
+        }
+    }
+
+    /** Adds or removes the marker as the last block needs it. True when the text changed. */
+    private fun fixEndMarker(text: Editable, ranges: List<Range>, infos: List<Info>): Boolean {
+        val last = ranges.last()
+        val info = infos.last()
+        val needed = ranges.size > 1 && last.start == last.contentEnd &&
+            (info.path.isNotEmpty() || info.leaf is Leaf.Heading)
+        val marker = endMarkerStart(text)
+        when {
+            needed && marker < 0 -> {
+                val selStart = Selection.getSelectionStart(text)
+                val selEnd = Selection.getSelectionEnd(text)
+                text.append(END_MARKER)
+                text.setSpan(EndMarkerSpan(), text.length - 1, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                // A cursor at the end would have moved past the marker.
+                val at = text.length - 1
+                if (selStart >= 0) Selection.setSelection(text, minOf(selStart, at), minOf(selEnd, at))
+            }
+
+            !needed && marker >= 0 -> {
+                text.getSpans(0, text.length, EndMarkerSpan::class.java).forEach(text::removeSpan)
+                text.delete(marker, marker + 1)
+            }
+
+            else -> return false
+        }
+        return true
+    }
+
     // --- blocks --------------------------------------------------------------
 
     private fun ranges(text: Spanned): List<Range> {
@@ -101,7 +148,8 @@ class Normalizer(private val style: EditorStyle) {
             out += Range(start, i, i + 1)
             start = i + 1
         }
-        out += Range(start, text.length, text.length)
+        val marker = endMarkerStart(text)
+        out += Range(start, if (marker >= start) marker else text.length, text.length)
         return out
     }
 

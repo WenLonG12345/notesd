@@ -301,4 +301,71 @@ class EditorBehaviourTest {
         e.setDocument(Document.forNote("T", Markdown.parse("Hello there world\n")), keepSelection = true)
         assertEquals(at, e.selectionStart)
     }
+
+    // An empty last block needs the end marker: without it, Android's Layout draws no marker on the last line and
+    // indents the line above instead.
+
+    private fun NoteEditText.laidOut(): android.text.Layout {
+        measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(1080, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED)
+        )
+        layout(0, 0, 1080, measuredHeight)
+        return layout
+    }
+
+    @Test
+    fun `a new empty task at the end is indented, and the line above isn't`() {
+        val e = editor("Para\n")
+        e.enter()
+        e.toggleList(ListKind.Task)
+        val l = e.laidOut()
+        assertEquals(0, l.getParagraphLeft(1))
+        assertEquals(e.editorStyle.itemIndent.toInt(), l.getParagraphLeft(l.lineCount - 1))
+        assertEquals("Para\n\n- [ ]\n", e.body())
+        assertEquals(e.text!!.length - 1, e.selectionStart)
+    }
+
+    @Test
+    fun `a task added to an empty body leaves the title alone`() {
+        val e = editor("")
+        e.toggleList(ListKind.Task)
+        val l = e.laidOut()
+        assertEquals(0, l.getParagraphLeft(0))
+        assertEquals(e.editorStyle.itemIndent.toInt(), l.getParagraphLeft(l.lineCount - 1))
+    }
+
+    @Test
+    fun `typing into the empty item drops the marker`() {
+        val e = editor("Para\n")
+        e.enter()
+        e.toggleList(ListKind.Task)
+        e.type("milk")
+        assertEquals("T\nPara\nmilk", e.text.toString())
+        assertEquals("Para\n\n- [ ] milk\n", e.body())
+    }
+
+    @Test
+    fun `enter and backspace on the empty last item still leave the list`() {
+        val e = editor("- [ ] a\n")
+        e.enter()
+        e.enter()
+        assertEquals("- [ ] a\n", e.body())
+        assertEquals(-1, e.text.toString().indexOf(END_MARKER))
+        e.backspace()
+        e.enter()
+        assertEquals("- [ ] a\n- [ ]\n", e.body())
+        e.backspace()
+        assertEquals(-1, e.text.toString().indexOf(END_MARKER))
+        assertEquals("- [ ] a\n", e.body())
+    }
+
+    @Test
+    fun `the cursor can't go past the marker`() {
+        val e = editor("Para\n")
+        e.enter()
+        e.toggleList(ListKind.Bullet)
+        e.setSelection(e.text!!.length)
+        assertEquals(e.text!!.length - 1, e.selectionStart)
+    }
 }
