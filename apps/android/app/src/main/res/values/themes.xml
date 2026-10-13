@@ -4,4 +4,11 @@
         <item name="android:windowBackground">@color/paper</item>
         <item name="colorAccent">@color/accent</item>
     </style>
+
+    <!-- The paper colour with the mark, then straight into the app: no branded pause. -->
+    <style name="Theme.Notes.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/paper</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Notes</item>
+    </style>
 </resources>

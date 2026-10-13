@@ -1,24 +1,38 @@
 package notes.app.settings
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,12 +41,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -40,7 +57,15 @@ import kotlinx.coroutines.launch
 import notes.app.AppGraph
 import notes.app.BuildConfig
 import notes.app.account.Account
+import notes.app.ui.BrandMark
+import notes.app.ui.ConfirmDialog
+import notes.app.ui.Icons
+import notes.app.ui.Kicker
+import notes.app.ui.LocalReduceMotion
 import notes.app.ui.LocalTokens
+import notes.app.ui.Type
+import notes.app.ui.pressScale
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private sealed interface Confirm {
     /** [pending]: notes with changes the server hasn't received. */
@@ -70,70 +95,88 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onConnect: () -> Unit, o
         }
     }
 
-    Column(Modifier.fillMaxSize().background(t.bg).safeDrawingPadding().verticalScroll(rememberScrollState())) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Back" }) {
-                Text("←", fontSize = 20.sp, color = t.ink)
-            }
-            Text(
-                "Settings",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = t.ink,
-                modifier = Modifier.semantics { heading() }
-            )
+    Column(Modifier.fillMaxSize().background(t.bg).statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BackLink(onBack)
         }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Column(Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
+                Text(
+                    "Settings",
+                    style = Type.display,
+                    color = t.ink,
+                    modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 8.dp).semantics { heading() }
+                )
 
-        Section("Account")
-        when (val a = account) {
-            Account.None -> {
-                Line("Not connected", "Notes are kept on this phone only.")
-                Action("Connect to a server", t.link, enabled = true, onClick = onConnect)
-            }
-
-            is Account.SignedIn -> {
-                Line("Server", a.server)
-                Line("Username", a.username)
-                Action(if (busy) "Signing out…" else "Sign out", t.link, enabled = !busy) {
-                    scope.launch { confirm = Confirm.SignOut(graph.store.pendingNotes()) }
-                }
-            }
-
-            is Account.SignedOut -> {
-                Line("Server", a.server)
-                Line("Username", "${a.username} · signed out")
-                Action("Sign in again", t.link, enabled = true, onClick = onSignIn)
-            }
-        }
-
-        Section("Appearance")
-        Column(Modifier.selectableGroup()) {
-            for (option in Theme.entries) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .selectable(selected = theme == option, role = Role.RadioButton) {
-                            graph.appearance.set(option)
+                Section("Account")
+                Card {
+                    when (val a = account) {
+                        Account.None -> {
+                            Info("Not connected", "Notes are kept on this phone only.")
+                            Divider()
+                            Action("Connect to a server", t.link, enabled = true, onClick = onConnect)
                         }
-                        .padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(option.label, color = t.ink, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                    RadioButton(
-                        selected = theme == option,
-                        onClick = null,
-                        colors = RadioButtonDefaults.colors(selectedColor = t.accentDeep, unselectedColor = t.ink3)
-                    )
+
+                        is Account.SignedIn -> {
+                            Who(a.username, a.server, null)
+                            Divider()
+                            Action(if (busy) "Signing out…" else "Sign out", t.link, enabled = !busy) {
+                                scope.launch { confirm = Confirm.SignOut(graph.store.pendingNotes()) }
+                            }
+                        }
+
+                        is Account.SignedOut -> {
+                            Who(a.username, a.server, "Signed out")
+                            Divider()
+                            Action("Sign in again", t.link, enabled = true, onClick = onSignIn)
+                        }
+                    }
+                }
+
+                Section("Appearance")
+                Segmented(Theme.entries, theme, { it.label }) { graph.appearance.set(it) }
+
+                Section("Data")
+                Card {
+                    Action("Remove all data from this device", t.danger, enabled = !busy) {
+                        confirm = Confirm.RemoveAll
+                    }
+                }
+                Text(
+                    "Deletes every note on this phone and signs you out. Notes on the server aren't touched.",
+                    style = Type.small,
+                    color = t.ink3,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                )
+
+                Section("About")
+                Card {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BrandMark(24.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Notes", style = Type.title, color = t.ink, modifier = Modifier.weight(1f))
+                        Text(
+                            "Version ${BuildConfig.VERSION_NAME}",
+                            style = Type.mono.copy(fontSize = 12.sp),
+                            color = t.ink3
+                        )
+                    }
                 }
             }
         }
-
-        Section("Data")
-        Action("Remove all data from this device", t.danger, enabled = !busy) { confirm = Confirm.RemoveAll }
-
-        Section("About")
-        Line("Version", BuildConfig.VERSION_NAME)
     }
 
     when (val c = confirm) {
@@ -163,46 +206,102 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onConnect: () -> Unit, o
 }
 
 @Composable
-private fun ConfirmDialog(
-    title: String,
-    text: String,
-    action: String,
-    danger: Boolean = false,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit
-) {
+private fun BackLink(onClick: () -> Unit) {
     val t = LocalTokens.current
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(text) },
-        confirmButton = {
-            TextButton(onClick = {
-                onDismiss()
-                onConfirm()
-            }) { Text(action, color = if (danger) t.danger else t.link) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier
+            .heightIn(min = 48.dp)
+            .pressScale(interaction, 0.94f)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(interaction, ripple(), role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "Back" }
+            .padding(start = 6.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Back, null, Modifier.size(22.dp), tint = t.tint)
+        Text("Notes", style = Type.body.copy(fontSize = 16.sp), color = t.tint)
+    }
 }
 
 @Composable
 private fun Section(label: String) {
-    Text(
-        label,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = LocalTokens.current.ink3,
-        modifier = Modifier.padding(start = 20.dp, top = 24.dp, bottom = 4.dp).semantics { heading() }
+    Kicker(label, Modifier.padding(start = 8.dp, top = 24.dp, bottom = 8.dp).semantics { heading() })
+}
+
+/** A rounded group on the chip colour, like the web's settings sheet. */
+@Composable
+private fun Card(content: @Composable ColumnScope.() -> Unit) {
+    val t = LocalTokens.current
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(t.chip)
+            .border(1.dp, t.edge, shape),
+        content = content
     )
 }
 
 @Composable
-private fun Line(label: String, value: String) {
+private fun Divider() {
+    Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(LocalTokens.current.hair))
+}
+
+/** The signed-in user: their initial on the accent square, name, and server. */
+@Composable
+private fun Who(username: String, server: String, note: String?) {
     val t = LocalTokens.current
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
-        Text(label, color = t.ink, fontSize = 16.sp)
-        Text(value, color = t.ink2, fontSize = 14.sp)
+    Row(
+        Modifier.fillMaxWidth().padding(16.dp).semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(t.accent),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                username.trim().take(1).uppercase(),
+                style = Type.title.copy(fontSize = 22.sp, lineHeight = 22.sp),
+                color = t.onAccent
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(username, style = Type.rowTitle, color = t.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (note != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        note,
+                        style = Type.label.copy(fontSize = 12.sp),
+                        color = t.warnInk,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(t.warnBg)
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            Text(
+                server.toHttpUrlOrNull()?.let { it.host + if (it.port != 80 && it.port != 443) ":${it.port}" else "" }
+                    ?: server,
+                style = Type.mono.copy(fontSize = 12.5.sp),
+                color = t.ink3,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun Info(label: String, value: String) {
+    val t = LocalTokens.current
+    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Text(label, style = Type.rowTitle, color = t.ink)
+        Text(value, style = Type.rowMeta, color = t.ink2)
     }
 }
 
@@ -210,12 +309,67 @@ private fun Line(label: String, value: String) {
 private fun Action(label: String, color: Color, enabled: Boolean, onClick: () -> Unit) {
     Text(
         label,
+        style = Type.body.copy(fontSize = 16.sp, fontWeight = FontWeight.Medium),
         color = if (enabled) color else LocalTokens.current.ink3,
-        fontSize = 16.sp,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = 56.dp)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp)
+            .padding(horizontal = 16.dp, vertical = 17.dp)
     )
+}
+
+/** A segmented control whose highlight slides to the chosen option. */
+@Composable
+private fun <T> Segmented(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
+    val t = LocalTokens.current
+    val reduce = LocalReduceMotion.current
+    BoxWithConstraints(
+        Modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(t.hover)
+    ) {
+        val segment = maxWidth / options.size
+        val x by animateDpAsState(
+            segment * options.indexOf(selected),
+            if (reduce) spring(stiffness = 100_000f) else spring(dampingRatio = 0.8f, stiffness = 600f),
+            label = "segment"
+        )
+        Box(
+            Modifier
+                .offset { IntOffset(x.roundToPx(), 0) }
+                .width(segment)
+                .fillMaxHeight()
+                .padding(3.dp)
+                .clip(RoundedCornerShape(11.dp))
+                .background(t.bg)
+                .border(1.dp, t.edge, RoundedCornerShape(11.dp))
+        )
+        Row(Modifier.fillMaxSize().selectableGroup()) {
+            for (option in options) {
+                val on = option == selected
+                val color by animateColorAsState(if (on) t.ink else t.ink2, label = "segColor")
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .selectable(on, role = Role.RadioButton, interactionSource = null, indication = null) {
+                            onSelect(option)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label(option),
+                        style = Type.label.copy(
+                            fontSize = 14.sp,
+                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium
+                        ),
+                        color = color
+                    )
+                }
+            }
+        }
+    }
 }

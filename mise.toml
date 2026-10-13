@@ -79,6 +79,11 @@ run = "./gradlew :core:test :app:testDebugUnitTest"
 dir = "apps/android"
 run = "./gradlew ktlintCheck :app:lintDebug"
 
+[tasks."screenshots:android"]
+description = "Render every Android screen to apps/android/app/build/screenshots for design review"
+dir = "apps/android"
+run = "./gradlew :app:testDebugUnitTest --tests notes.app.ScreenshotTest -Pnotes.screenshots --rerun"
+
 [tasks."build:android"]
 description = "Debug APK in apps/android/app/build/outputs/apk/debug"
 dir = "apps/android"

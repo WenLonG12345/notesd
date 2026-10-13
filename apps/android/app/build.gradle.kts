@@ -69,6 +69,13 @@ android {
             it.systemProperty("java.library.path", hostSqliteNatives.get().destinationDir.absolutePath)
             // Fixtures shared with the web app and the server.
             it.systemProperty("notes.sharedDir", rootProject.file("../../shared").absolutePath)
+            // -Pnotes.screenshots renders every screen to build/screenshots for review (mise run screenshots:android).
+            val screenshots = providers.gradleProperty("notes.screenshots").isPresent
+            it.systemProperty("roborazzi.test.record", screenshots.toString())
+            it.systemProperty(
+                "notes.screenshotsDir",
+                layout.buildDirectory.dir("screenshots").get().asFile.absolutePath
+            )
             // Robolectric reaches into JDK internals (FileDescriptor, SharedSecrets) that are closed by default.
             it.jvmArgs(
                 "--add-opens=java.base/java.io=ALL-UNNAMED",
@@ -108,6 +115,12 @@ dependencies {
     implementation(libs.navigation3.ui)
     implementation(libs.coroutines.android)
     implementation(libs.serialization.json)
+    implementation(libs.haze)
+    implementation(libs.haze.blur)
+    implementation(libs.adaptive)
+    implementation(libs.adaptive.layout)
+    implementation(libs.adaptive.navigation3)
+    implementation(libs.splashscreen)
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 
@@ -121,4 +134,6 @@ dependencies {
     hostSqlite(libs.sqlite.bundled.jvm)
     testImplementation(libs.androidx.test.junit)
     testImplementation(libs.androidx.test.core)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
 }

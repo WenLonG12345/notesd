@@ -176,12 +176,16 @@ class BlockSpan(val path: List<Container>, val leaf: Leaf, val marker: Marker?, 
     }
 }
 
-/** Type size, weight and colour for a block, plus the space around headings. */
-class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, private val style: EditorStyle) :
+/**
+ * Type size, face and colour for a block, plus the space around headings.
+ * [quoted] text inside a quote is italic serif, as on the web.
+ */
+class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, val quoted: Boolean, private val style: EditorStyle) :
     MetricAffectingSpan(),
     LineHeightSpan,
     EditorSpan {
-    fun sameAs(leaf: Leaf, dim: Boolean) = this.leaf == leaf && this.dim == dim
+    fun sameAs(leaf: Leaf, dim: Boolean, quoted: Boolean) =
+        this.leaf == leaf && this.dim == dim && this.quoted == quoted
 
     override fun updateMeasureState(tp: TextPaint) = apply(tp)
 
@@ -190,6 +194,7 @@ class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, private val style: EditorS
         when {
             leaf is Leaf.Raw -> tp.color = style.ink2
             dim -> tp.color = style.ink3
+            quoted && leaf == Leaf.Paragraph -> tp.color = style.ink2
         }
     }
 
@@ -197,12 +202,13 @@ class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, private val style: EditorS
         when (leaf) {
             Leaf.Title -> {
                 tp.textSize *= style.titleScale
-                tp.typeface = style.semibold
+                tp.typeface = style.serif
+                tp.letterSpacing = -0.015f
             }
 
             is Leaf.Heading -> {
                 tp.textSize *= style.headingScale[leaf.level - 1]
-                tp.typeface = style.semibold
+                tp.typeface = if (leaf.level < 3) style.serif else style.semibold
             }
 
             is Leaf.Raw -> {
@@ -210,7 +216,10 @@ class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, private val style: EditorS
                 tp.typeface = style.monospace
             }
 
-            Leaf.Paragraph -> Unit
+            Leaf.Paragraph -> if (quoted) {
+                tp.textSize *= style.quoteScale
+                tp.typeface = style.serifItalic
+            }
         }
     }
 
@@ -225,12 +234,12 @@ class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, private val style: EditorS
         val spanned = text as? Spanned ?: return
         val height = fm.descent - fm.ascent
         val above = when (leaf) {
-            is Leaf.Heading -> height * 0.45f
+            is Leaf.Heading -> height * 0.3f
             is Leaf.Raw -> height * 0.3f
             else -> 0f
         }.toInt()
         val below = when (leaf) {
-            Leaf.Title -> height * 0.3f
+            Leaf.Title -> height * 0.05f
             is Leaf.Raw -> height * 0.3f
             else -> 0f
         }.toInt()

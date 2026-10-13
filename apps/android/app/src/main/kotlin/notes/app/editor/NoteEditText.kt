@@ -1,6 +1,7 @@
 package notes.app.editor
 
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -104,6 +105,13 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
         setLinkTextColor(editorStyle.link)
         highlightColor = ColorUtils.setAlphaComponent(editorStyle.accent, 0x66)
         typeface = editorStyle.typeface
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // The web app's caret is the tint colour; handles match it.
+            textCursorDrawable?.mutate()?.setTint(editorStyle.tint)
+            for (handle in listOf(textSelectHandle, textSelectHandleLeft, textSelectHandleRight)) {
+                handle?.mutate()?.setTint(editorStyle.accentDeep)
+            }
+        }
         filters = arrayOf(EditorFilter())
         addTextChangedListener(Watcher())
         ready = true

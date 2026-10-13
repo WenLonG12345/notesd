@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="paper">#FBF8F3</color>
-    <color name="accent">#C27A1A</color>
+    <!-- Mirrors ui/Tokens.kt for what's drawn before Compose: window, splash, launcher icon. -->
+    <color name="paper">#F6F3EE</color>
+    <color name="accent">#EFB146</color>
+    <color name="accent_deep">#DD9314</color>
+    <color name="icon_background">#F6F3EE</color>
 </resources>

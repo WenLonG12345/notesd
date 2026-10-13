@@ -1,0 +1,136 @@
+package notes.app
+
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
+import notes.core.api.RemoteNote
+import notes.core.api.SyncPage
+import org.junit.After
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+
+/**
+ * Walks each screen's accessibility tree: everything tappable has something
+ * for TalkBack to say, and a target of at least 48dp.
+ */
+@OptIn(ExperimentalTestApi::class)
+@RunWith(AndroidJUnit4::class)
+@Config(application = TestNotesApp::class, qualifiers = "w411dp-h891dp-xxhdpi")
+class AccessibilityTest {
+    @get:Rule
+    val compose = createEmptyComposeRule()
+
+    private val graph = ApplicationProvider.getApplicationContext<NotesApp>().graph
+    private var scenario: ActivityScenario<MainActivity>? = null
+
+    @After
+    fun tearDown() {
+        scenario?.close()
+        graph.database.close()
+    }
+
+    private fun launch() {
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitForIdle()
+    }
+
+    private fun audit(screen: String) {
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        val density = ApplicationProvider.getApplicationContext<NotesApp>().resources.displayMetrics.density
+        val problems = mutableListOf<String>()
+        var controls = 0
+        fun visit(node: SemanticsNode) {
+            val config = node.config
+            if (config.getOrNull(SemanticsActions.OnClick) != null) {
+                controls++
+                val text = config.getOrNull(SemanticsProperties.Text)?.joinToString { it.text }.orEmpty()
+                val description = config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString().orEmpty()
+                val name = (description + text).ifBlank { null }
+                if (name == null) problems += "unlabelled control at ${node.boundsInRoot}"
+                val w = node.touchBoundsInRoot.width / density
+                val h = node.touchBoundsInRoot.height / density
+                // Rows of text inside a larger target (a sheet item's label) report their own bounds; the
+                // platform also extends small targets to 48dp, so allow a hair under.
+                if (w < 47.5f || h < 47.5f) problems += "“$name” is ${w.toInt()}×${h.toInt()}dp"
+            }
+            node.children.forEach(::visit)
+        }
+        visit(compose.onRoot().fetchSemanticsNode())
+        println("$screen: $controls controls")
+        assertTrue(controls >= 3, "$screen: the audit found only $controls controls")
+        assertTrue(problems.isEmpty(), "$screen:\n" + problems.joinToString("\n"))
+    }
+
+    private fun seed() = runBlocking {
+        val now = System.currentTimeMillis()
+        graph.sync.store.applyPage(
+            SyncPage(
+                listOf(
+                    RemoteNote("a", "Groceries", "- Oat milk\n", 1, 1, now, now),
+                    RemoteNote("b", "Trip", "> Lisbon\n\n- [ ] Book\n", 2, 2, now, now)
+                ),
+                2,
+                false,
+                "g"
+            )
+        )
+    }
+
+    @Test
+    fun onboarding() {
+        launch()
+        audit("onboarding")
+    }
+
+    @Test
+    fun list() {
+        graph.setOnboardingDismissed(true)
+        seed()
+        launch()
+        compose.waitUntilExactlyOneExists(hasText("Groceries"))
+        audit("list")
+    }
+
+    @Test
+    fun emptyList() {
+        graph.setOnboardingDismissed(true)
+        launch()
+        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
+        audit("empty list")
+    }
+
+    @Test
+    fun editor() {
+        graph.setOnboardingDismissed(true)
+        seed()
+        launch()
+        compose.waitUntilExactlyOneExists(hasText("Trip"))
+        compose.onNode(hasText("Trip")).performClick()
+        compose.waitUntilExactlyOneExists(hasContentDescription("Undo"))
+        audit("editor")
+    }
+
+    @Test
+    fun settings() {
+        graph.setOnboardingDismissed(true)
+        launch()
+        compose.onNode(hasContentDescription("Settings")).performClick()
+        compose.waitUntilExactlyOneExists(hasText("Settings"))
+        audit("settings")
+    }
+}

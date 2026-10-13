@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The brand mark (web: .mark): an amber rounded square on a darker bottom edge. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#C27A1A"
-        android:pathData="M38,34h32v4h-32zM38,46h32v4h-32zM38,58h22v4h-22z" />
+        android:fillColor="@color/accent_deep"
+        android:pathData="M45,32h18a13,13 0,0 1,13 13v18a13,13 0,0 1,-13 13h-18a13,13 0,0 1,-13 -13v-18a13,13 0,0 1,13 -13z" />
+    <path
+        android:fillColor="@color/accent"
+        android:pathData="M45,32h18a13,13 0,0 1,13 13v13.9a8,8 0,0 1,-8 8h-28a8,8 0,0 1,-8 -8v-13.9a13,13 0,0 1,13 -13z" />
 </vector>

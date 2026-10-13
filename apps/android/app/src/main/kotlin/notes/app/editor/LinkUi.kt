@@ -1,87 +1,78 @@
 package notes.app.editor
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import notes.app.ui.ButtonKind
+import notes.app.ui.Icons
+import notes.app.ui.NotesButton
+import notes.app.ui.NotesDialog
+import notes.app.ui.NotesField
+import notes.app.ui.Sheet
+import notes.app.ui.SheetItem
 
 /** Adds or edits a link. [text] is the selected text; empty means a new linked label is inserted. */
 @Composable
 fun LinkDialog(text: String, href: String?, onDismiss: () -> Unit, onSave: (href: String, label: String) -> Unit) {
     var url by remember { mutableStateOf(href.orEmpty()) }
     var label by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (href == null) "Add link" else "Edit link") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = url,
-                    onValueChange = { url = it },
-                    label = { Text("Address") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    modifier = Modifier.fillMaxWidth()
+    val askLabel = text.isEmpty() && href == null
+    NotesDialog(onDismiss, if (href == null) "Add link" else "Edit link") {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            NotesField(
+                url,
+                { url = it },
+                "Address",
+                placeholder = "https://",
+                mono = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Uri,
+                    autoCorrectEnabled = false,
+                    imeAction = if (askLabel) ImeAction.Next else ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = { if (url.isNotBlank()) onSave(url, label) })
+            )
+            if (askLabel) {
+                NotesField(
+                    label,
+                    { label = it },
+                    "Text",
+                    hint = "Optional. The address is shown if left empty.",
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (url.isNotBlank()) onSave(url, label) })
                 )
-                if (text.isEmpty() && href == null) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = label,
-                        onValueChange = { label = it },
-                        label = { Text("Text (optional)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(url, label) }, enabled = url.isNotBlank()) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
-/** What a tap on a link offers. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun LinkSheet(tap: LinkTap, onDismiss: () -> Unit, onOpen: () -> Unit, onEdit: () -> Unit, onRemove: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.navigationBarsPadding().padding(bottom = 8.dp)) {
-            Text(tap.href, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp), maxLines = 2)
-            SheetAction("Open link", onOpen)
-            SheetAction("Edit link", onEdit)
-            SheetAction("Remove link", onRemove)
+        }
+        Spacer(Modifier.height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            NotesButton("Cancel", onDismiss, Modifier.weight(1f), kind = ButtonKind.Chip)
+            NotesButton("Save", { onSave(url, label) }, Modifier.weight(1f), enabled = url.isNotBlank())
         }
     }
 }
 
+/** What a tap on a link offers. */
 @Composable
-private fun SheetAction(label: String, onClick: () -> Unit) {
-    ListItem(
-        headlineContent = { Text(label) },
-        modifier = Modifier.clickable(onClick = onClick).semantics { role = Role.Button }
-    )
+fun LinkSheet(tap: LinkTap, onDismiss: () -> Unit, onOpen: () -> Unit, onEdit: () -> Unit, onRemove: () -> Unit) {
+    Sheet(onDismiss, title = tap.href) {
+        Column(Modifier.fillMaxWidth()) {
+            SheetItem(Icons.OpenExternal, "Open link", onOpen)
+            SheetItem(Icons.Edit, "Edit link", onEdit)
+            SheetItem(Icons.Close, "Remove link", onRemove, danger = true)
+        }
+    }
 }

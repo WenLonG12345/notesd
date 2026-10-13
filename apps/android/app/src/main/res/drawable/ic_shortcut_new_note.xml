@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The compose icon (ui/Icons.kt) on an amber disc, for the launcher's long-press menu. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="@color/accent"
+        android:pathData="M24,0a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z" />
+    <group
+        android:scaleX="1.25"
+        android:scaleY="1.25"
+        android:translateX="14"
+        android:translateY="14">
+        <path
+            android:pathData="M13,9v4.5H2.5V3H7"
+            android:strokeWidth="1.4"
+            android:strokeColor="#1F1915"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M11.5,1.8l2.7,2.7L8.5,10.2 5.6,10.5l0.3,-2.9z"
+            android:strokeWidth="1.4"
+            android:strokeColor="#1F1915"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

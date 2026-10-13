@@ -86,7 +86,7 @@ Every client reaches the server over HTTPS/JSON; the Go binary also serves the w
 | --- | --- |
 | Backend | Go, `net/http`, SQLite (WAL) + FTS5, JSON over HTTPS, structured logging, web assets via `embed`, systemd or equivalent |
 | iOS | Swift, SwiftUI, `UITextView`/TextKit editor via `UIViewRepresentable`, SQLite + FTS5, URLSession, iOS background tasks |
-| Android | Kotlin, Jetpack Compose, `EditText`/`Spannable` editor via `AndroidView`, SQLite + FTS5, Kotlin HTTP client, WorkManager |
+| Android | Kotlin, Jetpack Compose with Navigation 3 (list and note side by side from 600dp, split around a foldable's hinge), `EditText`/`Spannable` editor via `AndroidView`, bundled SQLite + FTS5 (`androidx.sqlite`), OkHttp, WorkManager |
 | Web | TypeScript, React, Tiptap/ProseMirror, Vite, lightweight CSS; Node.js only for building |
 
 Native apps use platform controls for selection, keyboard, context menus and formatting. Pick the server's SQLite driver for portability, transaction behaviour and build simplicity, and avoid unnecessary frameworks.
@@ -147,20 +147,25 @@ V1 retains operation records indefinitely; expiring them needs an explicit proto
 
 ### 4.3 Mobile schema
 
+As built on Android (`apps/android/core/src/main/resources/migrations`); iOS follows the same shape.
+
 ```sql
 CREATE TABLE notes (
-    id                TEXT PRIMARY KEY,
+    seq               INTEGER PRIMARY KEY, -- stable rowid, keys notes_fts
+    id                TEXT NOT NULL UNIQUE,
     title             TEXT NOT NULL DEFAULT '',
     content           TEXT NOT NULL DEFAULT '',
     created_at        INTEGER NOT NULL,
     updated_at        INTEGER NOT NULL,
     deleted_at        INTEGER,
+    conflict_of       TEXT,             -- the note a conflicted copy was split from
     server_revision   INTEGER,          -- revision local edits are based on; NULL for new offline notes
     server_change_seq INTEGER,
     dirty             INTEGER NOT NULL DEFAULT 0,  -- unsynced changes pending
     base_title        TEXT,             -- last synced version, kept while edits are pending
     base_content      TEXT,
-    base_deleted_at   INTEGER
+    base_deleted_at   INTEGER,
+    full_sync_seen    INTEGER NOT NULL DEFAULT 0  -- reached by the current full reconciliation
 );
 
 CREATE TABLE sync_outbox (
@@ -169,7 +174,16 @@ CREATE TABLE sync_outbox (
     operation_type TEXT NOT NULL,
     base_revision  INTEGER,
     payload_json   TEXT NOT NULL,
-    created_at     INTEGER NOT NULL
+    created_at     INTEGER NOT NULL,
+    sent           INTEGER NOT NULL DEFAULT 0  -- frozen once sent
+);
+
+CREATE TABLE sync_state (               -- one row
+    cursor       INTEGER NOT NULL DEFAULT 0,
+    generation   TEXT,                  -- NULL before the first sync
+    full_sync    INTEGER NOT NULL DEFAULT 0, -- a full reconciliation is in progress (§11.4)
+    last_sync_at INTEGER,
+    last_error   TEXT
 );
 ```
 
@@ -177,7 +191,7 @@ Outbox rules:
 
 - A local edit, its dirty flag and its outbox entry are written in one transaction.
 - Unsent operations for the same note may be coalesced into one update.
-- Once sent, an operation's ID and payload are frozen across retries. New edits queue as a separate operation until it is acknowledged.
+- Once sent, an operation's ID, payload and base revision are frozen across retries. New edits queue as a separate operation until it is acknowledged; it carries the base revision it had when it was first sent, never rewritten afterwards.
 
 ### 4.4 Search index
 
@@ -239,7 +253,9 @@ Cursor rules:
 
 ### 5.3 Edits during an upload
 
-An acknowledgment applies to the submitted operation only, never to the current local contents. If the user produces version B while version A is in flight, B stays pending after A is acknowledged, rebased on A's new revision. Uploads are serialized per note; different notes sync independently.
+An acknowledgment applies to the submitted operation only, never to the current local contents. If the user produces version B while version A is in flight, B stays pending after A is acknowledged, rebased on A's new revision, and A becomes the note's base (`base_title`, `base_content`), so a later merge doesn't mistake A's changes for a conflict. Uploads are serialized per note; different notes sync independently.
+
+An editor open on a note while sync changes it shows the change at once if nothing is being typed; otherwise its next save passes the stored version the typing grew from, and the store merges the two as in §6.1.
 
 ### 5.4 Initial sync
 
@@ -268,6 +284,8 @@ Title and content are merged independently by comparing base, local and server v
 
 When both sides changed the content differently, V1 does not merge text. The server version keeps the original note; the local version becomes a new note titled `<Title> (Conflicted copy)` with a new UUID and optional `conflictOf: <original id>` metadata. It then behaves like any other note.
 
+The native apps make the copy automatically and say so (a notice, and a banner on the copy linking to the original), since sync runs in the background with no one to ask. The web app saves interactively and asks the user instead.
+
 Three-way Markdown merging is deferred: it must handle formatting syntax, lists, links and document structure.
 
 ### 6.3 Crash-safe conflict handling
@@ -282,7 +300,7 @@ Deletion keeps a tombstone (ID, revision, change sequence, deletion timestamp) i
 | --- | --- |
 | Deleted elsewhere, local copy unmodified | Client marks it deleted; the old copy is never re-uploaded |
 | Deleted elsewhere, edited offline | Server rejects the edit and the tombstone stands; the edits become a new note titled `<Title> (Recovered copy)` |
-| Deleted offline, edited elsewhere | Server rejects the stale deletion; the newer note is kept and the deletion intent is recorded for the user to resolve |
+| Deleted offline, edited elsewhere | Server rejects the stale deletion; the newer note is kept and the deletion intent is recorded for the user to resolve (Android: the note reappears with a notice that it changed elsewhere) |
 
 ### 6.5 Trash (proposed)
 
@@ -453,6 +471,8 @@ Client replicas are not a backup. `notes-server backup /path/to/backup.db` uses 
 
 Restoring an older backup leaves clients with newer revisions and cursors than the server. The server therefore keeps a persistent **sync generation ID**, which clients store with their cursor. When it changes, clients run a full reconciliation instead of incremental sync, preserving unsynced edits and never treating missing notes as deleted. Status: the generation exists in `sync_state`, is returned on every sync page and is checked when sent back; changing it on restore (and the `backup` command itself) is still to be built and tested before backup restoration is called reliable.
 
+On Android, full reconciliation re-downloads every note and compares text rather than revisions: a note whose text matches is adopted at the server's revision; one the server lost or holds an older text of is re-sent; one the server no longer has is re-created. Progress is stored (`full_sync`, `full_sync_seen`), so it survives the app being killed halfway. One gap remains until the server marks restores: a note edited on the restored server whose revision is still below the device's is overwritten by the device's re-upload.
+
 ### 11.5 Health monitoring
 
 `/healthz` confirms the process is running and `/readyz` that the database is reachable. Neither exposes application data; both work with systemd, Gatus, Uptime Kuma and similar tools.
@@ -506,7 +526,7 @@ notes/
 ├── server/           cmd/notes-server, internal/{api,auth,database,notes,sync,search,web}, migrations, go.mod
 ├── apps/
 │   ├── ios/          App, Editor, Database, Search, Sync
-│   ├── android/      app, editor, database, search, sync
+│   ├── android/      core/ (document model, Markdown codec, database, search, API client, sync; plain Kotlin), app/ (Compose UI, editor, accounts, WorkManager)
 │   └── web/          src/{api,auth,notes,editor,settings,ui,styles}, test/, package.json
 ├── shared/           markdown-fixtures (plaintext, roundtrip), sync-fixtures, api
 ├── design-system/    the visual prototype the web app follows

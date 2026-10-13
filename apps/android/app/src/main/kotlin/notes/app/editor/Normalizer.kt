@@ -259,13 +259,14 @@ class Normalizer(private val style: EditorStyle) {
         ranges.forEachIndexed { k, r ->
             val info = infos[k]
             val dim = info.path.any { it is Container.Item && it.kind == ListKind.Task && it.checked }
+            val quoted = info.path.any { it is Container.Quote }
             val reuse = byStart[r.start]?.firstOrNull {
-                it !in keep && it.sameAs(info.leaf, dim) && text.getSpanEnd(it) == r.end
+                it !in keep && it.sameAs(info.leaf, dim, quoted) && text.getSpanEnd(it) == r.end
             }
             if (reuse != null) {
                 keep += reuse
             } else {
-                val span = LeafStyleSpan(info.leaf, dim, style)
+                val span = LeafStyleSpan(info.leaf, dim, quoted, style)
                 text.setSpan(span, r.start, r.end, Spanned.SPAN_INCLUSIVE_EXCLUSIVE)
                 keep += span
             }

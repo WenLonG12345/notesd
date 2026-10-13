@@ -6,6 +6,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -60,7 +61,7 @@ class OnboardingFlowTest {
             """"accessToken":"a","accessExpiresAt":${System.currentTimeMillis() + 3_600_000},"refreshToken":"r"}"""
     )
 
-    private fun button(label: String) = compose.onNode(hasText(label) and hasClickAction())
+    private fun button(label: String) = compose.onNode(hasText(label) and hasClickAction()).performScrollTo()
 
     private fun enterServer() {
         compose.waitUntilExactlyOneExists(hasText("Connect to your server"))
@@ -72,8 +73,8 @@ class OnboardingFlowTest {
     fun `first run can skip straight to the notes`() {
         launch()
         compose.waitUntilExactlyOneExists(hasText("Use without a server"))
-        compose.onNodeWithText("Use without a server").performClick()
-        compose.waitUntilExactlyOneExists(hasText("No notes yet", substring = true))
+        compose.onNodeWithText("Use without a server").performScrollTo().performClick()
+        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
         assertEquals(true, graph.onboardingDismissed.value)
     }
 
@@ -91,7 +92,7 @@ class OnboardingFlowTest {
         button("Sign in").performClick()
         compose.waitUntilExactlyOneExists(hasText("Wrong username or password."))
         button("Sign in").performClick()
-        compose.waitUntilExactlyOneExists(hasText("No notes yet", substring = true))
+        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
         assertEquals(Account.SignedIn(server.url("/").toString(), "me"), graph.accounts.account.value)
     }
 
@@ -116,7 +117,7 @@ class OnboardingFlowTest {
         compose.onNodeWithText("Confirm password").performTextInput("long enough")
         compose.onNodeWithText("Password").performTextInput("long enough")
         button("Create account").performClick()
-        compose.waitUntilExactlyOneExists(hasText("No notes yet", substring = true))
+        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
         assertEquals(Account.SignedIn(server.url("/").toString(), "me"), graph.accounts.account.value)
     }
 

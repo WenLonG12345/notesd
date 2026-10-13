@@ -3,27 +3,38 @@ package notes.app.notes
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -34,11 +45,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -59,16 +72,42 @@ import notes.app.editor.LinkTap
 import notes.app.editor.NoteEditText
 import notes.app.editor.SAMPLE_MARKDOWN
 import notes.app.editor.SAMPLE_TITLE
+import notes.app.ui.Banner
+import notes.app.ui.BannerKind
+import notes.app.ui.IconAction
+import notes.app.ui.Icons
 import notes.app.ui.LocalTokens
+import notes.app.ui.NotesButton
+import notes.app.ui.NotesDialog
+import notes.app.ui.Reveal
+import notes.app.ui.Sheet
+import notes.app.ui.SheetItem
+import notes.app.ui.StatusPill
+import notes.app.ui.Type
+import notes.app.ui.hairline
+import notes.app.ui.pressScale
 import notes.app.ui.windowInsetsController
 import notes.core.doc.Document
 import notes.core.markdown.Markdown
 
 private const val SAVE_DELAY_MS = 700L
 
-/** A note, full screen. Saves locally shortly after typing stops, and at once on leaving or backgrounding. */
+/**
+ * A note. Saves locally shortly after typing stops, and at once on leaving or
+ * backgrounding. [showBack] is false beside the list (two panes), where
+ * there's nothing to go back to. [connected]: a server exists, so "Saved"
+ * means "not yet synced".
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit, onOpen: (String) -> Unit) {
+fun EditorScreen(
+    vm: EditorViewModel,
+    onBack: () -> Unit,
+    onDelete: () -> Unit,
+    onOpen: (String) -> Unit,
+    showBack: Boolean = true,
+    connected: Boolean = true
+) {
     val context = LocalContext.current
     val t = LocalTokens.current
     val loaded by vm.document.collectAsStateWithLifecycle()
@@ -78,6 +117,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit, 
     var editor by remember { mutableStateOf<NoteEditText?>(null) }
     var state by remember { mutableStateOf(FormatState()) }
     var edits by remember { mutableIntStateOf(0) }
+    var scrolled by remember { mutableStateOf(false) }
     var linkTap by remember { mutableStateOf<LinkTap?>(null) }
     var linkDialog by remember { mutableStateOf<Pair<String, String?>?>(null) }
     var markdown by remember { mutableStateOf<String?>(null) }
@@ -104,82 +144,58 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit, 
         }
     }
 
-    Column(Modifier.fillMaxSize().background(t.bg).safeDrawingPadding().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            GlyphButton("←", "Back", t.ink, onClick = onBack)
-            GlyphButton("↶", "Undo", if (state.canUndo) t.ink else t.ink3, enabled = state.canUndo) { editor?.undo() }
-            GlyphButton("↷", "Redo", if (state.canRedo) t.ink else t.ink3, enabled = state.canRedo) { editor?.redo() }
-            Spacer(Modifier.weight(1f))
-            if (status != SaveStatus.Blank) {
-                val (word, color) = when (status) {
-                    SaveStatus.Synced -> "Synced" to t.statusSaved
-                    SaveStatus.Saved -> "Saved" to t.statusSaving
-                    else -> "Editing" to t.statusUnsaved
-                }
-                Box(Modifier.size(7.dp).background(color, CircleShape))
-                Text(
-                    word,
-                    fontSize = 13.sp,
-                    color = t.ink2,
-                    modifier = Modifier.padding(start = 6.dp, end = 4.dp)
-                )
-            }
-            Box {
-                GlyphButton("⋯", "More", t.ink) { menu = true }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Share") }, onClick = {
-                        menu = false
-                        editor?.document()?.let { share(context, it) }
-                    })
-                    // A blank new note has nothing to delete: leaving discards it.
-                    if (status != SaveStatus.Blank) {
-                        DropdownMenuItem(text = { Text("Delete note", color = t.danger) }, onClick = {
-                            menu = false
-                            save()
-                            onDelete()
-                        })
+    val typing = WindowInsets.isImeVisible
+    Column(Modifier.fillMaxSize().background(t.bg).statusBarsPadding().imePadding()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .then(if (scrolled) Modifier.hairline(t.hair) else Modifier)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (showBack) BackLink(onBack) else Spacer(Modifier.width(12.dp))
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                if (status != SaveStatus.Blank) {
+                    val (word, dot, ink) = when (status) {
+                        SaveStatus.Synced -> Triple("Synced", t.statusSaved, t.statusSavedInk)
+
+                        SaveStatus.Saved -> if (connected) {
+                            Triple("Saved", t.statusSaving, t.statusSavingInk)
+                        } else {
+                            Triple("Saved", t.statusSaved, t.statusSavedInk)
+                        }
+
+                        else -> Triple("Editing", t.statusUnsaved, t.statusUnsavedInk)
                     }
-                    if (BuildConfig.DEBUG) {
-                        DropdownMenuItem(text = { Text("Show Markdown") }, onClick = {
-                            menu = false
-                            markdown = editor?.document()?.let(::exportMarkdown)
-                        })
-                        DropdownMenuItem(text = { Text("Load sample note") }, onClick = {
-                            menu = false
-                            editor?.setDocument(Document.forNote(SAMPLE_TITLE, Markdown.parse(SAMPLE_MARKDOWN)))
-                            vm.edited()
-                            edits++
-                        })
+                    AnimatedContent(word, transitionSpec = {
+                        fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+                    }, label = "status") {
+                        StatusPill(it, dot, ink)
                     }
                 }
             }
+            IconAction(Icons.Undo, "Undo", { editor?.undo() }, enabled = state.canUndo)
+            IconAction(Icons.Redo, "Redo", { editor?.redo() }, enabled = state.canRedo)
+            IconAction(Icons.More, "More", { menu = true })
         }
         original?.let { o ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                    .background(t.hover, RoundedCornerShape(12.dp))
-                    .padding(start = 16.dp, end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "Kept from a conflict with “${o.title.ifBlank { "New note" }}”",
-                    fontSize = 14.sp,
-                    color = t.ink2,
-                    modifier = Modifier.weight(1f).padding(vertical = 10.dp)
-                )
-                TextButton(onClick = { onOpen(o.id) }) { Text("Open", color = t.link) }
-            }
+            Banner(
+                "Kept from a conflict with “${o.title.ifBlank { "New note" }}”",
+                BannerKind.Warn,
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                action = "Open",
+                onAction = { onOpen(o.id) }
+            )
         }
         val doc = loaded
         if (doc != null) {
             AndroidView(
                 factory = { ctx ->
                     NoteEditText(ctx).apply {
-                        val pad = editorStyle.dp(20f).toInt()
-                        setPadding(pad, editorStyle.dp(8f).toInt(), pad, pad)
-                        hint = "New note"
+                        val pad = editorStyle.dp(22f).toInt()
+                        setPadding(pad, editorStyle.dp(6f).toInt(), pad, editorStyle.dp(40f).toInt())
+                        hint = "Title"
                         setDocument(doc)
                         onChange = {
                             vm.edited()
@@ -187,6 +203,7 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit, 
                         }
                         onFormatState = { state = it }
                         onLinkTap = { linkTap = it }
+                        setOnScrollChangeListener { _, _, y, _, _ -> scrolled = y > 0 }
                         editor = this
                         // A new note opens ready to type the title. Focus alone doesn't raise the keyboard, and
                         // neither works before the view is attached.
@@ -203,7 +220,39 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit, 
                 onRelease = { editor = null },
                 modifier = Modifier.weight(1f).fillMaxWidth()
             )
-            FormattingBar(state, { editor }, onLink = { linkDialog = editor?.linkContext() })
+            Reveal(typing) {
+                FormattingBar(state, { editor }, onLink = { linkDialog = editor?.linkContext() })
+            }
+            if (!typing) Spacer(Modifier.navigationBarsPadding())
+        }
+    }
+
+    if (menu) {
+        Sheet(onDismiss = { menu = false }, title = editor?.document()?.title?.trim()?.ifEmpty { null } ?: "New note") {
+            SheetItem(Icons.Share, "Share", {
+                menu = false
+                editor?.document()?.let { share(context, it) }
+            })
+            if (BuildConfig.DEBUG) {
+                SheetItem(Icons.Edit, "Show Markdown", {
+                    menu = false
+                    markdown = editor?.document()?.let(::exportMarkdown)
+                })
+                SheetItem(Icons.Edit, "Load sample note", {
+                    menu = false
+                    editor?.setDocument(Document.forNote(SAMPLE_TITLE, Markdown.parse(SAMPLE_MARKDOWN)))
+                    vm.edited()
+                    edits++
+                })
+            }
+            // A blank new note has nothing to delete: leaving discards it.
+            if (status != SaveStatus.Blank) {
+                SheetItem(Icons.Trash, "Delete note", {
+                    menu = false
+                    save()
+                    onDelete()
+                }, danger = true)
+            }
         }
     }
 
@@ -233,25 +282,39 @@ fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit, 
         }
     }
     markdown?.let { md ->
-        AlertDialog(
-            onDismissRequest = { markdown = null },
-            confirmButton = { TextButton(onClick = { markdown = null }) { Text("Close") } },
-            text = {
-                Text(
-                    md,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    modifier = Modifier.verticalScroll(rememberScrollState())
-                )
-            }
-        )
+        NotesDialog(onDismiss = { markdown = null }, title = "Markdown") {
+            Text(
+                md,
+                style = Type.mono.copy(fontSize = 12.sp, lineHeight = 18.sp),
+                color = t.ink2,
+                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())
+            )
+            Spacer(Modifier.height(16.dp))
+            NotesButton("Close", { markdown = null }, Modifier.fillMaxWidth())
+        }
     }
 }
 
+/** The web's mobile back: a chevron and "Notes" in the tint colour. */
 @Composable
-private fun GlyphButton(glyph: String, label: String, color: Color, enabled: Boolean = true, onClick: () -> Unit) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.semantics { contentDescription = label }) {
-        Text(glyph, fontSize = 20.sp, color = color)
+private fun BackLink(onClick: () -> Unit) {
+    val t = LocalTokens.current
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier
+            .heightIn(min = 48.dp)
+            .pressScale(interaction, 0.94f)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(interaction, ripple(), role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "Back" }
+            .padding(start = 6.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Back, null, Modifier.size(22.dp), tint = t.tint)
+        // At very large text the word would crowd the status out of the bar; the chevron says enough.
+        if (LocalDensity.current.fontScale <= 1.3f) {
+            Text("Notes", style = Type.body.copy(fontSize = 16.sp), color = t.tint)
+        }
     }
 }
 

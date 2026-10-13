@@ -54,16 +54,16 @@ class MainActivityTest {
 
     @Test
     fun `a new note left blank leaves nothing behind`() {
-        compose.waitUntilExactlyOneExists(hasText("No notes yet", substring = true))
-        compose.onNodeWithText("New note").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
+        compose.onNodeWithContentDescription("New note").performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription("Back"))
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.waitUntilExactlyOneExists(hasText("No notes yet", substring = true))
+        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
     }
 
     @Test
     fun `typing saves the note and it appears in the list`() {
-        compose.onNodeWithText("New note").performClick()
+        compose.onNodeWithContentDescription("New note").performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription("Back"))
         val editor = editor()
         compose.waitForIdle()
@@ -100,8 +100,8 @@ class MainActivityTest {
         }
         compose.waitUntilExactlyOneExists(hasText("Groceries"))
         compose.onNodeWithText("Oat milk").assertExists()
-        compose.onNodeWithText("Search").performClick()
-        compose.onNodeWithText("Search").performTextInput("lisb")
+        compose.onNodeWithContentDescription("Search notes").performClick()
+        compose.onNodeWithContentDescription("Search notes").performTextInput("lisb")
         compose.waitUntilDoesNotExist(hasText("Groceries"))
         compose.onNodeWithText("Trip").assertExists()
     }

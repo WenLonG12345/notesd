@@ -1,9 +1,24 @@
 package notes.app.notes
 
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
+import androidx.compose.material3.adaptive.layout.calculatePaneScaffoldDirectiveWithTwoPanesOnMediumWidth
+import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
+import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -11,13 +26,18 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.scene.SinglePaneSceneStrategy
 import androidx.navigation3.ui.NavDisplay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.Serializable
 import notes.app.AppGraph
 import notes.app.account.Account
 import notes.app.account.OnboardingScreen
 import notes.app.account.OnboardingViewModel
 import notes.app.settings.SettingsScreen
+import notes.app.ui.EaseOut
+import notes.app.ui.LocalReduceMotion
 import notes.app.ui.hideKeyboard
 import notes.core.api.ApiClient
 import notes.core.text.Uuid7
@@ -36,8 +56,16 @@ data object SettingsKey : NavKey
 @Serializable
 data class OnboardingKey(val signInAgain: Boolean = false) : NavKey
 
+private const val MOTION_MS = 320
+
+/**
+ * The app's screens. From 600dp wide (tablets, an unfolded foldable) the list
+ * and the open note sit side by side, split around a folding hinge; narrower,
+ * one screen at a time.
+ */
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
-fun NotesNavigation(graph: AppGraph) {
+fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow()) {
     val start = remember {
         val firstRun = graph.accounts.account.value == Account.None && !graph.onboardingDismissed.value
         if (firstRun) OnboardingKey() else NotesKey
@@ -45,6 +73,12 @@ fun NotesNavigation(graph: AppGraph) {
     val backStack = rememberNavBackStack(start)
     val view = LocalView.current
     val account by graph.accounts.account.collectAsStateWithLifecycle()
+    val reduce = LocalReduceMotion.current
+
+    val directive = calculatePaneScaffoldDirectiveWithTwoPanesOnMediumWidth(currentWindowAdaptiveInfo())
+        .let { it.copy(horizontalPartitionSpacerSize = 0.dp, defaultPanePreferredWidth = 340.dp) }
+    val twoPane = directive.maxHorizontalPartitions > 1
+    val listDetail = rememberListDetailSceneStrategy<NavKey>(directive = directive)
 
     // The keyboard belongs to the window, not the screen being left: hide it as back starts, not after the
     // exit animation, or it hangs over the list.
@@ -59,6 +93,27 @@ fun NotesNavigation(graph: AppGraph) {
         backStack.add(NotesKey)
         while (backStack.size > 1) backStack.removeAt(0)
     }
+
+    /** From the list: beside it, the open note is swapped rather than stacked. */
+    fun open(id: String) {
+        if (backStack.lastOrNull() is EditorKey) {
+            if ((backStack.last() as EditorKey).id == id) return
+            view.hideKeyboard()
+            backStack[backStack.lastIndex] = EditorKey(id)
+        } else {
+            backStack += EditorKey(id)
+        }
+    }
+
+    LaunchedEffect(newNote) {
+        newNote.collect {
+            // From the launcher: a fresh note over the list, whatever was open.
+            home()
+            open(Uuid7.generate())
+        }
+    }
+
+    val ms = if (reduce) 0 else MOTION_MS
     NavDisplay(
         backStack = backStack,
         onBack = { pop() },
@@ -66,20 +121,46 @@ fun NotesNavigation(graph: AppGraph) {
             rememberSaveableStateHolderNavEntryDecorator(),
             rememberViewModelStoreNavEntryDecorator()
         ),
+        sceneStrategies = listOf(listDetail, SinglePaneSceneStrategy()),
+        // Forward: the new screen slides in a quarter-width and fades up; the old one drifts back.
+        transitionSpec = {
+            ContentTransform(
+                slideInHorizontally(tween(ms, easing = EaseOut)) { it / 4 } + fadeIn(tween(ms / 2)),
+                slideOutHorizontally(tween(ms, easing = EaseOut)) { -it / 10 } + fadeOut(tween(ms))
+            )
+        },
+        popTransitionSpec = {
+            slideInHorizontally(tween(ms, easing = EaseOut)) { -it / 10 } + fadeIn(tween(ms)) togetherWith
+                slideOutHorizontally(tween(ms, easing = EaseOut)) { it / 4 } + fadeOut(tween(ms / 2))
+        },
+        // The back gesture shrinks the screen toward the edge it came from, revealing the one beneath.
+        predictivePopTransitionSpec = {
+            slideInHorizontally(tween(ms)) { -it / 10 } + fadeIn(tween(ms)) togetherWith
+                scaleOut(tween(ms), targetScale = 0.9f) + fadeOut(tween(ms))
+        },
         entryProvider = entryProvider {
-            entry<NotesKey> {
+            entry<NotesKey>(
+                metadata = ListDetailSceneStrategy.listPane(detailPlaceholder = {
+                    NothingOpen(hasNotes = true, onNew = { open(Uuid7.generate()) })
+                })
+            ) {
                 NotesListScreen(
                     vm = viewModel { NotesListViewModel(graph.store, graph.deletions, graph.sync) },
                     signedOut = account is Account.SignedOut,
+                    account = (account as? Account.SignedIn)?.username,
+                    beside = twoPane,
+                    selected = if (twoPane) (backStack.lastOrNull() as? EditorKey)?.id else null,
                     onSignIn = { backStack += OnboardingKey(signInAgain = true) },
-                    onOpen = { backStack += EditorKey(it) },
-                    onNew = { backStack += EditorKey(Uuid7.generate()) },
+                    onOpen = ::open,
+                    onNew = { open(Uuid7.generate()) },
                     onSettings = { backStack += SettingsKey }
                 )
             }
-            entry<EditorKey> { key ->
+            entry<EditorKey>(metadata = ListDetailSceneStrategy.detailPane()) { key ->
                 EditorScreen(
-                    vm = viewModel { EditorViewModel(graph.store, key.id, graph.scope) },
+                    vm = viewModel(key = key.id) { EditorViewModel(graph.store, key.id, graph.scope) },
+                    showBack = !twoPane,
+                    connected = account != Account.None,
                     onBack = { pop() },
                     onDelete = {
                         graph.deletions.request(key.id)
