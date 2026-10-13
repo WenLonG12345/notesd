@@ -6,7 +6,9 @@ settings:
 
 importers:
 
-  .:
+  .: {}
+
+  apps/web:
     dependencies:
       '@fontsource-variable/instrument-sans':
         specifier: ^5.3.0

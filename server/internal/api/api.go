@@ -250,7 +250,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if p := recover(); p != nil {
-				if p == http.ErrAbortHandler {
+				if p == http.ErrAbortHandler { //nolint:errorlint // recover() value, never wrapped
 					panic(p)
 				}
 				s.log.Error("panic serving request", "path", r.URL.Path, "panic", p, "stack", string(debug.Stack()))

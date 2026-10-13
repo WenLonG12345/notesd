@@ -7,30 +7,25 @@ and the server half of step 3 (the web app, in [apps/web](../apps/web/README.md)
 
 ## Build and test
 
-Requires Go 1.23+, and Node 22+ with pnpm 10 for the web app. No cgo: the
-SQLite driver is `modernc.org/sqlite` (pure Go, FTS5 included), so
+Requires the toolchain in the root `mise.toml` (see the root README). No
+cgo: the SQLite driver is `modernc.org/sqlite` (pure Go, FTS5 included), so
 cross-compiling for a Raspberry Pi is a plain `GOARCH` switch.
 
-```bash
-cd server
-make web build              # web app into internal/web/dist, then ./bin/notes-server
-make test                   # go test -race ./...
-```
-
-| Target | What it does |
+| Task (`mise run …`) | What it does |
 | --- | --- |
-| `make web` | `pnpm install --frozen-lockfile && pnpm build` in `apps/web`, writing `internal/web/dist` |
-| `make build` | `./bin/notes-server`, embedding whatever is in `internal/web/dist` |
-| `make release` | linux/amd64 and linux/arm64 binaries in `./bin`; run `make web` first |
-| `make test` | the Go tests with the race detector |
-| `make clean` | removes `./bin` |
+| `build:web` | `pnpm build` in `apps/web`, writing `internal/web/dist` |
+| `build` | `build:web`, then `./bin/notes-server` |
+| `release` | `build:web`, then linux/amd64 and linux/arm64 binaries in `./bin` |
+| `test:go` | the Go tests with the race detector |
+| `lint:go` | golangci-lint (`.golangci.yml`) |
+| `clean` | removes `./bin` |
 
-The web app is embedded at compile time, so rebuild the binary after
-`make web`. `internal/web/dist` is build output and is gitignored except for
-a `.gitkeep` (`//go:embed` needs the directory to exist). A binary built
-without `make web` still works; web pages show a "web app not built"
-placeholder with status 503. For working on the web app with hot reload,
-see [apps/web/README.md](../apps/web/README.md).
+The web app is embedded at compile time, so a plain `go build` embeds
+whatever is in `internal/web/dist`. That directory is build output and is
+gitignored except for a `.gitkeep` (`//go:embed` needs the directory to
+exist). A binary built without the web app still works; web pages show a
+"web app not built" placeholder with status 503. For the dev loop, see the
+root README.
 
 ## Run
 

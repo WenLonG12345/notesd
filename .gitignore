@@ -5,6 +5,5 @@
 *.db-shm
 node_modules/
 .DS_Store
-/.tools/
 /server/internal/web/dist/*
 !/server/internal/web/dist/.gitkeep

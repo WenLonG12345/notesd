@@ -14,7 +14,7 @@ func TestServeIndexFallsBackToPlaceholder(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "make web build") {
+	if !strings.Contains(rec.Body.String(), "mise run build") {
 		t.Fatalf("body is not the placeholder: %q", rec.Body.String())
 	}
 }

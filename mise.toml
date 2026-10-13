@@ -1,0 +1,95 @@
+[tools]
+go = "1.27.1"
+node = "24.21.0"
+pnpm = "10.18.1"
+watchexec = "2.8.0"
+golangci-lint = "2.14.0"
+
+[env]
+# Static, cgo-free binaries; test:go turns cgo back on for -race.
+CGO_ENABLED = "0"
+
+[tasks.install]
+description = "Install web dependencies"
+run = "pnpm install --frozen-lockfile"
+
+[tasks.dev]
+description = "Go server (rebuilt on change) + Vite, at http://localhost:5173"
+depends = ["dev:server", "dev:web"]
+
+[tasks."dev:server"]
+description = "Go server on :8080, rebuilt and restarted on .go/.sql changes"
+dir = "server"
+run = "watchexec --restart --watch . --exts go,sql --ignore internal/web/dist -- sh ../scripts/dev-server.sh"
+
+[tasks."dev:web"]
+description = "Vite dev server, proxying the API to :8080"
+dir = "apps/web"
+depends = ["install"]
+run = "pnpm dev"
+
+[tasks."dev:reset"]
+description = "Delete the dev database; the next dev:server run seeds it again"
+dir = "server"
+run = "rm -rf ${NOTES_DATA_DIR:-data}"
+
+[tasks.check]
+description = "Lint, typecheck and test everything"
+depends = ["lint", "typecheck", "test"]
+
+[tasks.lint]
+depends = ["lint:go", "lint:web"]
+
+[tasks."lint:go"]
+dir = "server"
+run = "golangci-lint run ./..."
+
+[tasks."lint:web"]
+dir = "apps/web"
+depends = ["install"]
+run = "pnpm lint"
+
+[tasks.typecheck]
+dir = "apps/web"
+depends = ["install"]
+run = "pnpm typecheck"
+
+[tasks.test]
+depends = ["test:go", "test:web"]
+
+[tasks."test:go"]
+dir = "server"
+env = { CGO_ENABLED = "1" }
+run = "go test -race ./..."
+
+[tasks."test:web"]
+dir = "apps/web"
+depends = ["install"]
+run = "pnpm test"
+
+[tasks."build:web"]
+description = "Build the web app into server/internal/web/dist"
+dir = "apps/web"
+depends = ["install"]
+run = "pnpm build"
+
+[tasks.build]
+description = "server/bin/notes-server with the web app embedded"
+dir = "server"
+depends = ["build:web"]
+run = "go build -trimpath -ldflags \"-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o bin/notes-server ./cmd/notes-server"
+
+[tasks.release]
+description = "linux/amd64 and linux/arm64 binaries in server/bin"
+dir = "server"
+depends = ["build:web"]
+run = """
+ldflags="-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+for arch in amd64 arm64; do
+  GOOS=linux GOARCH=$arch go build -trimpath -ldflags "$ldflags" -o bin/notes-server-linux-$arch ./cmd/notes-server
+done
+"""
+
+[tasks.clean]
+dir = "server"
+run = "rm -rf bin"

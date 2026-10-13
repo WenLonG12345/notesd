@@ -9,30 +9,22 @@ prototype in [design-system/](../../design-system/).
 
 ## Dev loop
 
-Requires Node 22+, pnpm 10, and Go (for the server and the tests).
-
-```bash
-# terminal 1: the API server
-cd server
-go run ./cmd/notes-server --data-dir ./data      # listens on 127.0.0.1:8080
-
-# terminal 2: the web app with hot reload
-cd apps/web
-pnpm install
-pnpm dev                                         # http://localhost:5173
-```
+From the repo root, `mise run dev` starts the API server (rebuilt on Go
+changes) and Vite at http://localhost:5173. See the root README.
 
 Vite proxies `/api`, `/healthz` and `/readyz` to `http://127.0.0.1:8080`.
-Set `NOTES_SERVER` to point it elsewhere, e.g.
-`NOTES_SERVER=http://127.0.0.1:9000 pnpm dev`. The proxy keeps the browser's
+Set `NOTES_SERVER` to point it elsewhere. The proxy keeps the browser's
 `Host` (`changeOrigin: false`). If you change that, every save fails with
 403: the server rejects a mutation whose `Origin` host doesn't match `Host`.
 
-On first start the server logs a setup token; the app asks for it during
-onboarding. To go through first run again, stop the server and delete
-`server/data`.
+A fresh dev database gets the owner `dev` / `devpassword`. To test the real
+first-run onboarding, run the server by hand on an empty data dir
+(`go run ./cmd/notes-server --data-dir /tmp/empty` in `server/`); it logs a
+setup token.
 
 ## Checks
+
+`mise run check` at the root runs these together with the Go checks.
 
 ```bash
 pnpm lint         # oxlint, warnings are errors
@@ -61,8 +53,7 @@ that the embed needs; the build puts it back after emptying the directory.
 A server built without the web app still runs and answers web pages with a
 503 "web app not built" placeholder.
 
-From `server/`, `make web` runs `pnpm install --frozen-lockfile && pnpm
-build`, so the whole thing is `make web build` (see the server README).
+`mise run build` at the root runs this, then builds the server binary.
 
 Fonts are self-hosted through `@fontsource`; the server's Content Security
 Policy doesn't allow font CDNs. The bundle is one chunk of about 790 KB
