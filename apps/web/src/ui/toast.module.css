@@ -1,0 +1,50 @@
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(28px + env(safe-area-inset-bottom));
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 44px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 6px 6px 16px;
+  border-radius: 14px;
+  background: var(--solid);
+  color: var(--on-solid);
+  font-size: 13.5px;
+  box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.4);
+  transform: translateX(-50%);
+  animation: toast-in 0.25s ease-out;
+}
+
+/* No action: keep the right padding even. */
+.toast:not(:has(button)) {
+  padding-right: 16px;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+}
+
+.undo {
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: rgb(127 127 127 / 0.22);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (max-width: 759px) {
+  .toast {
+    bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+}

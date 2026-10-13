@@ -42,7 +42,7 @@ function canonicalFields(f: Fields): Fields {
 }
 
 // Tests shorten these; nothing else should touch them.
-export const timing = { debounceMs: 1500, retryBaseMs: 2000, retryMaxMs: 30_000 }
+export const timing = { debounceMs: 1500, retryBaseMs: 2000, retryMaxMs: 30_000, undoDeleteMs: 5000 }
 
 /** How many bytes a keepalive request may carry (browsers cap the total at 64 KB). */
 const KEEPALIVE_LIMIT = 60_000
@@ -146,6 +146,11 @@ export class NoteSaver {
   /** Whether closing the page now could lose something. */
   hasUnsavedWork(): boolean {
     return this.dirty || this.pending !== null || this.inflight !== null
+  }
+
+  /** Edits made since the last save went out. */
+  hasUnsentEdits(): boolean {
+    return this.dirty
   }
 
   /** True for a new note nobody typed into: it can be dropped without a trace. */
@@ -397,15 +402,16 @@ export class NoteSaver {
    * Deletes the note once any in-flight save has landed. Resolves to 'changed'
    * when someone else edited it first (the editor now shows their version).
    */
-  async delete(): Promise<'deleted' | 'changed'> {
+  async delete(keepalive = false): Promise<'deleted' | 'changed'> {
     clearTimeout(this.debounce)
     clearTimeout(this.retryTimer)
-    if (this.inflight) await this.inflight.catch(() => undefined)
+    // Unloading can't wait: send against the revision we have.
+    if (this.inflight && !keepalive) await this.inflight.catch(() => undefined)
     this.dirty = false
     this.pending = null
     if (!this.created) return 'deleted'
     try {
-      await notes.remove(this.id, { operationId: crypto.randomUUID(), baseRevision: this.revision })
+      await notes.remove(this.id, { operationId: crypto.randomUUID(), baseRevision: this.revision }, keepalive)
       return 'deleted'
     } catch (err) {
       if (err instanceof ApiError && err.code === 'note_deleted') return 'deleted'

@@ -21,7 +21,12 @@ func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"notes": items, "nextCursor": next, "hasMore": next != ""})
+	total, err := s.notes.Count(r.Context())
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"notes": items, "nextCursor": next, "hasMore": next != "", "total": total})
 }
 
 // GET /api/v1/notes/{id} — a deleted note answers 410 with its tombstone.

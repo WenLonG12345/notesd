@@ -1,85 +1,119 @@
-.toolbarRow {
-  position: relative;
-  z-index: 2;
-  padding: 14px 40px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-wrap: wrap;
-  padding: 5px;
-  border-radius: 15px;
-  background: var(--chip);
-  border: 1px solid var(--edge);
-}
+/* --- toolbar buttons --- */
 
 .tool {
   flex: none;
-  width: 36px;
-  height: 34px;
+  width: 34px;
+  height: 36px;
   border: 0;
   border-radius: 10px;
   background: transparent;
   color: var(--ink);
-  font-size: 15px;
+  font-size: 14.5px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-.wide {
-  width: auto;
-  padding: 0 9px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
 .tool:hover {
   background: var(--hover);
 }
 
-.tool[aria-pressed='true'] {
+.tool[aria-pressed='true'],
+.tool[aria-expanded='true'] {
   background: var(--on);
 }
 
-.sep {
-  flex: none;
-  width: 1px;
-  height: 18px;
-  background: var(--hair);
-  margin: 0 5px;
+.boldGlyph {
+  font-weight: 700;
 }
 
 .italicGlyph {
-  font: italic 400 19px var(--font-serif);
+  font: italic 400 18px var(--font-serif);
 }
 
-.monoGlyph {
-  font: 500 12px var(--font-mono);
+/* --- "Aa" text styles menu --- */
+
+.styles {
+  display: flex;
+  flex-direction: column;
 }
 
-.checkGlyph {
+.marks {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.markTool {
+  width: auto;
+  height: 38px;
+  font-size: 15px;
+}
+
+.markTool .italicGlyph {
+  font-size: 19px;
+}
+
+.styleRow {
+  width: 100%;
+  height: auto;
+  min-height: 38px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 4px 10px 4px 8px;
+  text-align: left;
+  font: 400 14.5px/1.2 var(--font-sans);
+}
+
+/* The menu marks the current style with a check, not a fill. */
+.styleRow[aria-pressed='true'] {
+  background: transparent;
+}
+
+.styleRow:hover,
+.styleRow[aria-pressed='true']:hover {
+  background: var(--hover);
+}
+
+.check {
+  flex: none;
   width: 14px;
-  height: 14px;
-  border-radius: 4.5px;
-  border: 1.6px solid currentcolor;
+  font-size: 12px;
+  color: var(--tint);
 }
 
-.quoteGlyph {
-  font: 400 26px/1 var(--font-serif);
-  padding-top: 9px;
+.glyph {
+  flex: none;
+  min-width: 14px;
+  font-size: 14px;
 }
 
-.linkGlyph {
-  text-decoration: underline;
-  text-underline-offset: 3px;
+.title {
+  font: 400 26px/1.1 var(--font-serif);
 }
+
+.h2 {
+  font: 400 20px/1.1 var(--font-serif);
+}
+
+.h3 {
+  font: 600 14.5px/1.2 var(--font-sans);
+}
+
+.quote {
+  font: italic 400 17px/1.2 var(--font-serif);
+}
+
+.bullets,
+.numbers {
+  font-size: 14px;
+}
+
+/* --- link form --- */
 
 .linkForm {
   display: flex;
@@ -97,7 +131,7 @@
   border: 1px solid var(--hair);
   background: var(--field);
   color: var(--ink);
-  padding: 0 11px;
+  padding: 0 12px;
   font: 13px var(--font-mono);
 }
 
@@ -111,15 +145,29 @@
   border-color: var(--danger);
 }
 
+.linkCancel,
 .linkApply {
   height: 34px;
-  padding: 0 14px;
+  padding: 0 12px;
   border: 0;
   border-radius: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.linkCancel {
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.linkCancel:hover {
+  background: var(--hover);
+}
+
+.linkApply {
+  padding: 0 14px;
   background: var(--solid);
   color: var(--on-solid);
-  font-size: 12.5px;
-  cursor: pointer;
 }
 
 .linkError {
@@ -128,69 +176,67 @@
   color: var(--danger);
 }
 
-.scroller {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 24px 48px 60px;
-}
+/* --- document typography (from the design prototype) --- */
 
 .content {
   min-height: 100%;
 }
 
-/* --- document typography (from the design prototype) --- */
-
 .prose {
   outline: none;
-  min-height: 40vh;
+  min-height: 300px;
   font-size: 17px;
-  line-height: 1.65;
+  line-height: 1.6;
   color: var(--ink);
-  max-width: 68ch;
+  caret-color: var(--tint);
   overflow-wrap: anywhere;
 }
 
-.prose :global(p.is-editor-empty:first-child::before) {
+/* The first line is the note's title. */
+.prose h1[data-title] {
+  font: 400 36px/1.15 var(--font-serif);
+  letter-spacing: -0.015em;
+  margin: 0 0 0.35em;
+}
+
+.prose h1[data-title]:global(.is-empty)::before {
   content: attr(data-placeholder);
   float: left;
   height: 0;
   color: var(--ink-3);
+  opacity: 0.7;
   pointer-events: none;
 }
 
 .prose p {
-  margin: 0 0 0.65em;
+  margin: 0 0 0.15em;
+  min-height: 1.6em;
 }
 
 .prose h1 {
   font: 400 36px/1.15 var(--font-serif);
-  letter-spacing: -0.01em;
-  margin: 0.7em 0 0.3em;
+  letter-spacing: -0.015em;
+  margin: 0.5em 0 0.25em;
 }
 
 .prose h2 {
   font: 400 27px/1.2 var(--font-serif);
-  margin: 0.7em 0 0.3em;
+  margin: 0.6em 0 0.2em;
 }
 
 .prose h3 {
   font: 600 17px/1.3 var(--font-sans);
-  margin: 0.9em 0 0.3em;
-}
-
-.prose > :first-child {
-  margin-top: 0;
+  margin: 0.8em 0 0.2em;
 }
 
 .prose ul,
 .prose ol {
   padding-left: 1.4em;
-  margin: 0 0 0.8em;
+  margin: 0.2em 0 0.5em;
 }
 
 .prose li {
-  margin: 0.25em 0;
+  margin: 0.15em 0;
   padding-left: 0.2em;
 }
 
@@ -199,11 +245,15 @@
 }
 
 .prose blockquote {
-  margin: 1em 0;
-  padding: 0 0 0 20px;
-  border-left: 1.5px solid var(--hair-strong);
+  margin: 0.6em 0;
+  padding: 0 0 0 18px;
+  border-left: 2px solid var(--accent);
   font: italic 400 21px/1.45 var(--font-serif);
   color: var(--ink-2);
+}
+
+.prose blockquote p {
+  min-height: 0;
 }
 
 .prose a {
@@ -224,13 +274,13 @@
 .prose ul[data-type='taskList'] > li {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding-left: 2px;
+  gap: 13px;
+  padding-left: 1px;
 }
 
 .prose ul[data-type='taskList'] > li > label {
   flex: none;
-  margin-top: 0.32em;
+  margin-top: 0.28em;
   user-select: none;
 }
 
@@ -243,11 +293,11 @@
   appearance: none;
   margin: 0;
   display: block;
-  width: 17px;
-  height: 17px;
-  border-radius: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
   border: 1.5px solid var(--ink-3);
-  background: var(--field);
+  background: transparent;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -256,23 +306,22 @@
   background: var(--accent);
   border-color: var(--accent-deep);
   box-shadow:
-    inset 0 0 0 3px var(--accent),
+    inset 0 0 0 4px var(--accent),
     inset 0 0 0 9px oklch(0.25 0.012 60);
 }
 
 .prose li[data-checked='true'] > div {
   color: var(--ink-3);
-  text-decoration: line-through;
 }
 
 /* Raw Markdown the editor can't represent: shown as written, read-only. */
 .prose pre[data-raw] {
-  margin: 0 0 0.8em;
-  padding: 12px 14px;
-  border-radius: 12px;
+  margin: 0.4em 0;
+  padding: 10px 14px;
+  border-radius: 10px;
   border: 1px dashed var(--hair-strong);
-  background: var(--chip);
-  font: 400 13px/1.6 var(--font-mono);
+  background: var(--hover);
+  font: 400 14.5px/1.6 var(--font-mono);
   color: var(--ink-2);
   white-space: pre-wrap;
   cursor: default;
@@ -281,7 +330,7 @@
 .prose code[data-raw] {
   padding: 1px 5px;
   border-radius: 6px;
-  background: var(--chip);
+  background: var(--hover);
   border: 1px dashed var(--hair-strong);
   font: 400 0.85em var(--font-mono);
   color: var(--ink-2);
@@ -290,20 +339,4 @@
 .prose :global(.ProseMirror-selectednode) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
-}
-
-@media (max-width: 600px) {
-  .toolbarRow {
-    padding: 14px 12px 0;
-  }
-
-  .toolbar {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .scroller {
-    padding: 24px 20px 60px;
-  }
 }

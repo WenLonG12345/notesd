@@ -200,6 +200,8 @@ function alternate(parent: PMNode, index: number, node: PMNode): boolean {
 const serializer = new MarkdownSerializer(
   {
     doc: (state, node) => state.renderContent(node),
+    // The editor's first line is the note's title, stored in its own field.
+    title: () => undefined,
     paragraph: required(base.nodes.paragraph, 'paragraph'),
     text: required(base.nodes.text, 'text'),
     blockquote: required(base.nodes.blockquote, 'blockquote'),

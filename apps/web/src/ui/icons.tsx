@@ -1,0 +1,56 @@
+// Line icons from the design, drawn on a 16-unit grid in currentColor.
+
+type Props = { size?: number }
+
+export function PlusIcon({ size = 15 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+      <path d="M8 3v10M3 8h10" />
+    </svg>
+  )
+}
+
+export function SearchIcon({ size = 14 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+      <circle cx="7" cy="7" r="5" />
+      <path d="M11 11l3.5 3.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function TrashIcon({ size = 16 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4" />
+    </svg>
+  )
+}
+
+export function ChecklistIcon({ size = 17 }: Props) {
+  return (
+    <svg width={size} height={(size * 15) / 17} viewBox="0 0 18 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+      <circle cx="3.5" cy="4" r="2.4" />
+      <circle cx="3.5" cy="12" r="2.4" />
+      <path d="M8.5 4h8M8.5 12h8" />
+    </svg>
+  )
+}
+
+export function LinkIcon({ size = 16 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M6.8 9.2a3 3 0 004.2 0l2.2-2.2a3 3 0 00-4.2-4.2l-1 1" />
+      <path d="M9.2 6.8a3 3 0 00-4.2 0L2.8 9a3 3 0 004.2 4.2l1-1" />
+    </svg>
+  )
+}
+
+export function ComposeIcon({ size = 20 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M13 9v4.5H2.5V3H7" />
+      <path d="M11.5 1.8l2.7 2.7L8.5 10.2 5.6 10.5l.3-2.9z" />
+    </svg>
+  )
+}

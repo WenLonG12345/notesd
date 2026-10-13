@@ -368,6 +368,12 @@ type ListItem struct {
 
 // List returns live notes, most recently updated first. cursor is the
 // opaque value returned by the previous page, or "" for the first page.
+// Count is the number of live (not deleted) notes.
+func (s *Store) Count(ctx context.Context) (n int, err error) {
+	err = s.db.R.QueryRowContext(ctx, `SELECT count(*) FROM notes WHERE deleted_at IS NULL`).Scan(&n)
+	return n, err
+}
+
 func (s *Store) List(ctx context.Context, limit int, cursor string) (items []ListItem, next string, err error) {
 	if limit <= 0 {
 		limit = DefaultListSize

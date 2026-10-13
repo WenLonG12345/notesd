@@ -15,7 +15,13 @@ export type ListItem = Pick<Note, 'id' | 'title' | 'revision' | 'createdAt' | 'u
   preview: string
 }
 
-export type NoteList = { notes: ListItem[]; nextCursor: string; hasMore: boolean }
+export type NoteList = {
+  notes: ListItem[]
+  nextCursor: string
+  hasMore: boolean
+  /** Every live note, not just this page. */
+  total: number
+}
 
 export type SearchResult = {
   id: string

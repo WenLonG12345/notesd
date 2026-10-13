@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { createNote, signedIn, titleInput } from './helpers'
+import { createNote, list, noteTitle, signedIn } from './helpers'
 
 async function withNotes() {
   return signedIn({
@@ -17,25 +17,32 @@ const search = () => screen.getByRole('searchbox', { name: 'Search notes' })
 describe('search', () => {
   it('shows matching notes with highlighted excerpts, prefix matching included', async () => {
     const { user } = await withNotes()
-    await screen.findByRole('link', { name: /Trip/ })
 
     await user.type(search(), 'milk')
 
-    expect(await screen.findByRole('heading', { name: 'Results' })).toBeTruthy()
-    const list = await screen.findByRole('list', { name: 'Search results' })
-    await waitFor(() => expect(within(list).getAllByRole('link')).toHaveLength(2))
-    expect(screen.getByText('2 matches')).toBeTruthy()
-    const groceries = within(list).getByRole('link', { name: /Groceries/ })
+    expect(await within(list()).findByRole('heading', { name: 'Top results' })).toBeTruthy()
+    const results = await screen.findByRole('list', { name: 'Search results' })
+    await waitFor(() => expect(within(results).getAllByRole('link')).toHaveLength(2))
+    expect(within(list()).getByText('2 results')).toBeTruthy()
+    const groceries = within(results).getByRole('link', { name: /Groceries/ })
     expect(groceries.querySelector('mark')?.textContent?.toLowerCase()).toBe('milk')
-    expect(within(list).queryByRole('link', { name: /Trip/ })).toBeNull()
+    expect(within(results).queryByRole('link', { name: /Trip/ })).toBeNull()
   })
 
   it('opens a result', async () => {
     const { user } = await withNotes()
     await user.type(search(), 'room')
-    const list = await screen.findByRole('list', { name: 'Search results' })
-    await user.click(await within(list).findByRole('link', { name: /Trip/ }))
-    await waitFor(() => expect(titleInput().value).toBe('Trip'))
+    const results = await screen.findByRole('list', { name: 'Search results' })
+    await user.click(await within(results).findByRole('link', { name: /Trip/ }))
+    await waitFor(() => expect(noteTitle()).toBe('Trip'))
+  })
+
+  it('opens the top result on Enter', async () => {
+    const { user } = await withNotes()
+    await user.type(search(), 'banan')
+    await screen.findByRole('list', { name: 'Search results' })
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(noteTitle()).toBe('Milkshake recipe'))
   })
 
   it('says when nothing matches, and Escape clears the search', async () => {
@@ -45,13 +52,13 @@ describe('search', () => {
 
     await user.keyboard('{Escape}')
     expect(search()).toHaveProperty('value', '')
-    expect(await screen.findByRole('heading', { name: 'All notes' })).toBeTruthy()
+    expect(await within(list()).findByRole('heading', { name: 'Today' })).toBeTruthy()
   })
 
   it('treats search syntax in the input as plain words', async () => {
     const { user } = await withNotes()
     await user.type(search(), '"milk OR ( NEAR')
-    expect(await screen.findByText(/^\d+\+? match(es)?$/)).toBeTruthy()
+    expect(await screen.findByText(/^\d+\+? results?$/)).toBeTruthy()
     expect(screen.queryByText('Search didn’t work.')).toBeNull()
   })
 })

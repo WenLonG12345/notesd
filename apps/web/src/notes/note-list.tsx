@@ -1,0 +1,235 @@
+import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from 'react'
+import { Button } from '../ui/button'
+import { PlusIcon, SearchIcon } from '../ui/icons'
+import { ConnectionBanner } from './connection'
+import { groupByDate, listTime } from './list-time'
+import { useSearch } from './search'
+import { useNotes } from './store'
+import styles from './note-list.module.css'
+
+type Props = {
+  username: string
+  selectedId: string | null
+  query: string
+  onQuery: (q: string) => void
+  onSelect: (id: string) => void
+  onNew: () => void
+  onSettings: () => void
+  mobile: boolean
+}
+
+export function NoteList({ username, selectedId, query, onQuery, onSelect, onNew, onSettings, mobile }: Props) {
+  const { items, status, hasMore, total, loadMore, refresh, version } = useNotes()
+  const search = useSearch(query, version)
+  const searching = query.trim() !== ''
+  const n = search.results.length
+
+  const count = searching
+    ? search.status === 'loading' && n === 0
+      ? 'Searching…'
+      : `${n}${search.hasMore ? '+' : ''} ${n === 1 ? 'result' : 'results'}`
+    : status === 'ready'
+      ? `${total} ${total === 1 ? 'note' : 'notes'}`
+      : ''
+
+  return (
+    <aside className={styles.list} aria-label="Notes">
+      <div className={styles.header}>
+        <div className={styles.titleRow}>
+          <span className={styles.mark} aria-hidden="true" />
+          <h1 className={styles.heading}>Notes</h1>
+          <button
+            type="button"
+            className={styles.account}
+            onClick={onSettings}
+            aria-label={`Settings for ${username}`}
+            title="Settings"
+          >
+            {(username[0] ?? '·').toUpperCase()}
+          </button>
+          {!mobile && (
+            <Button variant="accent" size="sm" className={styles.newNote} onClick={onNew}>
+              <PlusIcon />
+              New note
+            </Button>
+          )}
+        </div>
+        <div className={styles.search}>
+          <span className={styles.searchIcon}>
+            <SearchIcon />
+          </span>
+          <label htmlFor="search" className="visually-hidden">
+            Search notes
+          </label>
+          <input
+            id="search"
+            type="search"
+            className={styles.searchInput}
+            placeholder="Search all notes"
+            spellCheck={false}
+            autoComplete="off"
+            value={query}
+            onChange={(e) => onQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') onQuery('')
+              const first = search.results[0]
+              if (e.key === 'Enter' && first) onSelect(first.id)
+            }}
+          />
+          {query && (
+            <button type="button" className={styles.clear} onClick={() => onQuery('')} aria-label="Clear search">
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+      <ConnectionBanner />
+
+      <div className={styles.scroll}>
+        {searching ? (
+          <>
+            {search.status === 'error' && (
+              <Message title="Search didn’t work.">Check your connection and try again.</Message>
+            )}
+            {search.status === 'ready' && n === 0 && (
+              <Message title="No results">Nothing matches “{query.trim()}”.</Message>
+            )}
+            {n > 0 && (
+              <Section label="Top results" listLabel="Search results">
+                {search.results.map((r) => (
+                  <Row
+                    key={r.id}
+                    id={r.id}
+                    title={r.title}
+                    time={r.updatedAt}
+                    selected={r.id === selectedId}
+                    onSelect={onSelect}
+                    // The server escapes the note text and adds only <mark>: the one place raw HTML is allowed.
+                    preview={<span dangerouslySetInnerHTML={{ __html: r.excerpt }} />}
+                  />
+                ))}
+              </Section>
+            )}
+            {search.hasMore && <LoadMore onVisible={search.loadMore} />}
+          </>
+        ) : (
+          <>
+            {status === 'error' && (
+              <Message title="Couldn’t load your notes.">
+                Check that the server is running.{' '}
+                <Button size="sm" onClick={refresh}>
+                  Try again
+                </Button>
+              </Message>
+            )}
+            {status === 'ready' && items.length === 0 && <Message>No notes yet.</Message>}
+            {groupByDate(items).map((g) => (
+              <Section key={g.label} label={g.label}>
+                {g.items.map((note) => (
+                  <Row
+                    key={note.id}
+                    id={note.id}
+                    title={note.title}
+                    time={note.updatedAt}
+                    selected={note.id === selectedId}
+                    onSelect={onSelect}
+                    preview={note.preview ? note.preview.split('\n').join(' ') : 'No additional text'}
+                  />
+                ))}
+              </Section>
+            ))}
+            {hasMore && <LoadMore onVisible={loadMore} />}
+          </>
+        )}
+      </div>
+
+      <div className={styles.footer}>
+        <span className={styles.count} aria-live="polite">
+          {count}
+        </span>
+        {mobile && (
+          <button type="button" className={styles.fab} onClick={onNew} aria-label="New note" title="New note">
+            <PlusIcon size={18} />
+          </button>
+        )}
+      </div>
+    </aside>
+  )
+}
+
+function Section({ label, listLabel, children }: { label: string; listLabel?: string; children: ReactNode }) {
+  const id = useId()
+  return (
+    <section className={styles.group} aria-labelledby={id}>
+      <h2 id={id} className={styles.groupLabel}>
+        {label}
+      </h2>
+      <ul className={styles.rows} aria-label={listLabel}>
+        {children}
+      </ul>
+    </section>
+  )
+}
+
+type RowProps = {
+  id: string
+  title: string
+  time: number
+  preview: ReactNode
+  selected: boolean
+  onSelect: (id: string) => void
+}
+
+function Row({ id, title, time, preview, selected, onSelect }: RowProps) {
+  const href = `/notes/${id}`
+  return (
+    <li>
+      <a
+        href={href}
+        className={styles.row}
+        aria-current={selected ? 'page' : undefined}
+        onClick={(e: MouseEvent) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+          e.preventDefault()
+          onSelect(id)
+        }}
+      >
+        <span className={styles.rowTitle}>{title.trim() || 'New note'}</span>
+        <span className={styles.rowMeta}>
+          <span className={styles.rowTime}>{listTime(time)}</span>
+          <span className={styles.rowPreview}>{preview}</span>
+        </span>
+      </a>
+    </li>
+  )
+}
+
+function Message({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <div className={styles.message} role={title ? 'status' : undefined}>
+      {title && <span className={styles.messageTitle}>{title}</span>}
+      <span>{children}</span>
+    </div>
+  )
+}
+
+/** Infinite scroll: loads the next page when this scrolls into view. */
+function LoadMore({ onVisible }: { onVisible: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) onVisible()
+    })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [onVisible])
+  return (
+    <div ref={ref} className={styles.more}>
+      <Button size="sm" onClick={onVisible}>
+        Load more
+      </Button>
+    </div>
+  )
+}

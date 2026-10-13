@@ -79,7 +79,7 @@ notes/
       tombstone.
     - `note_exists`: create with an id already in use.
 - **List**: `GET /api/v1/notes?limit=50&cursor=…` →
-  `{notes: [{id, title, preview, revision, createdAt, updatedAt}], nextCursor, hasMore}`.
+  `{notes: [{id, title, preview, revision, createdAt, updatedAt}], nextCursor, hasMore, total}`.
   Newest `updatedAt` first. `preview` is the first ~160 chars of plain text.
   Deleted notes are excluded.
 - **Search**: `GET /api/v1/search?q=…&limit=30&offset=0` →
@@ -171,15 +171,17 @@ apps/web/src/
 │   ├── onboarding.tsx       guided first-run flow (§4)
 │   └── login.tsx
 ├── notes/
-│   ├── shell.tsx            glass header (brand, search, New note, account) + grid; hosts the sheets
-│   ├── note-grid.tsx        bento grid of note tiles, cursor pagination
-│   ├── search.tsx           search state + results tiles with <mark> excerpts
-│   ├── note-sheet.tsx       editor sheet over the grid; owns the save state machine (§5)
-│   ├── empty.tsx            first-run / no-notes / no-results states
-│   └── use-autosave.ts      debounce + per-note serialized saving
+│   ├── shell.tsx            split view: list + editor pane (one at a time on phones), undo toast, settings
+│   ├── note-list.tsx        glass sidebar: search, date-grouped rows, count, cursor pagination
+│   ├── note-pane.tsx        editor pane: toolbar, save banners, status pill
+│   ├── store.tsx            list state, savers, live row updates, delete with undo
+│   ├── saver.ts             debounce + per-note serialized saving, §6.1 merge
+│   ├── search.ts            search-as-you-type with aborts
+│   └── empty.tsx            the pane with no note open
 ├── editor/
-│   ├── editor.tsx           Tiptap editor + toolbar
-│   ├── extensions.ts        the allowed set (§7.1 of the spec), nothing more
+│   ├── editor.tsx           Tiptap editor, toolbar buttons, "Aa" text styles, link form
+│   ├── extensions.ts        the allowed set (§7.1 of the spec) plus the title line
+│   ├── note-doc.ts          note fields ⇄ editor document (first line = title)
 │   ├── markdown.ts          parse(markdown) → ProseMirror doc; serialize(doc) → markdown
 │   └── markdown.test.ts     round-trip tests against shared fixtures
 ├── settings/
@@ -189,8 +191,9 @@ apps/web/src/
 ```
 
 Routes (client side, via `history` API or a tiny router; no need for a
-routing library): `/` (notes grid), `/notes/:id` (grid with the editor
-sheet open), `/settings` (grid with the settings sheet open). Onboarding and
+routing library): `/` (the list; side by side, the newest note opens),
+`/notes/:id` (that note open), `/settings` (the settings sheet over
+whatever was open). Onboarding and
 login are not routes: the auth gate renders them whenever the auth status
 says so, then returns to wherever the user was.
 
@@ -250,77 +253,72 @@ noted.
 
 ### Layout
 
-- A sticky glass header: brand on the left, search field in the middle,
-  "New note" (accent button) and an account button (the username's
-  initial, opens settings) on the right. On narrow screens (< 600px) the
-  header stacks brand + account above a full-width search field, and
-  "New note" becomes a floating accent button bottom right.
-- Below it, a heading ("All notes", or "Results" while searching) with a
-  count ("12 notes", "3 matches") and the notes as a **bento grid** of
-  glass tiles: `repeat(auto-fill, minmax(230px, 1fr))` on desktop, two
-  columns on mobile, `grid-auto-flow: dense`. The most recently edited note
-  is a featured 2×2 tile ("Last edited" kicker, larger title) when there
-  are more than two notes; notes with long previews get a tall 1×2 tile.
-- The editor and settings open as **sheets** over the blurred grid
-  (full-screen on mobile). Escape or a click on the backdrop closes them
-  ("All notes" / "Notes" back button in the sheet header).
+Apple Notes-style split view (`Notes v2` in the prototype):
 
-### Note grid
+- Side by side (≥ 760px): a 330px glass list on the left, the editor pane
+  on the right. The newest note opens when nothing is selected.
+- Phones: one pane at a time. The list has a new-note button in its
+  footer; the editor has "‹ Notes" to go back and a bottom bar
+  (checklist, Aa, link, new note).
+- Settings opens as a sheet over the app (full-screen on phones).
 
-- `GET /notes?limit=50` on mount; infinite scroll (sentinel at the end of
-  the grid) via `nextCursor` while `hasMore`.
-- Each tile: title (or "Untitled" in muted style when empty), `preview`
-  (one line per block) joined with " · " as in the prototype, clamped to
-  the tile's lines ("No additional text" when empty), relative
-  time from `updatedAt` ("Just now", "5 min ago", "3 h ago", "Yesterday",
-  weekday within a week, then "Mar 12"). Tiles are links to `/notes/:id`
-  (keyboard reachable, Enter opens).
-- Keep the list in client state and update it in place after saves
-  (title/preview/updatedAt, move to top) and deletes. The local preview
-  comes from `src/notes/plaintext.ts`, a port of the server's extractor
-  pinned by the same `plaintext.json` fixtures, so it matches the next
-  refetch, rather than refetching
-  on every change. Refetch on window focus if the list is older than
-  ~30 s (other devices may have synced).
-- Empty states: right after onboarding, a 2-wide tile with the kicker
-  "You're all set, <username>", "Your first note starts here." and a
-  "Write a note" button, next to dashed placeholder tiles; later, the same
-  with the kicker "No notes yet".
-- "New note": create locally with a fresh `crypto.randomUUID()`, empty
-  title/content, open the sheet, focus the title. Do **not** POST yet — POST
-  on the first autosave that has content (an abandoned empty note never
-  hits the server). If the user closes an empty, never-saved note, drop it.
-  Don't push `/notes/:id` to the URL until the first POST succeeds, so a
-  reload never points at a note the server doesn't have.
+### Note list
 
-### Editor sheet
+- Header: brand mark + "Notes", the account button (the username's
+  initial, opens settings), "New note" (accent; phones use the footer
+  button), and "Search all notes".
+- Rows grouped Today / Previous 7 days / Previous 30 days / Earlier (no
+  Pinned group: pinning needs a server field, deferred). Each row: title
+  ("New note" when empty), time (clock time today, then Yesterday, a
+  weekday, a short date) and the preview's lines joined with spaces ("No
+  additional text" when empty). The open note's row is filled with the
+  accent. Rows are links to `/notes/:id`.
+- Footer: "N notes" from the list response's `total`, adjusted locally
+  for creates and deletes; "N results" while searching.
+- `GET /notes?limit=50` on mount; infinite scroll via `nextCursor` while
+  `hasMore`. Refetch on window focus if the list is older than ~30 s.
+- The row follows the typing: title, preview and position update a moment
+  after each change, computed from the editor document (no Markdown
+  serialization per keystroke, §7.2). The saved note's preview, from
+  `src/notes/plaintext.ts` (a port of the server's extractor pinned by
+  `plaintext.json`), replaces it when the save lands.
+- "New note": a local note with a fresh `crypto.randomUUID()`, listed and
+  opened at once with the caret in the title line. Do **not** POST yet —
+  POST on the first autosave with content. Leaving a note nobody typed
+  into drops it. `/notes/:id` goes in the URL only after the first POST
+  succeeds, so a reload never points at a note the server doesn't have.
 
-Header row: back button, status pill, "Delete" (danger text button). Under
-it, the save banners (below), then the title input (serif, ~46px, Enter or
-↓ moves into the body) with a meta line ("Edited 5 min ago" / "New note"),
-the formatting toolbar in a chip-style bar, and the body.
+### Editor pane
+
+Top bar: Delete, "Aa" (text styles), B, I, S, checklist, link, then the
+status pill on the right. Under it, the link form and the save banners,
+then the edited date (centred) and the note.
 
 ### Editor (Tiptap)
 
-Allowed extensions, exactly the §7.1 subset: Document, Paragraph, Text,
-HardBreak, Bold, Italic, Strike, Heading (levels 1–3), BulletList,
-OrderedList, ListItem, TaskList, TaskItem (nested: true), Link
-(openOnClick: false, autolink, validate http/https/mailto), Blockquote,
-UndoRedo (Tiptap 3's name for History), Placeholder. Explicitly
-**exclude** Code, CodeBlock, HorizontalRule, Image, Table, Underline,
-Highlight, etc. Built from the individual extension packages, not
-StarterKit, so nothing outside the list can slip in (`src/editor/
-extensions.ts`; TaskList/TaskItem/ListKeymap come from
-`@tiptap/extension-list` in v3). Plus two atoms, `rawBlock` and `rawInline`,
-for Markdown outside the dialect (below).
+Allowed extensions, exactly the §7.1 subset: Paragraph, Text, HardBreak,
+Bold, Italic, Strike, Heading (levels 1–3), BulletList, OrderedList,
+ListItem, TaskList, TaskItem (nested: true), Link (openOnClick: false,
+autolink, validate http/https/mailto), Blockquote, UndoRedo, Placeholder.
+Explicitly **exclude** Code, CodeBlock, HorizontalRule, Image, Table,
+Underline, Highlight, etc., so the prototype's Underline and Monospaced
+styles are left out. Built from the individual extension packages, not
+StarterKit (`src/editor/extensions.ts`). Plus two atoms, `rawBlock` and
+`rawInline`, for Markdown outside the dialect (below).
 
-Title is a separate plain `<input>` above the editor (not part of the
-document). Content is the Tiptap document.
+One editor for the whole note, as in Apple Notes: the document is
+`title block+`. The `title` node is plain text (no marks) styled as the
+note's title; it is saved to the `title` field and the rest is serialized
+to `content`, so the stored note, the sync protocol and the §6.1
+per-field merge are unchanged. Enter in the title moves the rest of the
+line into the body; Backspace at the start of the body joins it to the
+title.
 
-Toolbar: bold, italic, strikethrough, H1/H2/H3, bullet list, numbered list,
-checklist, blockquote, link (inline URL field under the toolbar, as in the
-design; Cmd/Ctrl-K; http, https and mailto only). Keyboard
-shortcuts come from the extensions. Show active state per button.
+"Aa" opens the text styles menu: B / I / S, then Title (H1), Heading
+(H2), Subheading (H3), Body, Quote, Bulleted list, Numbered list, with a
+check on the current one. Shortcuts: the extensions' own, ⌘K for a link
+(http, https, mailto only), ⇧⌘L for a checklist. Enter on an empty list
+item ends the list.
 
 ### Markdown conversion (`editor/markdown.ts`)
 
@@ -393,24 +391,27 @@ Per open note, keep: `serverRevision`, `lastSavedTitle/Content`,
   device." with "Keep as new note" (POST as `<Title> (Recovered copy)`) or
   "Discard".
 - `401`: keep everything in memory, show login, retry after sign-in.
-- Status pill in the sheet header shows the state: Saved / Unsaved /
+- Status pill in the pane's top bar shows the state: Saved / Unsaved /
   Saving / Couldn't save / Conflict, the dot breathing while saving and
   settling when saved. No toasts for routine saves.
 
 ### Delete
 
-"Delete" in the sheet header → confirm dialog → `DELETE` with the current
-revision → remove from the grid, close the sheet. `409` on delete means
-it changed elsewhere: reload it and ask again.
+Delete in the top bar hides the note at once, opens the next one, and
+shows "Note deleted · Undo" for 5 s; `DELETE` goes out with the current
+revision when that passes (with `keepalive` if the page unloads first).
+Undo can't come later than that: deleted notes are permanent tombstones
+(§6.4). `409` means it changed elsewhere: the note comes back with "Not
+deleted: it changed on another device."
 
 ### Search
 
-Search field in the header; while it has ≥ 1 character the grid shows
-results instead ("Results", "N matches"). Debounce 150 ms, abort the
-previous request (`AbortController`), ignore stale responses. Result tiles
-show title and the excerpt with `<mark>` highlighted (styled with the
-accent, not default yellow). Escape clears. No results → "Nothing matches
-“…”." with "Search looks through titles and note text."
+Search field in the list header; while it has ≥ 1 character the list
+shows "Top results" instead. Debounce 150 ms, abort the previous request
+(`AbortController`), ignore stale responses. Result rows show title, time
+and the excerpt with `<mark>` highlighted (styled with the accent). Enter
+opens the top result, Escape clears. No results → "No results" /
+"Nothing matches “…”."
 
 ### Settings
 
@@ -439,8 +440,9 @@ back" and retry pending saves on `online` event / focus.
 
 ## 6. Design direction
 
-The source of truth is the prototype in `design-system/` (`Notes.dc.html`,
-all states in `Notes Screens.dc.html`): warm paper background with soft
+The source of truth is the prototype in `design-system/sample.html` (a
+bundled page; "Notes v2" is the split view, "Notes" the auth and settings
+screens): warm paper background with soft
 blurred color fields, frosted-glass surfaces, Instrument Serif headings,
 Instrument Sans body, JetBrains Mono for labels and code, one amber accent.
 It replaces the earlier direction in this section (two-pane sidebar,

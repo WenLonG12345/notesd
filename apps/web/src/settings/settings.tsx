@@ -21,7 +21,7 @@ export function SettingsSheet({ username, onClose }: { username: string; onClose
   const [sessionsVersion, setSessionsVersion] = useState(0)
 
   return (
-    <Sheet labelledBy="settings-title" variant="stack" onClose={onClose}>
+    <Sheet labelledBy="settings-title" onClose={onClose}>
       <div className={styles.top}>
         <h2 id="settings-title">Settings</h2>
         <Button size="md" onClick={onClose}>

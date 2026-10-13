@@ -33,7 +33,12 @@ const PREVIEW_CHARS = 160
 
 /** The list preview the server sends (notes.preview): one line per block, ≤160 code points. */
 export function preview(markdown: string): string {
-  const lines = plainText(markdown)
+  return previewOf(plainText(markdown))
+}
+
+/** preview() for text already extracted: one block per line. */
+export function previewOf(text: string): string {
+  const lines = text
     .split('\n')
     .map((l) => l.split(/\s+/u).filter(Boolean).join(' '))
     .filter(Boolean)

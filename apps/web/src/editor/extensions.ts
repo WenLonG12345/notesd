@@ -61,9 +61,24 @@ export const RawInline = Node.create({
   },
 })
 
-/** Document model only: what Markdown parses into. Shared by the editor and the converter. */
-export const schemaExtensions: Extensions = [
-  Document,
+/**
+ * The note's first line, stored as its own plain-text title field, not in
+ * the Markdown. Marks aren't allowed: a title has no formatting.
+ */
+const Title = Node.create({
+  name: 'title',
+  content: 'text*',
+  marks: '',
+  defining: true,
+  parseHTML() {
+    return [{ tag: 'h1[data-title]', priority: 60 }]
+  },
+  renderHTML() {
+    return ['h1', { 'data-title': '' }, 0]
+  },
+})
+
+const blockExtensions: Extensions = [
   Paragraph,
   Text,
   HardBreak,
@@ -89,10 +104,26 @@ export const schemaExtensions: Extensions = [
   RawInline,
 ]
 
-/** The full editor: the model plus editing behaviour. Nothing outside spec §7.1. */
+/** Document model only: what Markdown parses into. */
+export const schemaExtensions: Extensions = [Document, ...blockExtensions]
+
+/** The editor: a title line, then the body, plus editing behaviour. Nothing outside spec §7.1. */
 export const editorExtensions: Extensions = [
-  ...schemaExtensions,
+  Document.extend({ content: 'title block+' }),
+  Title,
+  ...blockExtensions.map((e) =>
+    e.name === 'taskList'
+      ? TaskList.extend({
+          addKeyboardShortcuts() {
+            return { ...this.parent?.(), 'Mod-Shift-l': () => this.editor.commands.toggleTaskList() }
+          },
+        })
+      : e,
+  ),
   ListKeymap,
   UndoRedo,
-  Placeholder.configure({ placeholder: 'Start writing…' }),
+  Placeholder.configure({
+    showOnlyCurrent: false,
+    placeholder: ({ node }) => (node.type.name === 'title' ? 'New note' : ''),
+  }),
 ]

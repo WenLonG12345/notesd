@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { signedIn } from './helpers'
+import { createNote, noteTitle, signedIn } from './helpers'
 
 async function openSettings() {
   const ctx = await signedIn()
@@ -56,6 +56,24 @@ describe('settings', () => {
     await user.click(other)
     await within(devices).findByText('1 device')
     expect((await server.api('GET', '/auth/session')).status).toBe(401)
+  })
+})
+
+describe('closing settings', () => {
+  it('returns to the note that was open behind it', async () => {
+    const { user } = await signedIn({
+      seed: async (s) => {
+        await createNote(s, 'Behind')
+      },
+    })
+    await waitFor(() => expect(noteTitle()).toBe('Behind'))
+    const path = window.location.pathname
+    await user.click(screen.getByRole('button', { name: /^Settings for/ }))
+    expect(noteTitle()).toBe('Behind')
+
+    await user.click(await screen.findByRole('button', { name: 'Done' }))
+    expect(window.location.pathname).toBe(path)
+    expect(screen.queryByRole('heading', { name: 'Settings' })).toBeNull()
   })
 })
 

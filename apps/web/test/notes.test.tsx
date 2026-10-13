@@ -3,58 +3,63 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { App } from '../src/app'
 import {
+  body,
   bodyText,
   createNote,
   editElsewhere,
   getNote,
+  list,
   listNotes,
   newNoteButton,
+  noteTitle,
   op,
-  openTile,
+  openNote,
+  phoneLayout,
+  row,
   saved,
   signedIn,
-  titleInput,
   typeAtEnd,
+  typeInTitle,
   type Session,
 } from './helpers'
 import { createOwner, startServer } from './server'
 
-
 describe('creating', () => {
-  it('saves a new note on its first edit and lists it', async () => {
+  it('saves a new note on its first edit: first line title, the rest body', async () => {
     const { server, user } = await signedIn()
+    expect(screen.getByText('No notes yet', { selector: 'section span' })).toBeTruthy()
 
     await user.click(newNoteButton())
-    expect(document.activeElement).toBe(titleInput())
-    expect(screen.getByText('New note', { selector: 'div' })).toBeTruthy()
+    expect(within(list()).getByRole('link', { name: /^New note/ })).toBeTruthy()
     // Not in the URL until the server has it.
     expect(window.location.pathname).toBe('/')
 
-    // Enter moves focus into the body; ProseMirror's focus() doesn't take in
-    // jsdom, so that part is checked in a real browser, not here.
-    await user.type(titleInput(), 'Groceries{Enter}')
-    await typeAtEnd(user, 'Milk and eggs')
+    await typeInTitle(user, 'Groceries{Enter}Milk and eggs')
+    expect(noteTitle()).toBe('Groceries')
+    expect(bodyText()).toBe('Milk and eggs')
     await waitFor(() => expect(window.location.pathname).toMatch(/^\/notes\//))
     await waitFor(async () => {
       const [note] = await listNotes(server)
       expect(note?.title).toBe('Groceries')
       expect(note?.preview).toBe('Milk and eggs')
     })
-
-    await user.keyboard('{Escape}')
-    const tile = await screen.findByRole('link', { name: /Groceries/ })
-    expect(within(tile).getByText('Milk and eggs')).toBeTruthy()
-    expect(window.location.pathname).toBe('/')
+    await waitFor(() => expect(within(row('Groceries')).getByText('Milk and eggs')).toBeTruthy())
+    expect(within(list()).getByText('1 note')).toBeTruthy()
   })
 
   it('drops a new note nobody typed into', async () => {
-    const { server, user } = await signedIn()
+    const { server, user } = await signedIn({
+      seed: async (s) => {
+        await createNote(s, 'Keep')
+      },
+    })
 
     await user.click(newNoteButton())
-    await user.click(screen.getByRole('button', { name: /All notes/ }))
+    expect(row('New note')).toBeTruthy()
+    await user.click(row('Keep'))
 
-    expect(await screen.findByText('Your first note starts here.')).toBeTruthy()
-    expect(await listNotes(server)).toEqual([])
+    await waitFor(() => expect(within(list()).queryByRole('link', { name: /^New note/ })).toBeNull())
+    expect((await listNotes(server)).map((n) => n.title)).toEqual(['Keep'])
   })
 
   it('opens a note from its URL on reload', async () => {
@@ -62,21 +67,61 @@ describe('creating', () => {
     const { username, password } = await createOwner(server)
     await server.api('POST', '/auth/login', { username, password, client: 'web' })
     const id = await createNote(server, 'Deep link', 'Hello')
+    await createNote(server, 'Newer')
     window.history.replaceState(null, '', `/notes/${id}`)
     const user = userEvent.setup()
     render(<App />)
     await user.type(await screen.findByLabelText('Username'), username)
     await user.type(screen.getByLabelText('Password'), `${password}{Enter}`)
 
-    await waitFor(() => expect(titleInput().value).toBe('Deep link'))
+    await waitFor(() => expect(noteTitle()).toBe('Deep link'))
     expect(bodyText()).toBe('Hello')
+    await waitFor(() => expect(row('Deep link').getAttribute('aria-current')).toBe('page'))
   })
 
   it('says so when the linked note is gone', async () => {
-    const { user } = await signedIn({ path: '/notes/does-not-exist' })
+    await signedIn({ path: '/notes/does-not-exist' })
     expect(await screen.findByRole('heading', { name: 'This note doesn’t exist.' })).toBeTruthy()
-    await user.keyboard('{Escape}')
-    expect(window.location.pathname).toBe('/')
+  })
+})
+
+describe('the first line', () => {
+  it('Enter inside the first line moves the rest of it into the body', async () => {
+    let id = ''
+    const { server, user } = await signedIn({
+      seed: async (s) => {
+        id = await createNote(s, 'Shopping Buy milk')
+      },
+    })
+    await waitFor(() => expect(noteTitle()).toBe('Shopping Buy milk'))
+
+    const text = body().querySelector('[data-title]')?.firstChild
+    if (!text) throw new Error('no title text')
+    body().focus()
+    const range = document.createRange()
+    range.setStart(text, 'Shopping '.length)
+    range.collapse(true)
+    window.getSelection()?.removeAllRanges()
+    window.getSelection()?.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+    await user.keyboard('{Enter}')
+
+    expect(noteTitle()).toBe('Shopping ')
+    expect(bodyText()).toBe('Buy milk')
+    await waitFor(async () => expect(await getNote(server, id)).toMatchObject({ title: 'Shopping ', content: 'Buy milk\n' }))
+  })
+
+  it('keeps formatting out of the title', async () => {
+    let id = ''
+    const { server, user } = await signedIn({
+      seed: async (s) => {
+        id = await createNote(s, 'Plain', 'Text')
+      },
+    })
+    await waitFor(() => expect(noteTitle()).toBe('Plain'))
+    await typeInTitle(user, '{Control>}b{/Control} title')
+    await saved()
+    await waitFor(async () => expect(await getNote(server, id)).toMatchObject({ title: 'Plain title', content: 'Text\n' }))
   })
 })
 
@@ -88,13 +133,35 @@ describe('editing', () => {
         id = await createNote(s, 'Plan', 'Step one')
       },
     })
-    await openTile(user, 'Plan')
+    await openNote(user, 'Plan')
 
     await waitFor(() => expect(bodyText()).toBe('Step one'))
     await typeAtEnd(user, ', step two')
     await saved()
     await waitFor(async () => expect((await getNote(server, id)).content).toBe('Step one, step two\n'))
     expect((await getNote(server, id)).revision).toBeGreaterThan(1)
+  })
+
+  it('updates the list row while typing, before the save lands', async () => {
+    const { server, user } = await signedIn({
+      seed: async (s) => {
+        await createNote(s, 'Old title', 'Old body')
+        // Distinct timestamps, so the order is certain.
+        await new Promise((r) => setTimeout(r, 5))
+        await createNote(s, 'Newest')
+      },
+    })
+    await openNote(user, 'Old title')
+    expect(within(list()).getAllByRole('link')[0]?.textContent).toMatch(/^Newest/)
+
+    server.setOffline(true)
+    await typeInTitle(user, ' renamed')
+    await typeAtEnd(user, ' and more')
+
+    await waitFor(() => expect(row('Old title renamed').textContent).toMatch(/Old body and more$/))
+    // Edited just now: it moves to the top.
+    expect(within(list()).getAllByRole('link')[0]).toBe(row('Old title renamed'))
+    server.setOffline(false)
   })
 
   it('merges a title changed elsewhere with content changed here', async () => {
@@ -104,13 +171,13 @@ describe('editing', () => {
         id = await createNote(s, 'Shopping', 'Buy milk')
       },
     })
-    await openTile(user, 'Shopping')
+    await openNote(user, 'Shopping')
     await waitFor(() => expect(bodyText()).toBe('Buy milk'))
 
     await editElsewhere(server, id, { title: 'Groceries' })
     await typeAtEnd(user, ' and bread')
 
-    await waitFor(() => expect(titleInput().value).toBe('Groceries'))
+    await waitFor(() => expect(noteTitle()).toBe('Groceries'))
     await saved()
     await waitFor(async () => {
       const note = await getNote(server, id)
@@ -126,7 +193,7 @@ describe('editing', () => {
         id = await createNote(s, 'Trip', 'Pack light')
       },
     })
-    await openTile(user, 'Trip')
+    await openNote(user, 'Trip')
     await waitFor(() => expect(bodyText()).toBe('Pack light'))
 
     await editElsewhere(server, id, { content: 'Pack light, bring a charger' })
@@ -145,6 +212,7 @@ describe('editing', () => {
       expect((await getNote(server, copy?.id ?? '')).conflictOf).toBe(id)
     })
     expect((await getNote(server, id)).content).toBe('Pack light, bring a charger')
+    expect(await within(list()).findByRole('link', { name: /^Trip \(Conflicted copy\)/ })).toBeTruthy()
   })
 
   it('can take the other version instead', async () => {
@@ -154,7 +222,7 @@ describe('editing', () => {
         id = await createNote(s, 'Trip', 'Pack light')
       },
     })
-    await openTile(user, 'Trip')
+    await openNote(user, 'Trip')
     await waitFor(() => expect(bodyText()).toBe('Pack light'))
 
     await editElsewhere(server, id, { content: 'Theirs' })
@@ -177,7 +245,7 @@ describe('editing', () => {
         id = await createNote(s, 'Ideas', 'One')
       },
     })
-    await openTile(user, 'Ideas')
+    await openNote(user, 'Ideas')
     await waitFor(() => expect(bodyText()).toBe('One'))
 
     const note = await getNote(server, id)
@@ -187,13 +255,14 @@ describe('editing', () => {
     expect(await screen.findByText('This note was deleted on another device.')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Keep as new note' }))
 
-    await waitFor(() => expect(titleInput().value).toBe('Ideas (Recovered copy)'))
+    await waitFor(() => expect(noteTitle()).toBe('Ideas (Recovered copy)'))
     expect(bodyText()).toBe('One, two')
     await waitFor(async () => {
       const notes = await listNotes(server)
       expect(notes.map((n) => [n.title, n.preview])).toEqual([['Ideas (Recovered copy)', 'One, two']])
     })
     await waitFor(() => expect(window.location.pathname).not.toBe(`/notes/${id}`))
+    expect(within(list()).queryByRole('link', { name: /^Ideas One/ })).toBeNull()
   })
 })
 
@@ -205,7 +274,7 @@ describe('failures', () => {
         id = await createNote(s, 'Offline', 'Start')
       },
     })
-    await openTile(user, 'Offline')
+    await openNote(user, 'Offline')
     await waitFor(() => expect(bodyText()).toBe('Start'))
 
     server.setOffline(true)
@@ -226,7 +295,7 @@ describe('failures', () => {
         id = await createNote(s, 'Replay', 'A')
       },
     })
-    await openTile(user, 'Replay')
+    await openNote(user, 'Replay')
     await waitFor(() => expect(bodyText()).toBe('A'))
 
     server.loseNextResponse((method) => method === 'PUT')
@@ -247,7 +316,7 @@ describe('failures', () => {
         id = await createNote(s, 'Refused', 'A')
       },
     })
-    await openTile(user, 'Refused')
+    await openNote(user, 'Refused')
 
     // What a dev proxy that rewrites Host looks like to the server.
     server.setOrigin('http://localhost:5173')
@@ -271,12 +340,12 @@ describe('failures', () => {
         id = await createNote(s, 'Session', 'Before')
       },
     })
-    await openTile(user, 'Session')
+    await openNote(user, 'Session')
     await waitFor(() => expect(bodyText()).toBe('Before'))
 
     // Revoke the browser's session from the other client.
-    const { body: list } = await server.api<{ sessions: Session[]; currentId: string }>('GET', '/auth/sessions')
-    const browserSession = list.sessions.find((s) => s.id !== list.currentId)
+    const { body: sessions } = await server.api<{ sessions: Session[]; currentId: string }>('GET', '/auth/sessions')
+    const browserSession = sessions.sessions.find((s) => s.id !== sessions.currentId)
     await server.api('DELETE', `/auth/sessions/${browserSession?.id}`)
 
     await typeAtEnd(user, ' after')
@@ -292,25 +361,52 @@ describe('failures', () => {
 })
 
 describe('deleting', () => {
-  it('deletes after confirmation', async () => {
+  it('hides the note at once, offers Undo, and deletes it after a moment', async () => {
     const { server, user } = await signedIn({
       seed: async (s) => {
         await createNote(s, 'Keep')
-        await createNote(s, 'Remove me')
+        await createNote(s, 'Remove me', 'Some text')
       },
     })
+    await openNote(user, 'Remove me')
 
-    await openTile(user, 'Remove me')
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Delete this note?' })
-    await user.click(within(dialog).getByRole('button', { name: 'Delete note' }))
+    await user.click(screen.getByRole('button', { name: 'Delete note' }))
+    expect(within(list()).queryByRole('link', { name: /^Remove me/ })).toBeNull()
+    expect(screen.getByText('Note deleted')).toBeTruthy()
+    // The next note opens in its place.
+    await waitFor(() => expect(noteTitle()).toBe('Keep'))
+    expect(within(list()).getByText('1 note')).toBeTruthy()
 
-    await waitFor(() => expect(screen.queryByRole('link', { name: /Remove me/ })).toBeNull())
-    expect((await listNotes(server)).map((n) => n.title)).toEqual(['Keep'])
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    await waitFor(() => expect(noteTitle()).toBe('Remove me'))
+    expect(row('Remove me').getAttribute('aria-current')).toBe('page')
+    expect((await listNotes(server)).map((n) => n.title).toSorted()).toEqual(['Keep', 'Remove me'])
+
+    await user.click(screen.getByRole('button', { name: 'Delete note' }))
+    await waitFor(async () => expect((await listNotes(server)).map((n) => n.title)).toEqual(['Keep']))
+    await waitFor(() => expect(screen.queryByText('Note deleted')).toBeNull())
+    expect(within(list()).getByText('1 note')).toBeTruthy()
+  })
+
+  it('keeps a note that changed elsewhere during the undo window', async () => {
+    let id = ''
+    const { server, user } = await signedIn({
+      seed: async (s) => {
+        id = await createNote(s, 'Shared', 'Mine')
+      },
+    })
+    await waitFor(() => expect(noteTitle()).toBe('Shared'))
+
+    await user.click(screen.getByRole('button', { name: 'Delete note' }))
+    await editElsewhere(server, id, { content: 'Theirs' })
+
+    expect(await screen.findByText('Not deleted: it changed on another device.')).toBeTruthy()
+    expect(row('Shared')).toBeTruthy()
+    expect((await getNote(server, id)).deletedAt).toBeNull()
   })
 })
 
-describe('the grid', () => {
+describe('the list', () => {
   it('previews formatted notes block by block, the same before and after a refetch', async () => {
     let id = ''
     const { server, user } = await signedIn({
@@ -318,21 +414,21 @@ describe('the grid', () => {
         id = await createNote(s, 'Trip', '# Lisbon\n\nLanding **Friday**.\n\n```sh\nmake web\n```\n\n- [x] Book room\n')
       },
     })
-    expect(within(await screen.findByRole('link', { name: /Trip/ })).getByText('Lisbon · Landing Friday. · make web · Book room')).toBeTruthy()
+    expect(within(row('Trip')).getByText('Lisbon Landing Friday. make web Book room')).toBeTruthy()
+    await waitFor(() => expect(noteTitle()).toBe('Trip'))
+    expect(within(list()).getByRole('heading', { name: 'Today' })).toBeTruthy()
 
-    await openTile(user, 'Trip')
     await typeAtEnd(user, ' near the river')
     await saved()
-    await user.keyboard('{Escape}')
 
-    const local = 'Lisbon · Landing Friday. · make web · Book room near the river'
-    expect(within(await screen.findByRole('link', { name: /Trip/ })).getByText(local)).toBeTruthy()
+    const local = 'Lisbon Landing Friday. make web Book room near the river'
+    await waitFor(() => expect(within(row('Trip')).getByText(local)).toBeTruthy())
     const [fromServer] = await listNotes(server)
     expect(fromServer?.id).toBe(id)
-    expect(fromServer?.preview.split('\n').join(' · ')).toBe(local)
+    expect(fromServer?.preview.split('\n').join(' ')).toBe(local)
   })
 
-  it('pages through more than 50 notes', async () => {
+  it('pages through more than 50 notes and counts them all', async () => {
     const server = await startServer()
     const { username, password } = await createOwner(server)
     await server.api('POST', '/auth/login', { username, password, client: 'web' })
@@ -342,10 +438,31 @@ describe('the grid', () => {
     await user.type(await screen.findByLabelText('Username'), username)
     await user.type(screen.getByLabelText('Password'), `${password}{Enter}`)
 
-    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(50))
+    await waitFor(() => expect(within(list()).getAllByRole('link')).toHaveLength(50))
+    expect(within(list()).getByText('55 notes')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Load more' }))
-    await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(55))
+    await waitFor(() => expect(within(list()).getAllByRole('link')).toHaveLength(55))
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
-    expect(screen.getAllByRole('link')[0]?.textContent).toMatch(/^Last edited/)
+  })
+})
+
+describe('on a phone', () => {
+  it('shows the list or the note, one at a time', async () => {
+    phoneLayout()
+    const { user } = await signedIn({
+      seed: async (s) => {
+        await createNote(s, 'Pocket', 'Small screen')
+      },
+    })
+    // Nothing opens by itself.
+    expect(screen.queryByRole('textbox', { name: 'Note' })).toBeNull()
+
+    await openNote(user, 'Pocket')
+    expect(screen.queryByRole('complementary', { name: 'Notes' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Notes' }))
+    expect(await screen.findByRole('complementary', { name: 'Notes' })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'Note' })).toBeNull()
+    expect(window.location.pathname).toBe('/')
   })
 })

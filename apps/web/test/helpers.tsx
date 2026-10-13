@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect } from 'vitest'
 import type { Note, NoteList } from '../src/api/types'
@@ -7,9 +7,15 @@ import { createOwner, startServer, type TestServer } from './server'
 
 export type Session = { id: string }
 
+/** One pane at a time, as on a phone. Reset after each test. */
+export function phoneLayout() {
+  globalThis.phoneLayout = true
+}
+
 /**
  * A server with an owner account and the app signed in to it. seed runs
- * before the app loads, so the grid starts with those notes.
+ * before the app loads, so the list starts with those notes (and, side by
+ * side, the newest one is open).
  */
 export async function signedIn({ path = '/', seed }: { path?: string; seed?: (server: TestServer) => Promise<void> } = {}) {
   const server = await startServer()
@@ -22,7 +28,8 @@ export async function signedIn({ path = '/', seed }: { path?: string; seed?: (se
   render(<App />)
   await user.type(await screen.findByLabelText('Username'), username)
   await user.type(screen.getByLabelText('Password'), `${password}{Enter}`)
-  await screen.findByRole('heading', { name: 'All notes' })
+  // The footer count shows once the first page is in.
+  await within(await screen.findByRole('complementary', { name: 'Notes' })).findByText(/^\d+ notes?$/)
   return { server, user, password }
 }
 
@@ -56,14 +63,20 @@ export async function editElsewhere(server: TestServer, id: string, patch: Parti
   expect(res.status).toBe(200)
 }
 
-export const titleInput = () => screen.getByLabelText<HTMLInputElement>('Title')
-export const body = () => screen.getByRole('textbox', { name: 'Note text' })
-export const bodyText = () => body().textContent
+export const list = () => screen.getByRole('complementary', { name: 'Notes' })
+export const body = () => screen.getByRole('textbox', { name: 'Note' })
+/** The note's first line. */
+export const noteTitle = () => body().querySelector('[data-title]')?.textContent
+/** Everything after the first line. */
+export const bodyText = () =>
+  [...body().children]
+    .slice(1)
+    .map((el) => el.textContent)
+    .join('')
 
-/** Types at the end of the note body (jsdom has no layout, so a click can't place the caret). */
-export async function typeAtEnd(user: ReturnType<typeof userEvent.setup>, text: string) {
-  const el = body()
-  el.focus()
+/** Puts the caret at the end of el (jsdom has no layout, so a click can't place it). */
+function caretAtEnd(el: Node) {
+  body().focus()
   const range = document.createRange()
   range.selectNodeContents(el)
   range.collapse(false)
@@ -71,18 +84,34 @@ export async function typeAtEnd(user: ReturnType<typeof userEvent.setup>, text: 
   sel?.removeAllRanges()
   sel?.addRange(range)
   document.dispatchEvent(new Event('selectionchange'))
-  await user.type(el, text, { skipClick: true })
 }
-// The header button; the mobile floating one is only hidden by CSS, which jsdom lacks.
-export const newNoteButton = () => screen.getAllByRole('button', { name: 'New note' })[0] as HTMLElement
+
+/** Types at the end of the note. */
+export async function typeAtEnd(user: ReturnType<typeof userEvent.setup>, text: string) {
+  caretAtEnd(body())
+  await user.type(body(), text, { skipClick: true })
+}
+
+/** Types at the end of the first line. */
+export async function typeInTitle(user: ReturnType<typeof userEvent.setup>, text: string) {
+  const title = body().querySelector('[data-title]')
+  if (!title) throw new Error('no title line')
+  caretAtEnd(title)
+  await user.type(body(), text, { skipClick: true })
+}
+
+export const newNoteButton = () => screen.getByRole('button', { name: 'New note' })
 export const saved = () => screen.findByText('Saved', {}, { timeout: 3000 })
 
-export async function openTile(user: ReturnType<typeof userEvent.setup>, title: string) {
-  await user.click(await screen.findByRole('link', { name: new RegExp(title) }))
-  await screen.findByLabelText('Title')
+/** The list row for a note, by title. */
+export const row = (title: string) => within(list()).getByRole('link', { name: new RegExp(`^${title}`) })
+
+export async function openNote(user: ReturnType<typeof userEvent.setup>, title: string) {
+  await user.click(await within(list()).findByRole('link', { name: new RegExp(`^${title}`) }))
+  await waitFor(() => expect(noteTitle()).toBe(title))
 }
 
-/** Selects the first occurrence of text in the note body. */
+/** Selects the first occurrence of text in the note. */
 export function selectInBody(text: string) {
   const el = body()
   el.focus()
@@ -99,5 +128,5 @@ export function selectInBody(text: string) {
     document.dispatchEvent(new Event('selectionchange'))
     return
   }
-  throw new Error(`"${text}" not in the note body`)
+  throw new Error(`"${text}" not in the note`)
 }

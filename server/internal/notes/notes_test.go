@@ -285,6 +285,9 @@ func TestListPagination(t *testing.T) {
 	if len(all) != total-1 {
 		t.Fatalf("listed %d notes, want %d", len(all), total-1)
 	}
+	if n, err := s.Count(ctx); err != nil || n != total-1 {
+		t.Fatalf("count = %d, %v; want %d", n, err, total-1)
+	}
 	seen := map[string]bool{}
 	for i, it := range all {
 		if seen[it.ID] || it.ID == "n05" {

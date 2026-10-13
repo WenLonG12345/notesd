@@ -35,6 +35,9 @@
   --accent: oklch(0.8 0.14 78);
   --accent-deep: oklch(0.72 0.15 72);
   --on-accent: oklch(0.22 0.012 60);
+  --on-accent-2: oklch(0.32 0.04 70);
+  /* Icon buttons and the caret: iOS-style tinted controls. */
+  --tint: oklch(0.62 0.15 70);
   --link: oklch(0.48 0.11 65);
   --danger: oklch(0.5 0.16 27);
   --danger-bg: oklch(0.6 0.17 27 / 0.1);
@@ -92,6 +95,7 @@
     --on-solid: oklch(0.2 0.01 70);
     --code: oklch(0.13 0.006 70 / 0.85);
     --link: oklch(0.82 0.12 78);
+    --tint: oklch(0.82 0.13 80);
     --danger: oklch(0.74 0.15 27);
     --danger-bg: oklch(0.6 0.17 27 / 0.16);
     --good: oklch(0.85 0.09 155);
@@ -132,6 +136,7 @@
   --on-solid: oklch(0.2 0.01 70);
   --code: oklch(0.13 0.006 70 / 0.85);
   --link: oklch(0.82 0.12 78);
+  --tint: oklch(0.82 0.13 80);
   --danger: oklch(0.74 0.15 27);
   --danger-bg: oklch(0.6 0.17 27 / 0.16);
   --good: oklch(0.85 0.09 155);

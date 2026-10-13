@@ -6,20 +6,18 @@ type Props = {
   labelledBy?: string
   label?: string
   onClose: () => void
-  /** editor: one tall glass panel. stack: transparent column of cards (settings). */
-  variant?: 'editor' | 'stack'
   children: ReactNode
 }
 
 /**
- * Full-screen modal layer over the blurred app. Built on <dialog> so focus is
+ * Full-screen modal layer over the blurred app: a column of glass cards. Built on <dialog> so focus is
  * trapped and restored; Escape and a click on the backdrop close it.
  */
-export function Sheet({ labelledBy, label, onClose, variant = 'editor', children }: Props) {
+export function Sheet({ labelledBy, label, onClose, children }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
 
   // Layout effect: open before children's effects run, or showModal()'s
-  // initial focus would override focus they set (e.g. a new note's title).
+  // initial focus would override focus they set.
   useLayoutEffect(() => {
     const dialog = ref.current
     dialog?.showModal()
@@ -29,7 +27,7 @@ export function Sheet({ labelledBy, label, onClose, variant = 'editor', children
   return (
     <dialog
       ref={ref}
-      className={[styles.sheet, styles[variant]].join(' ')}
+      className={styles.sheet}
       aria-labelledby={labelledBy}
       aria-label={label}
       onCancel={(e) => {

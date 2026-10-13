@@ -365,7 +365,7 @@ func TestNotesOverHTTP(t *testing.T) {
 
 	// List and search.
 	r = c.do("GET", "/api/v1/notes?limit=10", nil)
-	if items := r.body["notes"].([]any); len(items) != 1 || items[0].(map[string]any)["preview"] != "Milk\nBread\nEggs" {
+	if items := r.body["notes"].([]any); len(items) != 1 || items[0].(map[string]any)["preview"] != "Milk\nBread\nEggs" || r.body["total"] != float64(1) {
 		t.Fatalf("list: %s", r.raw)
 	}
 	r = c.do("GET", "/api/v1/search?q=bre", nil)

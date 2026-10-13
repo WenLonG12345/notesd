@@ -6,6 +6,25 @@ import { timing } from '../src/notes/saver'
 timing.debounceMs = 40
 timing.retryBaseMs = 60
 timing.retryMaxMs = 200
+timing.undoDeleteMs = 300
+
+// jsdom has no media queries. Tests get the side-by-side layout unless they
+// ask for a phone (helpers.phoneLayout); nothing re-evaluates mid-render.
+declare global {
+  var phoneLayout: boolean
+}
+globalThis.phoneLayout = false
+window.matchMedia ??= (query: string) =>
+  ({
+    matches: query.includes('max-width') && globalThis.phoneLayout,
+    media: query,
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent: () => false,
+  }) as MediaQueryList
 
 // jsdom has no layout, so nothing ever scrolls into view; tests use the
 // "Load more" button the sentinel renders.
@@ -45,5 +64,6 @@ document.addEventListener('keydown', (e) => {
 
 afterEach(() => {
   cleanup()
+  globalThis.phoneLayout = false
   window.history.replaceState(null, '', '/')
 })

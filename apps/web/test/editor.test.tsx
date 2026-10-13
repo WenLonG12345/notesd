@@ -1,7 +1,8 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { body, createNote, getNote, openTile, saved, selectInBody, signedIn, titleInput, typeAtEnd } from './helpers'
+import { body, createNote, getNote, noteTitle, saved, selectInBody, signedIn, typeAtEnd, typeInTitle } from './helpers'
 
+/** Signed in with one note, which opens by itself. */
 async function openNote(title: string, content: string) {
   let id = ''
   const ctx = await signedIn({
@@ -9,7 +10,7 @@ async function openNote(title: string, content: string) {
       id = await createNote(s, title, content)
     },
   })
-  await openTile(ctx.user, title)
+  await waitFor(() => expect(noteTitle()).toBe(title))
   return { ...ctx, id }
 }
 
@@ -19,7 +20,7 @@ describe('formatting', () => {
   it('renders stored Markdown as formatted text', async () => {
     await openNote('Rich', '# Heading\n\n**bold** and *italic*\n\n- [x] Done\n- [ ] Todo\n')
     const el = body()
-    expect(el.querySelector('h1')?.textContent).toBe('Heading')
+    expect(el.querySelector('h1:not([data-title])')?.textContent).toBe('Heading')
     expect(el.querySelector('strong')?.textContent).toBe('bold')
     expect(el.querySelector('em')?.textContent).toBe('italic')
     const boxes = within(el).getAllByRole('checkbox')
@@ -36,8 +37,22 @@ describe('formatting', () => {
     await waitFor(async () => expect((await getNote(server, id)).content).toBe('**Milk** and eggs\n'))
 
     selectInBody('eggs')
-    await user.click(tool('Heading 2'))
+    await user.click(tool('Text styles'))
+    await user.click(tool('Heading'))
     await waitFor(async () => expect((await getNote(server, id)).content).toBe('## **Milk** and eggs\n'))
+    expect(tool('Heading').getAttribute('aria-pressed')).toBe('true')
+
+    await user.click(tool('Body'))
+    await waitFor(async () => expect((await getNote(server, id)).content).toBe('**Milk** and eggs\n'))
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('group', { name: 'Text styles' })).toBeNull()
+  })
+
+  it('makes a checklist with Shift-Mod-L', async () => {
+    const { server, user, id } = await openNote('Keys', 'Buy milk\n')
+    selectInBody('Buy')
+    await user.keyboard('{Control>}{Shift>}l{/Shift}{/Control}')
+    await waitFor(async () => expect((await getNote(server, id)).content).toBe('- [ ] Buy milk\n'))
   })
 
   it('turns lines into a checklist and saves ticks', async () => {
@@ -106,7 +121,7 @@ describe('canonical form', () => {
     const { server, user, id } = await openNote('Style', '* one\n* two')
     const before = await getNote(server, id)
 
-    await user.type(titleInput(), ' guide')
+    await typeInTitle(user, ' guide')
     await saved()
     const after = await getNote(server, id)
     expect(after.title).toBe('Style guide')

@@ -1,22 +1,15 @@
 .wrap {
-  max-width: 1240px;
-  margin: 12px auto 0;
-  padding: 0 20px;
+  padding: 0 12px 10px;
 }
 
 .banner {
   margin: 0;
-  padding: 10px 16px;
-  border-radius: 14px;
+  padding: 9px 13px;
+  border-radius: 13px;
   background: var(--warn-bg);
   border: 1px solid var(--warn-edge);
   color: var(--warn-ink);
-  font-size: 13.5px;
+  font-size: 13px;
+  line-height: 1.4;
   animation: fade-in 0.2s;
-}
-
-@media (max-width: 600px) {
-  .wrap {
-    padding: 0 12px;
-  }
 }

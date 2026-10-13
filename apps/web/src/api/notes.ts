@@ -17,8 +17,8 @@ export const notes = {
   create: (body: CreateNote, keepalive = false) => request<MutationResult>('POST', '/notes', body, { keepalive }),
   update: (id: string, body: UpdateNote, keepalive = false) =>
     request<MutationResult>('PUT', path(id), body, { keepalive }),
-  remove: (id: string, body: { operationId: string; baseRevision: number }) =>
-    request<MutationResult>('DELETE', path(id), body),
+  remove: (id: string, body: { operationId: string; baseRevision: number }, keepalive = false) =>
+    request<MutationResult>('DELETE', path(id), body, { keepalive }),
   search: (q: string, offset: number, signal: AbortSignal) =>
     request<{ results: SearchResult[] }>(
       'GET',

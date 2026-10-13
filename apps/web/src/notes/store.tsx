@@ -3,26 +3,38 @@ import { notes as api } from '../api/notes'
 import type { ListItem } from '../api/types'
 import { useAuth } from '../auth/auth-context'
 import { preview as previewOf } from './plaintext'
-import { NoteSaver, type Fields } from './saver'
+import { NoteSaver, timing, type Fields } from './saver'
 
 type ListState = {
   items: ListItem[]
   status: 'loading' | 'ready' | 'error'
   hasMore: boolean
-  /** Bumped on every local change, so derived views (search) can refresh. */
+  /** Notes on the server, adjusted for local creates and deletes. */
+  total: number
+  /** Deleted here but still undoable: not shown, not yet sent. */
+  hidden: string[]
+  /** Bumped on every saved change, so derived views (search) can refresh. */
   version: number
 }
 
-type NotesContextValue = ListState & {
+export type DeleteOutcome = 'deleted' | 'undone' | 'changed' | 'failed'
+
+type NotesContextValue = Omit<ListState, 'hidden'> & {
   loadMore: () => void
   refresh: () => void
   /** The saver for a note, creating one from server data if needed. */
   saverFor: (init: ConstructorParameters<typeof NoteSaver>[0]) => NoteSaver
   existingSaver: (id: string) => NoteSaver | undefined
+  /** A new note, listed right away but sent to the server only once it has text. */
   newDraft: () => NoteSaver
   /** Drop a saver that has nothing left to do (closed editor). */
   release: (id: string) => void
   removed: (id: string) => void
+  /** Live title and preview while typing, before the save lands. */
+  touch: (id: string, summary: { title: string; preview: string }) => void
+  /** Hides the note now and deletes it once the undo window passes. */
+  remove: (id: string) => Promise<DeleteOutcome>
+  undoRemove: (id: string) => void
 }
 
 const NotesContext = createContext<NotesContextValue | null>(null)
@@ -30,12 +42,24 @@ const NotesContext = createContext<NotesContextValue | null>(null)
 /** Other devices may have changed things; refetch on focus after this long. */
 const STALE_MS = 30_000
 
+type PendingDelete = { timer: ReturnType<typeof setTimeout>; resolve: (outcome: DeleteOutcome) => void }
+
+const counted = (item: ListItem | undefined) => (item && item.revision > 0 ? 1 : 0)
+
 export function NotesProvider({ children }: { children: ReactNode }) {
-  const [list, setList] = useState<ListState>({ items: [], status: 'loading', hasMore: false, version: 0 })
+  const [list, setList] = useState<ListState>({
+    items: [],
+    status: 'loading',
+    hasMore: false,
+    total: 0,
+    hidden: [],
+    version: 0,
+  })
   const cursor = useRef('')
   const loadedAt = useRef(0)
   const loading = useRef(false)
   const savers = useRef(new Map<string, NoteSaver>())
+  const deletes = useRef(new Map<string, PendingDelete>())
   const { state: auth } = useAuth()
 
   const fetchPage = useCallback(async (reset: boolean) => {
@@ -51,7 +75,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         const kept = reset ? prev.items.filter((n) => !seen.has(n.id) && savers.current.has(n.id)) : prev.items
         const items = reset ? [...kept, ...page.notes] : [...kept, ...page.notes.filter((n) => !kept.some((k) => k.id === n.id))]
         items.sort((a, b) => b.updatedAt - a.updatedAt)
-        return { items, status: 'ready', hasMore: page.hasMore, version: prev.version }
+        const hiddenOnServer = prev.hidden.reduce((sum, id) => sum + counted(items.find((n) => n.id === id)), 0)
+        return { ...prev, items, status: 'ready', hasMore: page.hasMore, total: page.total - hiddenOnServer }
       })
     } catch {
       setList((prev) => (prev.status === 'loading' ? { ...prev, status: 'error' } : prev))
@@ -64,28 +89,32 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     void fetchPage(true)
   }, [fetchPage])
 
-  const upsert = useCallback((id: string, fields: Fields, updatedAt: number, revision: number) => {
-    setList((prev) => {
-      const old = prev.items.find((n) => n.id === id)
-      const item: ListItem = {
-        id,
-        title: fields.title,
-        preview: previewOf(fields.content),
-        revision,
-        updatedAt,
-        createdAt: old?.createdAt ?? updatedAt,
-      }
-      return { ...prev, items: [item, ...prev.items.filter((n) => n.id !== id)], version: prev.version + 1 }
-    })
-  }, [])
-
   const hooks = useMemo(
     () => ({
-      saved: (id: string, fields: Fields, r: { updatedAt: number; revision: number }) =>
-        upsert(id, fields, r.updatedAt, r.revision),
+      saved: (id: string, fields: Fields, r: { updatedAt: number; revision: number; status: string }) =>
+        setList((prev) => {
+          const old = prev.items.find((n) => n.id === id)
+          // Typing since this save went out: the row already shows newer text.
+          const live = old && savers.current.get(id)?.hasUnsentEdits()
+          const item: ListItem = {
+            id,
+            title: live ? old.title : fields.title,
+            preview: live ? old.preview : previewOf(fields.content),
+            revision: r.revision,
+            updatedAt: r.updatedAt,
+            createdAt: old?.createdAt ?? r.updatedAt,
+          }
+          const hidden = prev.hidden.includes(id)
+          return {
+            ...prev,
+            items: [item, ...prev.items.filter((n) => n.id !== id)],
+            total: prev.total + (r.status === 'created' && !hidden ? 1 : 0),
+            version: prev.version + 1,
+          }
+        }),
       copied: (copy: NoteSaver) => savers.current.set(copy.id, copy),
     }),
-    [upsert],
+    [],
   )
 
   const saverFor = useCallback<NotesContextValue['saverFor']>(
@@ -105,24 +134,114 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const newDraft = useCallback(() => {
     const s = new NoteSaver({ id: crypto.randomUUID(), fields: { title: '', content: '' } }, hooks)
     savers.current.set(s.id, s)
+    const now = Date.now()
+    const row: ListItem = { id: s.id, title: '', preview: '', revision: 0, createdAt: now, updatedAt: now }
+    setList((prev) => ({ ...prev, items: [row, ...prev.items] }))
     return s
   }, [hooks])
-
-  const release = useCallback((id: string) => {
-    const s = savers.current.get(id)
-    if (!s || s.isAttached()) return
-    // Blank drafts vanish; anything still saving (or stuck) stays in memory.
-    if (s.isBlankDraft() || !s.hasUnsavedWork()) {
-      s.dispose()
-      savers.current.delete(id)
-    }
-  }, [])
 
   const removed = useCallback((id: string) => {
     savers.current.get(id)?.dispose()
     savers.current.delete(id)
-    setList((prev) => ({ ...prev, items: prev.items.filter((n) => n.id !== id), version: prev.version + 1 }))
+    setList((prev) => {
+      const item = prev.items.find((n) => n.id === id)
+      const hidden = prev.hidden.includes(id)
+      return {
+        ...prev,
+        items: prev.items.filter((n) => n.id !== id),
+        hidden: prev.hidden.filter((h) => h !== id),
+        total: prev.total - (hidden ? 0 : counted(item)),
+        version: prev.version + 1,
+      }
+    })
   }, [])
+
+  const release = useCallback(
+    (id: string) => {
+      const s = savers.current.get(id)
+      if (!s || s.isAttached() || deletes.current.has(id)) return
+      if (s.isBlankDraft()) return removed(id)
+      // Anything still saving (or stuck) stays in memory.
+      if (!s.hasUnsavedWork()) {
+        s.dispose()
+        savers.current.delete(id)
+      }
+    },
+    [removed],
+  )
+
+  const touch = useCallback<NotesContextValue['touch']>((id, { title, preview }) => {
+    setList((prev) => {
+      const old = prev.items.find((n) => n.id === id)
+      if (!old) return prev
+      const item = { ...old, title, preview, updatedAt: Date.now() }
+      return { ...prev, items: [item, ...prev.items.filter((n) => n.id !== id)] }
+    })
+  }, [])
+
+  const setHidden = useCallback((id: string, hide: boolean) => {
+    setList((prev) => {
+      if (prev.hidden.includes(id) === hide) return prev
+      const delta = counted(prev.items.find((n) => n.id === id))
+      return {
+        ...prev,
+        hidden: hide ? [...prev.hidden, id] : prev.hidden.filter((h) => h !== id),
+        total: prev.total + (hide ? -delta : delta),
+      }
+    })
+  }, [])
+
+  const commit = useCallback(
+    (id: string, keepalive = false) => {
+      const entry = deletes.current.get(id)
+      if (!entry) return
+      deletes.current.delete(id)
+      clearTimeout(entry.timer)
+      const saver = savers.current.get(id)
+      if (!saver) {
+        setHidden(id, false)
+        entry.resolve('failed')
+        return
+      }
+      saver.delete(keepalive).then(
+        (outcome) => {
+          if (outcome === 'deleted') removed(id)
+          else setHidden(id, false)
+          entry.resolve(outcome)
+        },
+        () => {
+          setHidden(id, false)
+          entry.resolve('failed')
+        },
+      )
+    },
+    [removed, setHidden],
+  )
+
+  const remove = useCallback<NotesContextValue['remove']>(
+    (id) => {
+      // One undo at a time: an earlier delete goes through now.
+      for (const other of deletes.current.keys()) commit(other)
+      setHidden(id, true)
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => commit(id), timing.undoDeleteMs)
+        deletes.current.set(id, { timer, resolve })
+      })
+    },
+    [commit, setHidden],
+  )
+
+  const undoRemove = useCallback(
+    (id: string) => {
+      const entry = deletes.current.get(id)
+      if (!entry) return
+      deletes.current.delete(id)
+      clearTimeout(entry.timer)
+      setHidden(id, false)
+      entry.resolve('undone')
+    },
+    [setHidden],
+  )
 
   // Signed in again after the session ended: send what was waiting.
   const authStatus = auth.status
@@ -146,6 +265,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       if (document.visibilityState === 'hidden') for (const s of all()) void s.flush()
     }
     const onUnload = (e: BeforeUnloadEvent) => {
+      for (const id of deletes.current.keys()) commit(id, true)
       const pending = all().filter((s) => s.hasUnsavedWork())
       for (const s of pending) s.flushOnUnload()
       if (pending.length > 0) e.preventDefault()
@@ -160,11 +280,26 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onHidden)
       window.removeEventListener('beforeunload', onUnload)
     }
-  }, [fetchPage])
+  }, [fetchPage, commit])
+
+  // Signing out unmounts the notes: deletes waiting on undo go through.
+  useEffect(
+    () => () => {
+      for (const id of deletes.current.keys()) commit(id)
+    },
+    [commit],
+  )
+
+  const { hidden, items, status, hasMore, total, version } = list
+  const visible = useMemo(() => (hidden.length ? items.filter((n) => !hidden.includes(n.id)) : items), [items, hidden])
 
   const value = useMemo<NotesContextValue>(
     () => ({
-      ...list,
+      items: visible,
+      status,
+      hasMore,
+      total,
+      version,
       loadMore: () => void fetchPage(false),
       refresh: () => void fetchPage(true),
       saverFor,
@@ -172,8 +307,11 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       newDraft,
       release,
       removed,
+      touch,
+      remove,
+      undoRemove,
     }),
-    [list, fetchPage, saverFor, existingSaver, newDraft, release, removed],
+    [visible, status, hasMore, total, version, fetchPage, saverFor, existingSaver, newDraft, release, removed, touch, remove, undoRemove],
   )
   return <NotesContext value={value}>{children}</NotesContext>
 }
