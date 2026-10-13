@@ -17,9 +17,7 @@ import notes.core.doc.normalize
  * heading (a heading is one line); a line after a hard break starts with a letter
  * (a "- " or "#" there isn't escaped); and a nested ordered list starts at 1 (inside a
  * list nothing separates it from the text above, and CommonMark won't let another
- * number interrupt a paragraph). Ordered lists also stay within one digit width:
- * items are indented to the widest number, so a code block under "8." in a list
- * reaching "10." gains a space per save (same on the web; spec §7.4 rule).
+ * number interrupt a paragraph).
  */
 class DocGen(private val r: Random) {
     private val letters =
@@ -49,16 +47,8 @@ class DocGen(private val r: Random) {
         }
 
         4 -> {
-            Block.OrderedList(
-                if (depth >
-                    0
-                ) {
-                    1
-                } else {
-                    1 + r.nextInt(7)
-                },
-                List(1 + r.nextInt(3)) { ListItem(itemBlocks(depth)) }
-            )
+            val start = if (depth > 0) 1 else 1 + r.nextInt(12)
+            Block.OrderedList(start, List(1 + r.nextInt(3)) { ListItem(itemBlocks(depth)) })
         }
 
         5 -> {

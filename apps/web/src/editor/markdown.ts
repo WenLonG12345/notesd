@@ -29,6 +29,13 @@ function builtin<T>(ruler: unknown, name: string): T | undefined {
   return rules.find((r) => r.name === name)?.fn
 }
 
+// The rules a built-in rule may interrupt (a fence ends a paragraph, a list,
+// a quote). ruler.at() drops them unless they're passed back in.
+function alt(ruler: unknown, name: string): string[] {
+  const rules = (ruler as Record<string, { name: string; alt: string[] }[]>)['__rules__'] ?? []
+  return rules.find((r) => r.name === name)?.alt ?? []
+}
+
 function createTokenizer(): MarkdownIt {
   // 'default' preset: CommonMark + GFM tables and strikethrough. No raw HTML,
   // no linkify (plain URLs stay text unless written as links), no typography.
@@ -49,7 +56,7 @@ function createTokenizer(): MarkdownIt {
       token.map = [startLine, state.line]
       token.block = true
       return true
-    })
+    }, { alt: alt(md.block.ruler, name) })
   }
 
   // Same for inline constructs: code spans and images.
@@ -63,6 +70,8 @@ function createTokenizer(): MarkdownIt {
       if (state.pending) state.pushPending()
       const before = state.tokens.length
       if (!original(state, false)) return false
+      // No closing run: markdown-it kept the backticks as pending text, not a code span.
+      if (state.tokens.length === before && state.pending) return true
       state.tokens.length = before
       const token = state.push('raw_inline', '', 0)
       token.content = state.src.slice(start, state.pos)
@@ -184,6 +193,28 @@ function renderList({ state, node, parent, index }: ListArgs, indent: number, ma
   state.renderList(node, ' '.repeat(indent), marker)
 }
 
+type ListState = { closed: PMNode | null; inTightList: boolean; flushClose: (size: number) => void }
+
+/**
+ * renderList() with one indent per item: continuation lines indent to the item's
+ * own content column ("9. " → 3, "10. " → 4). Indenting all items to the widest
+ * number would add a space to a code block under "9." on every save.
+ */
+function renderOrderedList({ state, node, parent, index }: ListArgs, marker: (i: number) => string) {
+  const s = state as unknown as ListState
+  if (index > 0 && parent.child(index - 1).type === node.type) s.flushClose(2)
+  if (s.closed && s.closed.type === node.type) s.flushClose(3)
+  else if (s.inTightList) s.flushClose(1)
+  const prevTight = s.inTightList
+  s.inTightList = true
+  node.forEach((child, _, i) => {
+    if (i) s.flushClose(1)
+    const first = marker(i)
+    state.wrapBlock(' '.repeat(first.length), first, node, () => state.render(child, node, i))
+  })
+  s.inTightList = prevTight
+}
+
 /**
  * Markdown merges adjacent lists that use the same marker, so a list right
  * after a sibling list of its kind switches marker ("-" ↔ "*", "." ↔ ")").
@@ -214,9 +245,7 @@ const serializer = new MarkdownSerializer(
     orderedList: (state, node, parent, index) => {
       const start = Number(node.attrs.start ?? 1)
       const delim = alternate(parent, index, node) ? ') ' : '. '
-      // Continuation lines indent to the content column of the widest number.
-      const width = String(start + node.childCount - 1).length + 2
-      renderList({ state, node, parent, index }, width, (i) => `${start + i}${delim}`)
+      renderOrderedList({ state, node, parent, index }, (i) => `${start + i}${delim}`)
     },
     listItem: (state, node) => state.renderContent(node),
     taskList: (state, node, parent, index) => {

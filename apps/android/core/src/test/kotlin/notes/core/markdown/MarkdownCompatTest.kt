@@ -13,10 +13,6 @@ import notes.core.doc.TaskItem
  * Cases where commonmark-java and the web's markdown-it pipeline differ, found by
  * running random Markdown through both. Expected values are the web codec's output.
  *
- * Two web bugs are deliberately not matched, and the expectations here are what the
- * web produces once they're fixed: unmatched backticks ("a `` b") gaining another
- * pair on every save, and fences/rules unable to interrupt a paragraph.
- *
  * Known remaining differences, all in input no editor produces: tab expansion inside
  * raw blocks in lists, a code span broken across a lazy blockquote line, and a few
  * markdown-it/commonmark-java disagreements on malformed link destinations and on

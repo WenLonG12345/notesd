@@ -63,20 +63,21 @@ internal class MarkdownSerializer {
 
             is Block.BulletList -> {
                 val bullet = if (alternate(siblings, index, node)) "* " else "- "
-                renderList(node, siblings, index, node.items.map { it.blocks }, 2) { bullet }
+                renderList(node, siblings, index, node.items.map { it.blocks }, { 2 }) { bullet }
             }
 
             is Block.OrderedList -> {
                 val delim = if (alternate(siblings, index, node)) ") " else ". "
-                // Continuation lines indent to the content column of the widest number.
-                val width = (node.start + node.items.size - 1).toString().length + 2
-                renderList(node, siblings, index, node.items.map { it.blocks }, width) { "${node.start + it}$delim" }
+                // Continuation lines indent to the item's own content column ("9. " → 3, "10. " → 4):
+                // the widest number's column would add a space to a code block under "9." per save.
+                val marker = { i: Int -> "${node.start + i}$delim" }
+                renderList(node, siblings, index, node.items.map { it.blocks }, { marker(it).length }, marker)
             }
 
             is Block.TaskList -> {
                 val bullet = if (alternate(siblings, index, node)) "*" else "-"
                 // Nested content aligns after the bullet: "[ ]" is part of the item's text.
-                renderList(node, siblings, index, node.items.map { it.blocks }, 2) {
+                renderList(node, siblings, index, node.items.map { it.blocks }, { 2 }) {
                     if (node.items[it].checked) "$bullet [x] " else "$bullet [ ] "
                 }
             }
@@ -114,7 +115,7 @@ internal class MarkdownSerializer {
         siblings: List<Block>,
         index: Int,
         items: List<List<Block>>,
-        indent: Int,
+        indent: (Int) -> Int,
         firstDelim: (Int) -> String
     ) {
         // prosemirror-markdown separates a list from a same-type predecessor with
@@ -127,10 +128,9 @@ internal class MarkdownSerializer {
         }
         val prevTight = inTightList
         inTightList = true
-        val itemDelim = " ".repeat(indent)
         items.forEachIndexed { i, blocks ->
             if (i > 0) flushClose(1)
-            wrapBlock(itemDelim, firstDelim(i), node) { renderBlocks(blocks) }
+            wrapBlock(" ".repeat(indent(i)), firstDelim(i), node) { renderBlocks(blocks) }
         }
         inTightList = prevTight
     }

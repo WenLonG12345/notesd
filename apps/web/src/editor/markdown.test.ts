@@ -20,3 +20,19 @@ describe('round trip of canonical Markdown (byte for byte)', () => {
     })
   }
 })
+
+describe('canonical form of Markdown written elsewhere', () => {
+  const cases: [string, string, string][] = [
+    ['unmatched backticks stay literal', 'a `` b', 'a \\`\\` b\n'],
+    ['a fence can follow a paragraph line', 'Para\n```\ncode\n```', 'Para\n\n```\ncode\n```\n'],
+    ['a rule can follow a paragraph line', 'word\n***', 'word\n\n***\n'],
+    ['a fence can end a list item', '- item\n```\ncode\n```', '- item\n\n```\ncode\n```\n'],
+  ]
+  for (const [name, input, expected] of cases) {
+    it(name, () => {
+      const once = serialize(parse(input))
+      expect(once).toBe(expected)
+      expect(serialize(parse(once))).toBe(once)
+    })
+  }
+})

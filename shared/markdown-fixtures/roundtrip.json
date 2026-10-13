@@ -12,6 +12,7 @@
     { "name": "ordered list", "markdown": "1. First\n2. Second\n" },
     { "name": "ordered list from 3", "markdown": "3. Third\n4. Fourth\n" },
     { "name": "ordered list past 9", "markdown": "9. Nine\n10. Ten\n" },
+    { "name": "ordered list past 9, nested", "markdown": "8. Eight\n\n   ```\n   code\n   ```\n9. Nine\n   - sub\n10. Ten\n    - sub\n" },
     { "name": "task list", "markdown": "- [ ] Todo\n- [x] Done\n" },
     { "name": "nested tasks", "markdown": "- [ ] Parent\n  - [x] Child\n" },
     { "name": "mixed nesting", "markdown": "1. Step\n   - [ ] Check\n" },
