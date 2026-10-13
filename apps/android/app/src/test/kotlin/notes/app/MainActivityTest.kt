@@ -5,32 +5,50 @@ import android.view.ViewGroup
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.core.view.children
+import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import notes.app.editor.NoteEditText
 import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
+@Config(application = TestNotesApp::class)
 class MainActivityTest {
     @get:Rule
-    val compose = createAndroidComposeRule<MainActivity>()
+    val compose = createEmptyComposeRule()
 
-    private val graph get() = (compose.activity.application as NotesApp).graph
+    private val graph = ApplicationProvider.getApplicationContext<NotesApp>().graph
+    private lateinit var scenario: ActivityScenario<MainActivity>
+    private lateinit var activity: MainActivity
+
+    @Before
+    fun launch() {
+        // Past first-run onboarding (OnboardingFlowTest covers it), straight to the list.
+        graph.setOnboardingDismissed(true)
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        scenario.onActivity { activity = it }
+    }
 
     @After
-    fun closeDatabase() = graph.database.close()
+    fun tearDown() {
+        scenario.close()
+        graph.database.close()
+    }
 
     @Test
     fun `a new note left blank leaves nothing behind`() {
@@ -60,12 +78,16 @@ class MainActivityTest {
         compose.runOnUiThread { assertEquals("Packing list", reopened.document().title) }
     }
 
-    /** The editor view, once the note has loaded. */
+    /** The editor view, once the note has loaded (on the IO thread, then the main looper). */
     private fun editor(): NoteEditText {
         fun find(v: View): NoteEditText? =
             v as? NoteEditText ?: (v as? ViewGroup)?.children?.firstNotNullOfOrNull(::find)
-        compose.waitUntil { find(compose.activity.window.decorView) != null }
-        return find(compose.activity.window.decorView)!!
+        repeat(50) {
+            compose.waitForIdle()
+            find(activity.window.decorView)?.let { return it }
+            Thread.sleep(100)
+        }
+        error("The editor never appeared")
     }
 
     @Test

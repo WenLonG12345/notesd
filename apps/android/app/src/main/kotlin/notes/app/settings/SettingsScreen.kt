@@ -27,6 +27,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -36,17 +37,38 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import notes.app.AppGraph
 import notes.app.BuildConfig
+import notes.app.account.Account
 import notes.app.ui.LocalTokens
-import notes.core.db.NoteStore
 
-/** Settings. Server and account arrive with sign-in; until then this device is the only copy. */
+private sealed interface Confirm {
+    /** [pending]: notes with changes the server hasn't received. */
+    data class SignOut(val pending: Int) : Confirm
+
+    data object RemoveAll : Confirm
+}
+
 @Composable
-fun SettingsScreen(appearance: Appearance, store: NoteStore, onBack: () -> Unit) {
+fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onConnect: () -> Unit, onSignIn: () -> Unit) {
     val t = LocalTokens.current
-    val theme by appearance.theme.collectAsStateWithLifecycle()
-    var confirmWipe by remember { mutableStateOf(false) }
+    val theme by graph.appearance.theme.collectAsStateWithLifecycle()
+    val account by graph.accounts.account.collectAsStateWithLifecycle()
+    var confirm by remember { mutableStateOf<Confirm?>(null) }
+    var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    fun act(block: suspend () -> Unit) {
+        busy = true
+        // The app scope: leaving the screen mustn't cancel a sign-out halfway.
+        graph.scope.launch {
+            try {
+                block()
+            } finally {
+                busy = false
+            }
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(t.bg).safeDrawingPadding().verticalScroll(rememberScrollState())) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -58,10 +80,30 @@ fun SettingsScreen(appearance: Appearance, store: NoteStore, onBack: () -> Unit)
                 fontSize = 22.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = t.ink,
-                modifier = Modifier.semantics {
-                    heading()
-                }
+                modifier = Modifier.semantics { heading() }
             )
+        }
+
+        Section("Account")
+        when (val a = account) {
+            Account.None -> {
+                Line("Not connected", "Notes are kept on this phone only.")
+                Action("Connect to a server", t.link, enabled = true, onClick = onConnect)
+            }
+
+            is Account.SignedIn -> {
+                Line("Server", a.server)
+                Line("Username", a.username)
+                Action(if (busy) "Signing out…" else "Sign out", t.link, enabled = !busy) {
+                    scope.launch { confirm = Confirm.SignOut(graph.store.pendingNotes()) }
+                }
+            }
+
+            is Account.SignedOut -> {
+                Line("Server", a.server)
+                Line("Username", "${a.username} · signed out")
+                Action("Sign in again", t.link, enabled = true, onClick = onSignIn)
+            }
         }
 
         Section("Appearance")
@@ -71,7 +113,9 @@ fun SettingsScreen(appearance: Appearance, store: NoteStore, onBack: () -> Unit)
                     Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp)
-                        .selectable(selected = theme == option, role = Role.RadioButton) { appearance.set(option) }
+                        .selectable(selected = theme == option, role = Role.RadioButton) {
+                            graph.appearance.set(option)
+                        }
                         .padding(horizontal = 20.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -85,41 +129,61 @@ fun SettingsScreen(appearance: Appearance, store: NoteStore, onBack: () -> Unit)
             }
         }
 
-        Section("Account")
-        Line("Not signed in", "Notes are kept on this device only.")
-
         Section("Data")
-        Text(
-            "Remove all data from this device",
-            color = t.danger,
-            fontSize = 16.sp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .clickable(role = Role.Button) { confirmWipe = true }
-                .padding(horizontal = 20.dp, vertical = 14.dp)
-        )
+        Action("Remove all data from this device", t.danger, enabled = !busy) { confirm = Confirm.RemoveAll }
 
         Section("About")
         Line("Version", BuildConfig.VERSION_NAME)
     }
 
-    if (confirmWipe) {
-        AlertDialog(
-            onDismissRequest = { confirmWipe = false },
-            title = { Text("Remove all data?") },
-            text = {
-                Text("Every note on this device will be deleted. Notes that only exist here can't be recovered.")
+    when (val c = confirm) {
+        is Confirm.SignOut -> ConfirmDialog(
+            title = "Sign out?",
+            text = if (c.pending == 0) {
+                "Your notes stay on this phone."
+            } else {
+                "${c.pending} ${if (c.pending == 1) "note has" else "notes have"} changes the server hasn't " +
+                    "received yet. They stay on this phone and are sent when you sign in again."
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmWipe = false
-                    scope.launch { store.wipe() }
-                }) { Text("Remove", color = t.danger) }
-            },
-            dismissButton = { TextButton(onClick = { confirmWipe = false }) { Text("Cancel") } }
-        )
+            action = "Sign out",
+            onDismiss = { confirm = null }
+        ) { act(graph::signOut) }
+
+        Confirm.RemoveAll -> ConfirmDialog(
+            title = "Remove all data?",
+            text = "Every note on this phone is deleted and you're signed out. Notes the server doesn't have " +
+                "can't be recovered.",
+            action = "Remove",
+            danger = true,
+            onDismiss = { confirm = null }
+        ) { act(graph::removeAllData) }
+
+        null -> Unit
     }
+}
+
+@Composable
+private fun ConfirmDialog(
+    title: String,
+    text: String,
+    action: String,
+    danger: Boolean = false,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val t = LocalTokens.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onConfirm()
+            }) { Text(action, color = if (danger) t.danger else t.link) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
@@ -140,4 +204,18 @@ private fun Line(label: String, value: String) {
         Text(label, color = t.ink, fontSize = 16.sp)
         Text(value, color = t.ink2, fontSize = 14.sp)
     }
+}
+
+@Composable
+private fun Action(label: String, color: Color, enabled: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        color = if (enabled) color else LocalTokens.current.ink3,
+        fontSize = 16.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp)
+    )
 }

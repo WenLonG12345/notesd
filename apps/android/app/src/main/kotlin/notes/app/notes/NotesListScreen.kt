@@ -1,5 +1,6 @@
 package notes.app.notes
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -59,7 +61,14 @@ import notes.app.ui.LocalTokens
 import notes.core.db.Search
 
 @Composable
-fun NotesListScreen(vm: NotesListViewModel, onOpen: (String) -> Unit, onNew: () -> Unit, onSettings: () -> Unit) {
+fun NotesListScreen(
+    vm: NotesListViewModel,
+    signedOut: Boolean,
+    onSignIn: () -> Unit,
+    onOpen: (String) -> Unit,
+    onNew: () -> Unit,
+    onSettings: () -> Unit
+) {
     val t = LocalTokens.current
     val state by vm.state.collectAsStateWithLifecycle()
     val pending by vm.deletions.pending.collectAsStateWithLifecycle()
@@ -123,6 +132,25 @@ fun NotesListScreen(vm: NotesListViewModel, onOpen: (String) -> Unit, onNew: () 
                             onSettings()
                         })
                     }
+                }
+            }
+            if (signedOut) {
+                // Notes keep working; only syncing waits for the user to sign in.
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .background(t.hover, RoundedCornerShape(12.dp))
+                        .padding(start = 16.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Signed out. Changes stay on this phone until you sign in.",
+                        fontSize = 14.sp,
+                        color = t.ink2,
+                        modifier = Modifier.weight(1f).padding(vertical = 10.dp)
+                    )
+                    TextButton(onClick = onSignIn) { Text("Sign in", color = t.link) }
                 }
             }
             TextField(

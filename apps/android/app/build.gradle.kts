@@ -113,6 +113,7 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.mockwebserver)
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
     hostSqlite(libs.sqlite.bundled.jvm)

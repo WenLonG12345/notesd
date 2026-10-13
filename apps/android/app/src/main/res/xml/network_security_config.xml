@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A home server is often plain http on the local network (192.168.x.x, nas.local),
+  and this config can only name hosts, not address ranges. So cleartext is
+  allowed here and ServerAddress refuses http for anything not private.
+-->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
+</network-security-config>

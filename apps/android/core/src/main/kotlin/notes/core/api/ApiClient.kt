@@ -1,0 +1,184 @@
+package notes.core.api
+
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import okhttp3.HttpUrl
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+
+/**
+ * notes-server's JSON API (server/README.md) for one server. Authenticated
+ * calls send the device's bearer token, refresh it shortly before it expires,
+ * and on a 401 refresh once and resend the identical request, so an
+ * operationId inside it stays the same. Only one refresh runs at a time.
+ */
+class ApiClient(
+    val baseUrl: HttpUrl,
+    private val credentials: Credentials? = null,
+    private val http: OkHttpClient = defaultHttp,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val io: CoroutineDispatcher = Dispatchers.IO
+) {
+    private val refreshLock = Mutex()
+
+    /** `/healthz`: is a server answering at this address at all. */
+    suspend fun health(): ApiResult<Unit> = send(get("healthz")) { }
+
+    suspend fun status(): ApiResult<AuthStatus> = send(get("api/v1/auth/status")) { json.decodeFromString(it) }
+
+    /** Creates the owner account with the token from the server log. */
+    suspend fun setup(setupToken: String, username: String, password: String): ApiResult<Unit> = send(
+        post(
+            "api/v1/auth/setup",
+            buildJsonObject {
+                put("setupToken", setupToken)
+                put("username", username)
+                put("password", password)
+            }
+        )
+    ) { }
+
+    suspend fun login(username: String, password: String, deviceName: String): ApiResult<SignIn> = send(
+        post(
+            "api/v1/auth/login",
+            buildJsonObject {
+                put("username", username)
+                put("password", password)
+                put("client", "device")
+                put("deviceName", deviceName)
+            }
+        )
+    ) { json.decodeFromString(it) }
+
+    /** Ends this device's session on the server. */
+    suspend fun logout(): ApiResult<Unit> = authed({ post("api/v1/auth/logout", JsonObject(emptyMap()), it) }) { }
+
+    // --- plumbing ------------------------------------------------------------
+
+    private suspend fun <T> authed(build: (access: String) -> Request, decode: (String) -> T): ApiResult<T> {
+        val creds = credentials ?: return ApiResult.Unauthenticated
+        var tokens = creds.tokens() ?: return ApiResult.Unauthenticated
+        if (tokens.accessExpiresAt - clock() < REFRESH_EARLY_MS) {
+            when (val r = refresh(tokens)) {
+                is ApiResult.Ok -> tokens = r.value
+                else -> return r.failure()
+            }
+        }
+        val first = send(build(tokens.access), decode)
+        if (first != ApiResult.Unauthenticated) return first
+        return when (val r = refresh(tokens)) {
+            is ApiResult.Ok -> send(build(r.value.access), decode)
+            else -> r.failure()
+        }
+    }
+
+    /** New tokens for [stale], unless another caller already replaced them. */
+    private suspend fun refresh(stale: Tokens): ApiResult<Tokens> = refreshLock.withLock {
+        val creds = credentials ?: return ApiResult.Unauthenticated
+        val current = creds.tokens() ?: return ApiResult.Unauthenticated
+        if (current.access != stale.access) return ApiResult.Ok(current)
+        val body = buildJsonObject { put("refreshToken", current.refresh) }
+        when (val r = send(post("api/v1/auth/refresh", body)) { json.decodeFromString<SignIn>(it) }) {
+            is ApiResult.Ok -> {
+                // Refresh tokens aren't rotated; keep ours if the answer leaves it out.
+                val next =
+                    Tokens(
+                        r.value.accessToken,
+                        r.value.accessExpiresAt,
+                        r.value.refreshToken.ifEmpty {
+                            current.refresh
+                        }
+                    )
+                creds.refreshed(next)
+                ApiResult.Ok(next)
+            }
+
+            ApiResult.Unauthenticated -> {
+                creds.revoked()
+                ApiResult.Unauthenticated
+            }
+
+            else -> r.failure()
+        }
+    }
+
+    private suspend fun <T> send(request: Request, decode: (String) -> T): ApiResult<T> = withContext(io) {
+        val (code, retryAfter, body) = try {
+            http.newCall(request).execute().use { Triple(it.code, it.header("Retry-After"), it.body.string()) }
+        } catch (e: IOException) {
+            return@withContext ApiResult.Unreachable(e)
+        }
+        if (code in 200..299) {
+            return@withContext try {
+                ApiResult.Ok(decode(body))
+            } catch (_: SerializationException) {
+                unexpected(code)
+            } catch (_: IllegalArgumentException) {
+                unexpected(code)
+            }
+        }
+        val error = try {
+            json.decodeFromString<ErrorBody>(body)
+        } catch (_: SerializationException) {
+            ErrorBody()
+        } catch (_: IllegalArgumentException) {
+            ErrorBody()
+        }
+        when {
+            code == 401 && error.error == "unauthenticated" -> ApiResult.Unauthenticated
+            code == 409 -> ApiResult.Conflict(error.error, error.message, error.current)
+            code == 429 -> ApiResult.RateLimited(retryAfter?.trim()?.toLongOrNull() ?: DEFAULT_RETRY_AFTER_S)
+            else -> ApiResult.Rejected(code, error.error.ifEmpty { "http_$code" }, error.message, error.field)
+        }
+    }
+
+    private fun unexpected(code: Int) =
+        ApiResult.Rejected(code, UNEXPECTED_RESPONSE, "The server's answer wasn't understood.", null)
+
+    private fun url(path: String) = baseUrl.newBuilder().addPathSegments(path).build()
+
+    private fun get(path: String) = Request.Builder().url(url(path)).build()
+
+    private fun post(path: String, body: JsonObject, access: String? = null) = Request.Builder()
+        .url(url(path))
+        .post(body.toString().toRequestBody(JSON))
+        .apply { if (access != null) header("Authorization", "Bearer $access") }
+        .build()
+
+    companion object {
+        /** A 2xx answer that isn't the expected JSON: something other than notes-server is at this address. */
+        const val UNEXPECTED_RESPONSE = "unexpected_response"
+
+        private const val REFRESH_EARLY_MS = 60_000L
+        private const val DEFAULT_RETRY_AFTER_S = 60L
+        private val JSON = "application/json".toMediaType()
+        private val json = Json { ignoreUnknownKeys = true }
+
+        val defaultHttp: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+}
+
+/** A non-Ok result, retyped: none of them carry a value. */
+private fun <T> ApiResult<*>.failure(): ApiResult<T> = when (this) {
+    is ApiResult.Ok -> error("not a failure")
+    is ApiResult.Conflict -> this
+    ApiResult.Unauthenticated -> ApiResult.Unauthenticated
+    is ApiResult.RateLimited -> this
+    is ApiResult.Rejected -> this
+    is ApiResult.Unreachable -> this
+}

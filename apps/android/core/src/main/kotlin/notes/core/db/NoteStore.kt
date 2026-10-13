@@ -196,6 +196,9 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
         }
     }
 
+    /** How many notes have changes the server hasn't confirmed. */
+    suspend fun pendingNotes(): Int = db.read { it.long("SELECT count(DISTINCT note_id) FROM sync_outbox").toInt() }
+
     /** For tests until the sync engine exists: the server has received [operationId]. */
     internal suspend fun markSent(operationId: String) {
         db.write { it.exec("UPDATE sync_outbox SET sent = 1 WHERE operation_id = ?", operationId) }
