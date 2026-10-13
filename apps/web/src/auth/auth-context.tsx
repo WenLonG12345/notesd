@@ -11,11 +11,12 @@ export type AuthState =
   // The session ended while the app was in use. The shell stays mounted
   // under a sign-in dialog so unsaved edits survive and retry afterwards.
   | { status: 'expired'; username: string }
-  | { status: 'signed-in'; username: string }
+  // firstRun: just finished onboarding, for the welcome empty state.
+  | { status: 'signed-in'; username: string; firstRun?: boolean }
 
 type AuthContextValue = {
   state: AuthState
-  signedIn: (info: SessionInfo) => void
+  signedIn: (info: SessionInfo, opts?: { firstRun?: boolean }) => void
   signOut: () => Promise<void>
   retry: () => void
 }
@@ -38,9 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const signedIn = useCallback((info: SessionInfo) => {
+  const signedIn = useCallback((info: SessionInfo, opts: { firstRun?: boolean } = {}) => {
     setCsrfToken(info.csrfToken)
-    setState({ status: 'signed-in', username: info.username })
+    setState({ status: 'signed-in', username: info.username, firstRun: opts.firstRun ?? false })
   }, [])
 
   const signOut = useCallback(async () => {

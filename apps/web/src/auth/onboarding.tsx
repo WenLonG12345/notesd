@@ -96,7 +96,7 @@ export function Onboarding() {
     }
 
     try {
-      signedIn(await auth.login(username.trim(), password))
+      signedIn(await auth.login(username.trim(), password), { firstRun: true })
     } catch {
       // The account exists now; the regular sign-in screen takes it from here.
       retry()

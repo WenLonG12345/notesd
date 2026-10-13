@@ -7,6 +7,10 @@ import { inject, onTestFinished } from 'vitest'
 export type TestServer = {
   url: string
   setupToken: string
+  /** Browser requests fail as if the network were down. */
+  setOffline: (offline: boolean) => void
+  /** The next matching browser request reaches the server, but its response is lost. */
+  loseNextResponse: (match: (method: string, path: string) => boolean) => void
   /** Calls the API as a separate client (its own cookie jar). */
   api: <T = unknown>(method: string, path: string, body?: unknown) => Promise<{ status: number; body: T }>
   stop: () => Promise<void>
@@ -30,6 +34,12 @@ export async function startServer(): Promise<TestServer> {
   const server: TestServer = {
     url,
     setupToken,
+    setOffline: (offline) => {
+      browser.offline = offline
+    },
+    loseNextResponse: (match) => {
+      browser.lose = match
+    },
     async api(method, path, body) {
       const res = await other(`/api/v1${path}`, {
         method,
@@ -86,12 +96,17 @@ function readStartup(proc: ChildProcess): Promise<{ url: string; setupToken: str
   })
 }
 
-type CookieFetch = typeof fetch & { csrf?: string }
+type CookieFetch = typeof fetch & {
+  csrf?: string
+  offline?: boolean
+  lose?: ((method: string, path: string) => boolean) | undefined
+}
 
 function cookieFetch(base: string): CookieFetch {
   const jar = new Map<string, string>()
   const fn: CookieFetch = async (input, init = {}) => {
     const url = new URL(String(input), base)
+    if (fn.offline) throw new TypeError('Failed to fetch')
     const headers = new Headers(init.headers)
     // Same-origin browser requests carry Origin on mutations.
     headers.set('Origin', base)
@@ -103,6 +118,10 @@ function cookieFetch(base: string): CookieFetch {
     if (init.signal?.aborted) controller.abort(init.signal.reason)
 
     const res = await nodeFetch(url, { ...init, headers, signal: controller.signal })
+    if (fn.lose?.(init.method ?? 'GET', url.pathname)) {
+      fn.lose = undefined
+      throw new TypeError('Failed to fetch')
+    }
     for (const cookie of res.headers.getSetCookie()) {
       const [pair = '', ...attrs] = cookie.split(';')
       const eq = pair.indexOf('=')

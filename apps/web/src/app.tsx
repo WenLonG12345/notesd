@@ -2,6 +2,7 @@ import { AuthProvider, useAuth } from './auth/auth-context'
 import { AuthLayout } from './auth/auth-layout'
 import { Login, LoginForm } from './auth/login'
 import { Onboarding } from './auth/onboarding'
+import { Shell } from './notes/shell'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Kicker } from './ui/kicker'
@@ -55,18 +56,4 @@ function AuthGate() {
         </>
       )
   }
-}
-
-// Replaced by the notes shell in the next step.
-function Shell({ username }: { username: string }) {
-  const { signOut } = useAuth()
-  return (
-    <AuthLayout>
-      <div className={styles.stack}>
-        <Kicker>You’re all set, {username}</Kicker>
-        <h1>Signed in as {username}</h1>
-        <Button onClick={() => void signOut()}>Sign out</Button>
-      </div>
-    </AuthLayout>
-  )
 }
