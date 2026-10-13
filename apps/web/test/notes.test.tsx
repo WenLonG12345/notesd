@@ -414,18 +414,18 @@ describe('the list', () => {
         id = await createNote(s, 'Trip', '# Lisbon\n\nLanding **Friday**.\n\n```sh\nmake web\n```\n\n- [x] Book room\n')
       },
     })
-    expect(within(row('Trip')).getByText('Lisbon Landing Friday. make web Book room')).toBeTruthy()
+    expect(within(row('Trip')).getByText('Lisbon · Landing Friday. · make web · Book room')).toBeTruthy()
     await waitFor(() => expect(noteTitle()).toBe('Trip'))
     expect(within(list()).getByRole('heading', { name: 'Today' })).toBeTruthy()
 
     await typeAtEnd(user, ' near the river')
     await saved()
 
-    const local = 'Lisbon Landing Friday. make web Book room near the river'
+    const local = 'Lisbon · Landing Friday. · make web · Book room near the river'
     await waitFor(() => expect(within(row('Trip')).getByText(local)).toBeTruthy())
     const [fromServer] = await listNotes(server)
     expect(fromServer?.id).toBe(id)
-    expect(fromServer?.preview.split('\n').join(' ')).toBe(local)
+    expect(fromServer?.preview.split('\n').join(' · ')).toBe(local)
   })
 
   it('pages through more than 50 notes and counts them all', async () => {

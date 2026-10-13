@@ -270,7 +270,7 @@ Apple Notes-style split view (`Notes v2` in the prototype):
 - Rows grouped Today / Previous 7 days / Previous 30 days / Earlier (no
   Pinned group: pinning needs a server field, deferred). Each row: title
   ("New note" when empty), time (clock time today, then Yesterday, a
-  weekday, a short date) and the preview's lines joined with spaces ("No
+  weekday, a short date) and the preview's lines joined with " · " ("No
   additional text" when empty). The open note's row is filled with the
   accent. Rows are links to `/notes/:id`.
 - Footer: "N notes" from the list response's `total`, adjusted locally

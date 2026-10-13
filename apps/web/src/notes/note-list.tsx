@@ -133,7 +133,7 @@ export function NoteList({ username, selectedId, query, onQuery, onSelect, onNew
                     time={note.updatedAt}
                     selected={note.id === selectedId}
                     onSelect={onSelect}
-                    preview={note.preview ? note.preview.split('\n').join(' ') : 'No additional text'}
+                    preview={note.preview ? note.preview.split('\n').join(' · ') : 'No additional text'}
                   />
                 ))}
               </Section>
