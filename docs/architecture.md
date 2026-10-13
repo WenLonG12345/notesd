@@ -502,15 +502,3 @@ notes/
 ```
 
 `shared/` holds specifications and fixtures, not a runtime library; the mobile apps remain independent projects on their own toolchains.
-
-### 13.2 Roadmap
-
-The riskiest component, the native editor, is validated first.
-
-1. **Document format and editor prototypes.** Markdown subset, iOS and Android editor prototypes, formatting toolbar, Markdown import/export, round-trip tests. *Done when* formatted documents survive create, edit, save and reopen with normal native editing behaviour.
-2. **Backend foundation.** Go API, SQLite, migrations, authentication, note CRUD, revision-based updates, tombstones, embedded web assets, health endpoints. *Done when* one executable handles concurrent note mutations correctly.
-3. **Web application.** React, Tiptap, navigation, autosave, search, authentication, conflict handling. *Done when* notes can be managed entirely in a browser with no separate frontend server.
-4. **Offline mobile persistence.** Local SQLite, note lists, editors, autosave, local FTS5, outbox, sync status indicators. *Done when* notes can be created, edited, deleted and searched fully offline.
-5. **Synchronization.** Change sequences, incremental downloads, idempotent uploads, persistent cursors, field merging, conflict copies, tombstones, background sync, recovery and retry tests. *Done when* devices converge on the server state without silently losing edits.
-6. **Hardening and distribution.** x86-64 and ARM64 builds, service examples, backup and restore commands, integrity checks, sync recovery tests, benchmarks, installation docs, automated releases. *Done when* a technically competent user can run it on a small VPS or homelab with no extra infrastructure.
-
