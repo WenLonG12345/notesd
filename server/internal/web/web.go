@@ -4,7 +4,8 @@
 // apps/web builds into internal/web/dist. Requests for files that exist are
 // served directly (fingerprinted files under /assets/ are cached for a
 // year); any other path that does not look like a file gets index.html, so
-// client-side routes work on reload.
+// client-side routes work on reload. dist is build output and only holds a
+// .gitkeep in git; until the web app is built, pages get placeholder.html.
 package web
 
 import (
@@ -17,6 +18,9 @@ import (
 
 //go:embed all:dist
 var dist embed.FS
+
+//go:embed placeholder.html
+var placeholder []byte
 
 // Handler returns the static file handler for the embedded web app.
 func Handler() http.Handler {
@@ -57,13 +61,14 @@ func Handler() http.Handler {
 }
 
 func serveIndex(w http.ResponseWriter, r *http.Request, root fs.FS) {
+	status := http.StatusOK
 	b, err := fs.ReadFile(root, "index.html")
 	if err != nil {
-		http.Error(w, "web app not built", http.StatusNotFound)
-		return
+		status, b = http.StatusServiceUnavailable, placeholder
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(status)
 	if r.Method == http.MethodHead {
 		return
 	}

@@ -15,9 +15,14 @@ switch.
 cd server
 go mod tidy                 # first time: fetches modules and writes go.sum
 go test -race ./...
+make web                    # builds apps/web into internal/web/dist (needs Node 22+, pnpm)
 make build                  # ./bin/notes-server
 make release                # linux/amd64 and linux/arm64 binaries in ./bin
 ```
+
+`internal/web/dist` is build output and is gitignored except for a `.gitkeep`
+(`//go:embed` needs the directory to exist). A binary built without `make web`
+still works; web pages show a "web app not built" placeholder with status 503.
 
 ## Run
 

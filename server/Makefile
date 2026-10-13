@@ -2,7 +2,10 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 export CGO_ENABLED := 0
 
-.PHONY: build test release clean
+.PHONY: web build test release clean
+
+web:
+	cd ../apps/web && pnpm install --frozen-lockfile && pnpm build
 
 build:
 	go build -trimpath -ldflags '$(LDFLAGS)' -o bin/notes-server ./cmd/notes-server

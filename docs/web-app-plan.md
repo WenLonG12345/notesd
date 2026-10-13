@@ -17,7 +17,7 @@ notes/
 │   ├── cmd/notes-server      CLI; `go run ./cmd/notes-server` serves on 127.0.0.1:8080
 │   ├── internal/api          routes, auth middleware, CSRF, handlers
 │   ├── internal/web          serves the embedded web build from internal/web/dist
-│   ├── internal/web/dist     placeholder index.html; the Vite build REPLACES this
+│   ├── internal/web/dist     Vite build output (gitignored except .gitkeep)
 │   ├── dev.sh                `./dev.sh test ./...` etc. (uses local toolchain if present)
 │   └── README.md             full API reference
 ├── apps/web/package.json     written, nothing else yet
@@ -103,7 +103,7 @@ for native apps).
 
 ## 2. Stack and project setup
 
-`apps/web/package.json`, `.npmrc` and `tsconfig.json` are already written:
+`apps/web/package.json` and `tsconfig.json` are already written:
 React 18, **TypeScript 7** (the Go-based compiler, now published as the
 normal `typescript` package; `strict` and `esnext` are its defaults and
 6.0's deprecations such as `baseUrl` are hard errors, so keep `tsconfig`
@@ -113,13 +113,11 @@ Vitest. The package manager is **pnpm** (`packageManager` field pins it;
 `corepack enable` or `npm i -g pnpm` if it is missing). Node is only a
 build tool.
 
-> `pnpm.overrides` pins `esbuild` and `rollup` to their WebAssembly builds,
-> and `.npmrc` keeps the pnpm store in `.tools/pnpm-store` (gitignored),
-> so the same install works inside the Linux sandbox Claude (cloud) uses.
-> If the web app is only ever built on the Mac, drop the overrides,
-> `esbuild-wasm`, `@rollup/wasm-node` and `.npmrc` for faster builds.
+Dependencies use `^` ranges; `pnpm-lock.yaml` is what pins them.
 
-Type checking is `tsc --noEmit` (no `-b`, no project references); Vite does
+Type checking is `pnpm typecheck`: `tsc --noEmit` for `src`, plus
+`tsconfig.node.json` for `vite.config.ts` (Node types stay out of browser
+code; no `-b`, no project references); Vite does
 the transpiling. If TypeScript 7 rejects a type from a dependency, fix it
 with a local `.d.ts` shim, not by downgrading.
 
@@ -142,10 +140,11 @@ Setup tasks:
    resolve and client-side routes survive a reload).
 5. Add a `web` target to `server/Makefile` that runs `pnpm install
    --frozen-lockfile && pnpm build` in `apps/web` before `build`, and
-   document in `server/README.md`
-   that `dist/` is build output (consider gitignoring
-   `server/internal/web/dist/*` except a committed placeholder
-   `index.html`; the Go `//go:embed all:dist` needs the directory to exist).
+   document in `server/README.md` that `dist/` is build output.
+   `server/internal/web/dist/*` is gitignored except `.gitkeep` (the Go
+   `//go:embed all:dist` needs the directory to exist; a Vite plugin
+   restores it after `emptyOutDir`). Without a build, the server serves the
+   embedded `internal/web/placeholder.html` with status 503.
 
 ## 3. Source layout
 
@@ -258,7 +257,8 @@ button. Settings opens as a route in the editor pane.
   title/content, select it, focus the title. Do **not** POST yet — POST on
   the first autosave that has content (an abandoned empty note never hits
   the server). If the user navigates away from an empty, never-saved note,
-  drop it.
+  drop it. Don't push `/notes/:id` to the URL until the first POST
+  succeeds, so a reload never points at a note the server doesn't have.
 
 ### Editor (Tiptap)
 
@@ -283,14 +283,15 @@ shortcuts come from the extensions. Show active state per button.
   false`) + the task-list syntax `- [ ]` / `- [x]`, into a ProseMirror doc
   using `prosemirror-markdown`'s `MarkdownParser` with a token map covering
   only the allowed nodes/marks. Unknown constructs (code fences, tables,
-  images, raw HTML) must not be silently dropped: render them as a
-  paragraph containing their literal source text, so they survive a save
-  round trip as text. Keep this simple; a nicer "unsupported block" node
-  can come later.
+  images, raw HTML, code spans, horizontal rules) must not be silently
+  dropped: keep them as a `rawBlock` node / `rawInline` atom holding their
+  exact source, shown read-only and written back verbatim (spec §7.1).
+  Literal text is not enough: the serializer would escape it and fold its
+  line breaks, corrupting the note on first save.
 - Serialize with `MarkdownSerializer`, deterministic per §7.4: `**bold**`,
   `*italic*`, `~~strike~~`, `- ` bullets, `1.` ordered, `- [ ]`/`- [x]`
-  tasks, `# ` headings, `> ` quotes, `[text](url)`, two trailing spaces for
-  hard breaks, one blank line between blocks, no trailing whitespace, file
+  tasks, `# ` headings, `> ` quotes, `[text](url)`, `\` + newline for
+  hard breaks (§7.4), one blank line between blocks, no trailing whitespace, file
   ends with a single `\n` (or is empty).
 - Tests (`markdown.test.ts`): every case in
   `shared/markdown-fixtures/plaintext.json` must parse without throwing and
@@ -309,8 +310,9 @@ Per open note, keep: `serverRevision`, `lastSavedTitle/Content`,
 
 - On edit: mark `unsaved`, debounce 1.5 s (reset on each change). Also
   flush immediately on: switching notes, `visibilitychange` → hidden,
-  `beforeunload` (use `fetch` with `keepalive: true`; and warn with the
-  native prompt only if a save is still pending).
+  `beforeunload` (use `fetch` with `keepalive: true` when the body is
+  ≤ 60 KB, the browser's keepalive limit being 64 KB; warn with the native
+  prompt whenever a save is still pending or too large for keepalive).
 - Save: serialize, skip if equal to last saved, mint a new `operationId`,
   `PUT` with `baseRevision = serverRevision` (or `POST` if never created).
   Saves for one note are **serialized** (await the in-flight one; if the
@@ -323,16 +325,16 @@ Per open note, keep: `serverRevision`, `lastSavedTitle/Content`,
   s) **reusing the same operationId and payload** so a lost response
   replays safely. Show "Couldn't save — retrying" with a manual "Retry now".
 - `409 revision_conflict`: the note changed on another device. Do not
-  overwrite and do not lose the local edit. Show a conflict banner with
-  the two choices the spec allows for the web client:
+  overwrite and do not lose the local edit. First try the §6.1 field
+  merge (base = `lastSaved*`): a field changed on one side only takes that
+  side's value; identical changes are resolved; re-save against
+  `current.revision` and repeat if it moves again. Only when both sides
+  changed the content differently, show a conflict banner with the two
+  choices the spec allows for the web client:
   - "Keep mine": save the local version as a **new note** titled
     `<Title> (Conflicted copy)` via `POST` with `conflictOf: <id>`, then
     reload the original note from `current`.
   - "Use theirs": discard local edits and load `current`.
-  (A per-field auto-merge, §6.1, is optional polish: if only the title
-  changed locally and only the content changed remotely, or vice versa,
-  merge silently and re-save against `current.revision`. Implement it only
-  if the simple path is solid.)
 - `409 note_deleted`: show "This note was deleted on another device" with
   "Keep as new note" (POST as `<Title> (Recovered copy)`) or "Discard".
 - `401`: keep everything in memory, show login, retry after sign-in.

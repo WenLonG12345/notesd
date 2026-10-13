@@ -286,6 +286,8 @@ Markdown is the stored format for portability and readability; editors work on a
 
 A restricted, documented dialect based on CommonMark with selected GitHub Flavored Markdown extensions: paragraphs and line breaks, headings, bold, italic, strikethrough, links, ordered and unordered lists, task lists and blockquotes. It is implemented identically on iOS, Android and web. Unsupported constructs must not be silently discarded; V1 editing and import may be limited to the subset.
 
+Unsupported constructs (code spans and fences, tables, images, horizontal rules, raw HTML, and anything else outside the subset) are kept as opaque raw blocks or raw inline runs: shown read-only, not editable, and written back byte-for-byte on save. Turning them into ordinary text is not enough. The serializer would escape their syntax characters and fold their line breaks, so one save on any client would corrupt a note written elsewhere (for example a code fence pasted on another device).
+
 ### 7.2 Editing model
 
 Markdown is parsed once into the native model (TextKit attributed strings on iOS, spans on Android, ProseMirror on web) and serialized during autosave. Editing must preserve cursor position, selection, undo/redo and active IME composition; saving never rebuilds the editor UI or resets the selection.
@@ -298,7 +300,7 @@ Markdown is parsed once into the native model (TextKit attributed strings on iOS
 
 ### 7.4 Cross-platform consistency
 
-Serialization rules are shared and deterministic for app-produced documents, for example always `**bold**` rather than `__bold__`, and one task-list syntax. A shared fixture suite checks semantic round-trip stability across all three editors; byte-for-byte preservation of imported Markdown is not a goal.
+Serialization rules are shared and deterministic for app-produced documents, for example always `**bold**` rather than `__bold__`, and one task-list syntax. Hard line breaks are written as a backslash before the newline (CommonMark), never as two trailing spaces, which editors and tooling routinely strip; serialized output has no trailing whitespace. A shared fixture suite checks semantic round-trip stability across all three editors; byte-for-byte preservation of imported Markdown is not a goal.
 
 Lists, checklists, paragraph styles, cursor behaviour and serialization need substantial custom engineering on top of native text components, so the native editors are prototyped first.
 
