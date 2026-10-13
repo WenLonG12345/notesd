@@ -1,6 +1,34 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+// Robolectric runs the Android build of the bundled SQLite driver, which loads
+// "sqliteJni" from java.library.path; take the host's copy from the JVM artifact.
+val hostSqlite: Configuration by configurations.creating { isTransitive = false }
+val hostPlatform = run {
+    val os = System.getProperty("os.name").lowercase()
+    val arch = if (System.getProperty("os.arch") in setOf("aarch64", "arm64")) "arm64" else "x64"
+    when {
+        "mac" in os -> "osx_$arch"
+        "windows" in os -> "windows_$arch"
+        else -> "linux_$arch"
+    }
+}
+interface ArchiveAccess {
+    @get:Inject val archives: ArchiveOperations
+}
+val hostSqliteNatives = tasks.register<Sync>("hostSqliteNatives") {
+    // Locals only: the configuration cache can't serialise lambdas that capture the script.
+    val archives = objects.newInstance<ArchiveAccess>().archives
+    val natives = "natives/$hostPlatform/*"
+    from(hostSqlite.elements.map { jars -> jars.map { archives.zipTree(it) } }) {
+        include(natives)
+        eachFile { path = name }
+        includeEmptyDirs = false
+    }
+    into(layout.buildDirectory.dir("hostSqlite"))
 }
 
 android {
@@ -31,11 +59,14 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
+            it.dependsOn(hostSqliteNatives)
+            it.systemProperty("java.library.path", hostSqliteNatives.get().destinationDir.absolutePath)
             // Fixtures shared with the web app and the server.
             it.systemProperty("notes.sharedDir", rootProject.file("../../shared").absolutePath)
             // Robolectric reaches into JDK internals (FileDescriptor, SharedSecrets) that are closed by default.
@@ -69,11 +100,22 @@ dependencies {
     implementation(libs.appcompat)
     implementation(libs.core.ktx)
     implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.viewmodel.navigation3)
+    implementation(libs.navigation3.runtime)
+    implementation(libs.navigation3.ui)
+    implementation(libs.coroutines.android)
+    implementation(libs.serialization.json)
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.robolectric)
+    testImplementation(libs.coroutines.test)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    hostSqlite(libs.sqlite.bundled.jvm)
     testImplementation(libs.androidx.test.junit)
     testImplementation(libs.androidx.test.core)
 }

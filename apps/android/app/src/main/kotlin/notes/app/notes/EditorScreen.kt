@@ -1,4 +1,4 @@
-package notes.app.editor
+package notes.app.notes
 
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -44,42 +45,45 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import java.io.File
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import notes.app.BuildConfig
+import notes.app.editor.FormatState
+import notes.app.editor.FormattingBar
+import notes.app.editor.LinkDialog
+import notes.app.editor.LinkSheet
+import notes.app.editor.LinkTap
+import notes.app.editor.NoteEditText
+import notes.app.editor.SAMPLE_MARKDOWN
+import notes.app.editor.SAMPLE_TITLE
 import notes.app.ui.LocalTokens
 import notes.core.doc.Document
 import notes.core.markdown.Markdown
-import org.json.JSONObject
 
-/**
- * The editor prototype (roadmap step 1): one note, saved to a local file 750 ms
- * after the last change and on stop, reopened from that file on demand. Stands
- * in for the notes database until the store exists.
- */
+private const val SAVE_DELAY_MS = 700L
+
+/** A note, full screen. Saves locally shortly after typing stops, and at once on leaving or backgrounding. */
 @Composable
-fun EditorDebugScreen() {
+fun EditorScreen(vm: EditorViewModel, onBack: () -> Unit, onDelete: () -> Unit) {
     val context = LocalContext.current
     val t = LocalTokens.current
-    val store = remember { PrototypeStore(File(context.filesDir, "prototype-note.json")) }
+    val loaded by vm.document.collectAsStateWithLifecycle()
+    val status by vm.status.collectAsStateWithLifecycle()
     var editor by remember { mutableStateOf<NoteEditText?>(null) }
     var state by remember { mutableStateOf(FormatState()) }
     var edits by remember { mutableIntStateOf(0) }
-    var saved by remember { mutableIntStateOf(0) }
     var linkTap by remember { mutableStateOf<LinkTap?>(null) }
     var linkDialog by remember { mutableStateOf<Pair<String, String?>?>(null) }
     var markdown by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
 
     fun save() {
-        val e = editor ?: return
-        if (saved == edits) return
-        store.save(e.document())
-        saved = edits
+        editor?.let { vm.save(it.document()) }
     }
 
     LaunchedEffect(edits) {
-        if (edits == saved) return@LaunchedEffect
-        delay(750)
+        if (edits == 0) return@LaunchedEffect
+        delay(SAVE_DELAY_MS)
         save()
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -94,73 +98,74 @@ fun EditorDebugScreen() {
 
     Column(Modifier.fillMaxSize().background(t.bg).safeDrawingPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-                onClick = { editor?.undo() },
-                enabled = state.canUndo,
-                modifier = Modifier.semantics {
-                    contentDescription =
-                        "Undo"
-                }
-            ) {
-                Text("↶", fontSize = 20.sp, color = if (state.canUndo) t.ink else t.ink3)
-            }
-            IconButton(
-                onClick = { editor?.redo() },
-                enabled = state.canRedo,
-                modifier = Modifier.semantics {
-                    contentDescription =
-                        "Redo"
-                }
-            ) {
-                Text("↷", fontSize = 20.sp, color = if (state.canRedo) t.ink else t.ink3)
-            }
+            GlyphButton("←", "Back", t.ink, onClick = onBack)
+            GlyphButton("↶", "Undo", if (state.canUndo) t.ink else t.ink3, enabled = state.canUndo) { editor?.undo() }
+            GlyphButton("↷", "Redo", if (state.canRedo) t.ink else t.ink3, enabled = state.canRedo) { editor?.redo() }
             Spacer(Modifier.weight(1f))
-            val synced = saved == edits
-            Box(Modifier.size(7.dp).background(if (synced) t.statusSaved else t.statusUnsaved, CircleShape))
-            Text(
-                if (synced) "Saved locally" else "Unsaved",
-                fontSize = 13.sp,
-                color = t.ink2,
-                modifier = Modifier.padding(start = 6.dp, end = 4.dp)
-            )
+            if (status != SaveStatus.Blank) {
+                val saved = status == SaveStatus.Saved
+                Box(Modifier.size(7.dp).background(if (saved) t.statusSaved else t.statusUnsaved, CircleShape))
+                Text(
+                    if (saved) "Saved" else "Editing",
+                    fontSize = 13.sp,
+                    color = t.ink2,
+                    modifier = Modifier.padding(start = 6.dp, end = 4.dp)
+                )
+            }
             Box {
-                IconButton(onClick = { menu = true }, modifier = Modifier.semantics { contentDescription = "More" }) {
-                    Text("⋯", fontSize = 20.sp, color = t.ink)
-                }
+                GlyphButton("⋯", "More", t.ink) { menu = true }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Reopen saved note") }, onClick = {
+                    DropdownMenuItem(text = { Text("Share") }, onClick = {
                         menu = false
-                        save()
-                        editor?.setDocument(store.load() ?: Document.forNote("", Document.EMPTY))
+                        editor?.document()?.let { share(context, it) }
                     })
-                    DropdownMenuItem(text = { Text("Load sample note") }, onClick = {
-                        menu = false
-                        editor?.setDocument(Document.forNote(SAMPLE_TITLE, Markdown.parse(SAMPLE)))
-                        edits++
-                    })
-                    DropdownMenuItem(text = { Text("Show Markdown") }, onClick = {
-                        menu = false
-                        markdown = editor?.document()?.let { "# ${it.title}\n\n" + Markdown.serialize(it) }
-                    })
+                    // A blank new note has nothing to delete: leaving discards it.
+                    if (status != SaveStatus.Blank) {
+                        DropdownMenuItem(text = { Text("Delete note", color = t.danger) }, onClick = {
+                            menu = false
+                            save()
+                            onDelete()
+                        })
+                    }
+                    if (BuildConfig.DEBUG) {
+                        DropdownMenuItem(text = { Text("Show Markdown") }, onClick = {
+                            menu = false
+                            markdown = editor?.document()?.let(::exportMarkdown)
+                        })
+                        DropdownMenuItem(text = { Text("Load sample note") }, onClick = {
+                            menu = false
+                            editor?.setDocument(Document.forNote(SAMPLE_TITLE, Markdown.parse(SAMPLE_MARKDOWN)))
+                            vm.edited()
+                            edits++
+                        })
+                    }
                 }
             }
         }
-        AndroidView(
-            factory = { ctx ->
-                NoteEditText(ctx).apply {
-                    val pad = editorStyle.dp(20f).toInt()
-                    setPadding(pad, editorStyle.dp(8f).toInt(), pad, pad)
-                    hint = "New note"
-                    store.load()?.let { setDocument(it) }
-                    onChange = { edits++ }
-                    onFormatState = { state = it }
-                    onLinkTap = { linkTap = it }
-                    editor = this
-                }
-            },
-            modifier = Modifier.weight(1f).fillMaxWidth()
-        )
-        FormattingBar(state, { editor }, onLink = { linkDialog = editor?.linkContext() })
+        val doc = loaded
+        if (doc != null) {
+            AndroidView(
+                factory = { ctx ->
+                    NoteEditText(ctx).apply {
+                        val pad = editorStyle.dp(20f).toInt()
+                        setPadding(pad, editorStyle.dp(8f).toInt(), pad, pad)
+                        hint = "New note"
+                        setDocument(doc)
+                        onChange = {
+                            vm.edited()
+                            edits++
+                        }
+                        onFormatState = { state = it }
+                        onLinkTap = { linkTap = it }
+                        editor = this
+                        if (text.isNullOrEmpty()) requestFocus()
+                    }
+                },
+                onRelease = { editor = null },
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            )
+            FormattingBar(state, { editor }, onLink = { linkDialog = editor?.linkContext() })
+        }
     }
 
     linkTap?.let { tap ->
@@ -204,6 +209,28 @@ fun EditorDebugScreen() {
     }
 }
 
+@Composable
+private fun GlyphButton(glyph: String, label: String, color: Color, enabled: Boolean = true, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.semantics { contentDescription = label }) {
+        Text(glyph, fontSize = 20.sp, color = color)
+    }
+}
+
+/** The note as one Markdown file: the title as a heading, then the canonical body. */
+private fun exportMarkdown(doc: Document): String {
+    val title = doc.title.orEmpty().trim()
+    val body = Markdown.serialize(doc)
+    return if (title.isEmpty()) body else "# $title\n\n$body"
+}
+
+private fun share(context: Context, doc: Document) {
+    val send = Intent(Intent.ACTION_SEND)
+        .setType("text/plain")
+        .putExtra(Intent.EXTRA_SUBJECT, doc.title.orEmpty())
+        .putExtra(Intent.EXTRA_TEXT, exportMarkdown(doc))
+    context.startActivity(Intent.createChooser(send, null))
+}
+
 private fun open(context: Context, href: String) {
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, href.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -211,50 +238,3 @@ private fun open(context: Context, href: String) {
         // Nothing can open it; the sheet already showed the address.
     }
 }
-
-/** One note in a JSON file: the title and the canonical Markdown, as the server would store them. */
-private class PrototypeStore(private val file: File) {
-    fun save(doc: Document) {
-        val json = JSONObject().put("title", doc.title.orEmpty()).put("content", Markdown.serialize(doc))
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(json.toString())
-        tmp.renameTo(file)
-    }
-
-    fun load(): Document? {
-        if (!file.exists()) return null
-        val json = JSONObject(file.readText())
-        return Document.forNote(json.optString("title"), Markdown.parse(json.optString("content")))
-    }
-}
-
-private const val SAMPLE_TITLE = "Weekend plan"
-
-private val SAMPLE = """
-    |# Saturday
-    |
-    |Pick up the **bike** from the shop, then *maybe* the ~~market~~ park.
-    |
-    |- Groceries
-    |  - Bread
-    |  - Coffee beans
-    |    - [the good ones](https://example.com/coffee)
-    |- Laundry
-    |
-    |## Checklist
-    |
-    |- [x] Book the table
-    |- [ ] Call Sam
-    |  - [ ] Ask about Sunday
-    |
-    |1. Leave at 9
-    |2. Lunch by the river
-    |
-    |> Rest is part of the plan.
-    |
-    |```sh
-    |rsync -av ~/photos /backup
-    |```
-    |
-    |Run `make deploy` when back.
-""".trimMargin() + "\n"

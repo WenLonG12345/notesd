@@ -1,0 +1,177 @@
+package notes.core.db
+
+import java.io.File
+import java.nio.file.Files
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
+
+class NoteStoreTest {
+    private val dir: File = Files.createTempDirectory("notes-store").toFile()
+    private var now = 1_000L
+    private val db = Database(File(dir, "notes.db").path)
+    private val store = NoteStore(db) { now }
+
+    @AfterTest
+    fun cleanUp() {
+        db.close()
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun `a blank new note is not created`() = runBlocking {
+        assertNull(store.save("a", "", "  \n"))
+        assertNull(store.get("a"))
+        assertEquals(emptyList(), store.outbox())
+    }
+
+    @Test
+    fun `creates, lists and reads a note`() = runBlocking {
+        store.save("a", "Groceries", "- **Milk**\n- Bread\n")
+        now = 2_000
+        store.save("b", "Later", "")
+        val a = store.get("a")!!
+        assertEquals("Groceries", a.title)
+        assertEquals(1_000, a.createdAt)
+        assertTrue(a.dirty)
+        assertNull(a.serverRevision)
+        assertEquals(listOf("b", "a"), store.list().map { it.id })
+        assertEquals("Milk\nBread", store.list()[1].preview)
+    }
+
+    @Test
+    fun `edits before anything is sent collapse into the create`() = runBlocking {
+        store.save("a", "One", "")
+        now = 2_000
+        store.save("a", "Two", "body\n")
+        val ops = store.outbox()
+        assertEquals(1, ops.size)
+        assertEquals("create", ops[0].type)
+        assertTrue(ops[0].payloadJson.contains("\"title\":\"Two\""))
+        assertTrue(ops[0].payloadJson.contains("\"createdAt\":1000"))
+        assertTrue(ops[0].payloadJson.contains("\"updatedAt\":2000"))
+    }
+
+    @Test
+    fun `an edit after a send queues a new operation, and later edits coalesce into it`() = runBlocking {
+        store.save("a", "One", "")
+        store.markSent(store.outbox().single().operationId)
+        store.save("a", "Two", "")
+        store.save("a", "Three", "")
+        val ops = store.outbox()
+        assertEquals(listOf("create", "update"), ops.map { it.type })
+        assertTrue(ops[0].payloadJson.contains("\"One\""), "a sent payload is frozen")
+        assertTrue(ops[1].payloadJson.contains("\"Three\""))
+    }
+
+    @Test
+    fun `saving unchanged text does nothing`() = runBlocking {
+        store.save("a", "One", "x\n")
+        now = 5_000
+        store.save("a", "One", "x\n")
+        assertEquals(1_000, store.get("a")!!.updatedAt)
+    }
+
+    @Test
+    fun `deleting a never-sent note removes every trace`() = runBlocking {
+        store.save("a", "One", "")
+        store.delete("a")
+        assertNull(store.get("a"))
+        assertEquals(emptyList(), store.outbox())
+        assertEquals(emptyList(), store.search("one"))
+    }
+
+    @Test
+    fun `deleting a sent note leaves a tombstone and a delete operation`() = runBlocking {
+        store.save("a", "One", "")
+        store.markSent(store.outbox().single().operationId)
+        store.save("a", "Two", "")
+        store.delete("a")
+        val a = store.get("a")!!
+        assertNotNull(a.deletedAt)
+        assertEquals(emptyList(), store.list())
+        assertEquals(emptyList(), store.search("two"))
+        assertEquals(listOf("create", "delete"), store.outbox().map { it.type }, "the unsent edit is dropped")
+        assertNull(store.save("a", "Three", ""), "a deleted note can't be edited")
+    }
+
+    @Test
+    fun `search matches prefixes, ignores diacritics and ranks titles first`() = runBlocking {
+        store.save("body", "Shopping", "Visit the café on Main\n")
+        store.save("title", "Cafe list", "Places\n")
+        store.save("other", "Unrelated", "Nothing here\n")
+        assertEquals(listOf("title", "body"), store.search("cafe").map { it.id })
+        assertEquals(listOf("title", "body"), store.search("caf").map { it.id })
+        assertEquals(listOf("body"), store.search("café main").map { it.id })
+        val hit = store.search("main").single()
+        assertEquals("Visit the café on ${Search.MARK_OPEN}Main${Search.MARK_CLOSE}", hit.excerpt)
+    }
+
+    @Test
+    fun `search indexes plain text, not Markdown syntax`() = runBlocking {
+        store.save("a", "T", "[link text](https://example.com/secret)\n")
+        assertEquals(1, store.search("link").size)
+        assertEquals(0, store.search("secret").size)
+    }
+
+    @Test
+    fun `search follows edits immediately`() = runBlocking {
+        store.save("a", "T", "apple\n")
+        store.save("a", "T", "banana\n")
+        assertEquals(0, store.search("apple").size)
+        assertEquals(1, store.search("banana").size)
+    }
+
+    @Test
+    fun `odd input never breaks search`() = runBlocking {
+        store.save("a", "T", "x\n")
+        for (q in listOf("\"", "*", "NEAR(", "a OR", "-", "^", "")) store.search(q)
+    }
+
+    @Test
+    fun `reindex rebuilds the index from the notes`() = runBlocking {
+        store.save("a", "Alpha", "")
+        store.save("b", "Beta", "")
+        db.write { it.exec("DELETE FROM notes_fts") }
+        assertEquals(0, store.search("alpha").size)
+        assertEquals(2, store.reindex())
+        assertEquals(1, store.search("alpha").size)
+        assertEquals("", store.list().first().preview)
+    }
+
+    @Test
+    fun `wipe removes everything`() = runBlocking {
+        store.save("a", "Alpha", "")
+        store.wipe()
+        assertEquals(emptyList(), store.list())
+        assertEquals(emptyList(), store.outbox())
+    }
+
+    @Test
+    fun `writes notify observers`() = runBlocking {
+        val changed = async { store.changes.first() }
+        yield()
+        store.save("a", "Alpha", "")
+        changed.await()
+    }
+
+    @Test
+    fun `data and schema survive reopening`() = runBlocking {
+        store.save("a", "Alpha", "")
+        db.close()
+        val again = Database(File(dir, "notes.db").path)
+        try {
+            assertEquals("Alpha", NoteStore(again).get("a")!!.title)
+            assertEquals(Migrations.files.size.toLong(), again.read { it.long("PRAGMA user_version") })
+        } finally {
+            again.close()
+        }
+    }
+}

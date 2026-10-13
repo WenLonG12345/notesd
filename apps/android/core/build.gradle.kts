@@ -11,10 +11,13 @@ dependencies {
     implementation(libs.commonmark)
     implementation(libs.commonmark.strikethrough)
     implementation(libs.commonmark.tables)
+    api(libs.sqlite.bundled)
+    api(libs.coroutines.core)
+    implementation(libs.serialization.json)
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit)
-    testImplementation(libs.serialization.json)
+    testImplementation(libs.coroutines.test)
 }
 
 tasks.test {
