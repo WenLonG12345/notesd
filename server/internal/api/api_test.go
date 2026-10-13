@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -478,4 +479,41 @@ func mustURL(s string) *url.URL {
 		panic(err)
 	}
 	return u
+}
+
+func TestTagsOverHTTP(t *testing.T) {
+	e := newEnv(t)
+	e.setupOwner()
+	c, _ := e.deviceClient()
+	for i, content := range []string{"#home/repairs roof", "#Home garden", "nothing"} {
+		id := fmt.Sprintf("n%d", i)
+		if r := c.do("POST", "/api/v1/notes", map[string]any{"operationId": "c" + id, "id": id, "title": "", "content": content}); r.status != 201 {
+			t.Fatalf("create: %d %s", r.status, r.raw)
+		}
+	}
+
+	r := c.do("GET", "/api/v1/tags", nil)
+	tags := r.body["tags"].([]any)
+	if r.status != 200 || len(tags) != 2 {
+		t.Fatalf("tags: %d %s", r.status, r.raw)
+	}
+	if first := tags[0].(map[string]any); first["key"] != "home" || first["name"] != "Home" || first["count"] != 2.0 {
+		t.Fatalf("parent tag: %s", r.raw)
+	}
+
+	r = c.do("GET", "/api/v1/notes?tag="+url.QueryEscape("#Home/Repairs"), nil)
+	if items := r.body["notes"].([]any); r.status != 200 || len(items) != 1 || r.body["total"] != 1.0 {
+		t.Fatalf("list by tag: %d %s", r.status, r.raw)
+	}
+	r = c.do("GET", "/api/v1/notes?untagged=true", nil)
+	if items := r.body["notes"].([]any); len(items) != 1 || items[0].(map[string]any)["id"] != "n2" {
+		t.Fatalf("untagged: %s", r.raw)
+	}
+	r = c.do("GET", "/api/v1/search?q=garden&tag=home", nil)
+	if res := r.body["results"].([]any); len(res) != 1 {
+		t.Fatalf("search by tag: %s", r.raw)
+	}
+	if r := c.do("GET", "/api/v1/notes?tag=%23", nil); r.status != 400 {
+		t.Fatalf("bad tag: %d", r.status)
+	}
 }

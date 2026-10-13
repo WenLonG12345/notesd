@@ -57,8 +57,8 @@ func BuildQuery(input string) string {
 	return strings.Join(terms, " ")
 }
 
-// Search runs a ranked full-text search over live notes.
-func Search(ctx context.Context, db *database.DB, input string, limit, offset int) ([]Result, error) {
+// Search runs a ranked full-text search over live notes matching filter.
+func Search(ctx context.Context, db *database.DB, input string, filter Filter, limit, offset int) ([]Result, error) {
 	match := BuildQuery(input)
 	if match == "" {
 		return []Result{}, nil
@@ -69,6 +69,7 @@ func Search(ctx context.Context, db *database.DB, input string, limit, offset in
 	if offset < 0 {
 		offset = 0
 	}
+	cond, args := filter.SQL()
 	rows, err := db.R.QueryContext(ctx, `
 		SELECT n.id, n.title, n.updated_at,
 		       snippet(notes_fts, 1, ?, ?, '…', 20)
@@ -76,9 +77,10 @@ func Search(ctx context.Context, db *database.DB, input string, limit, offset in
 		JOIN notes n ON n.seq = notes_fts.rowid
 		WHERE notes_fts MATCH ?
 		  AND n.deleted_at IS NULL
+		  AND `+cond+`
 		ORDER BY bm25(notes_fts, ?, ?), n.updated_at DESC
 		LIMIT ? OFFSET ?`,
-		markOpen, markClose, match, titleWeight, contentWeight, limit, offset)
+		append(append([]any{markOpen, markClose, match}, args...), titleWeight, contentWeight, limit, offset)...)
 	if err != nil {
 		return nil, err
 	}
@@ -103,30 +105,55 @@ func renderExcerpt(s string) string {
 	return strings.ReplaceAll(s, markClose, "</mark>")
 }
 
-// IndexNote replaces the index entry for the note stored at rowid. It must run
-// in the same transaction as the write to notes.
+// IndexNote replaces the index entry and tags for the note stored at rowid.
+// It must run in the same transaction as the write to notes.
 func IndexNote(ctx context.Context, tx *sql.Tx, rowid int64, title, markdown string) error {
 	if err := UnindexNote(ctx, tx, rowid); err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx,
-		`INSERT INTO notes_fts (rowid, title, body_text) VALUES (?, ?, ?)`,
-		rowid, title, PlainText(markdown))
-	return err
+	return insert(ctx, tx, rowid, title, markdown)
 }
 
-// UnindexNote removes the index entry for rowid, if any.
+// UnindexNote removes the index entry and tags for rowid, if any.
 func UnindexNote(ctx context.Context, tx *sql.Tx, rowid int64) error {
-	_, err := tx.ExecContext(ctx, `DELETE FROM notes_fts WHERE rowid = ?`, rowid)
+	if _, err := tx.ExecContext(ctx, `DELETE FROM notes_fts WHERE rowid = ?`, rowid); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `DELETE FROM note_tags WHERE note_seq = ?`, rowid)
 	return err
 }
 
-// Rebuild recreates the whole index from the notes table without touching
-// sync state (§8.1).
+func insert(ctx context.Context, tx *sql.Tx, rowid int64, title, markdown string) error {
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO notes_fts (rowid, title, body_text) VALUES (?, ?, ?)`,
+		rowid, title, PlainText(markdown)); err != nil {
+		return err
+	}
+	for _, t := range Tags(title, markdown) {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO note_tags (note_seq, key, name) VALUES (?, ?, ?)`, rowid, t.Key, t.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RebuildIfNeeded rebuilds when a migration has asked for it.
+func RebuildIfNeeded(ctx context.Context, db *database.DB) (rebuilt bool, err error) {
+	var pending bool
+	if err := db.R.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM rebuild_index)`).Scan(&pending); err != nil || !pending {
+		return false, err
+	}
+	_, err = Rebuild(ctx, db)
+	return err == nil, err
+}
+
+// Rebuild recreates the whole index and tags from the notes table without
+// touching sync state (§8.1).
 func Rebuild(ctx context.Context, db *database.DB) (int, error) {
 	n := 0
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM notes_fts`); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM notes_fts; DELETE FROM note_tags; DELETE FROM rebuild_index`); err != nil {
 			return err
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT seq, title, content FROM notes WHERE deleted_at IS NULL`)
@@ -151,9 +178,7 @@ func Rebuild(ctx context.Context, db *database.DB) (int, error) {
 			return err
 		}
 		for _, d := range docs {
-			if _, err := tx.ExecContext(ctx,
-				`INSERT INTO notes_fts (rowid, title, body_text) VALUES (?, ?, ?)`,
-				d.seq, d.title, PlainText(d.content)); err != nil {
+			if err := insert(ctx, tx, d.seq, d.title, d.content); err != nil {
 				return err
 			}
 		}

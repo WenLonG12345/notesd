@@ -2,8 +2,18 @@
 // and pinned by shared/markdown-fixtures/plaintext.json. Keep the two in step.
 
 export function plainText(markdown: string): string {
-  const md = markdown.replace(/\r\n?/g, '\n')
   const out: string[] = []
+  eachLine(markdown, (text, code) => out.push(code ? text.replace(/[ \t]+$/, '') : inline(text).trim()))
+  return collapseBlankLines(out)
+}
+
+/**
+ * Calls fn for every line: code lines inside fences as they are, other lines
+ * with block markers removed and inline syntax left in. Fence delimiters are
+ * skipped and thematic breaks become ''.
+ */
+export function eachLine(markdown: string, fn: (text: string, code: boolean) => void): void {
+  const md = markdown.replace(/\r\n?/g, '\n')
   let fence = '' // the opening fence while inside a fenced code block
   for (const line of md.split('\n')) {
     const trimmed = line.replace(/^[ \t]+/, '')
@@ -12,7 +22,7 @@ export function plainText(markdown: string): string {
         fence = ''
         continue
       }
-      out.push(line.replace(/[ \t]+$/, ''))
+      fn(line, true)
       continue
     }
     const opener = fenceOpener(trimmed)
@@ -21,12 +31,11 @@ export function plainText(markdown: string): string {
       continue
     }
     if (isRule(trimmed)) {
-      out.push('')
+      fn('', false)
       continue
     }
-    out.push(inline(stripBlockMarkers(trimmed)).trim())
+    fn(stripBlockMarkers(trimmed), false)
   }
-  return collapseBlankLines(out)
 }
 
 const PREVIEW_CHARS = 160
@@ -127,7 +136,14 @@ function trimClosingHashes(s: string): string {
   return s
 }
 
-function inline(s: string): string {
+/** U+FFFC: stands for code, links and anything else scanners mustn't look inside. */
+export const OBJECT = '\uFFFC'
+
+/**
+ * Removes inline syntax. With opaque, code spans, links, images and autolinks
+ * become a single OBJECT instead of their text.
+ */
+export function inline(s: string, opaque = false): string {
   let out = ''
   let i = 0
   while (i < s.length) {
@@ -140,7 +156,7 @@ function inline(s: string): string {
       const ticks = s.slice(i, i + n)
       const end = s.indexOf(ticks, i + n)
       if (end >= 0) {
-        out += s.slice(i + n, end).trim()
+        out += opaque ? OBJECT : s.slice(i + n, end).trim()
         i = end + n
       } else {
         out += ticks
@@ -149,7 +165,7 @@ function inline(s: string): string {
     } else if (c === '!' && s[i + 1] === '[') {
       const l = link(s.slice(i + 1))
       if (l) {
-        out += inline(l.text)
+        out += opaque ? OBJECT : inline(l.text)
         i += 1 + l.n
       } else {
         out += c
@@ -158,7 +174,7 @@ function inline(s: string): string {
     } else if (c === '[') {
       const l = link(s.slice(i))
       if (l) {
-        out += inline(l.text)
+        out += opaque ? OBJECT : inline(l.text)
         i += l.n
       } else {
         out += c
@@ -167,7 +183,7 @@ function inline(s: string): string {
     } else if (c === '<') {
       const end = s.indexOf('>', i)
       if (end - i > 1 && isAutolink(s.slice(i + 1, end))) {
-        out += s.slice(i + 1, end)
+        out += opaque ? OBJECT : s.slice(i + 1, end)
         i = end + 1
       } else {
         out += c

@@ -107,6 +107,13 @@ func run(args []string) error {
 	}
 	defer db.Close()
 
+	// check must leave the database untouched.
+	if cmd != "check" {
+		if _, err := search.RebuildIfNeeded(ctx, db); err != nil {
+			return fmt.Errorf("rebuild search index: %w", err)
+		}
+	}
+
 	switch cmd {
 	case "serve":
 		return serve(ctx, db, o)

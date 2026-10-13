@@ -17,10 +17,24 @@ import (
 // The rules are pinned by shared/markdown-fixtures/plaintext.json, which the
 // iOS and Android extractors must also pass.
 func PlainText(md string) string {
+	var out []string
+	eachLine(md, func(text string, code bool) {
+		if code {
+			out = append(out, strings.TrimRight(text, " \t"))
+		} else {
+			out = append(out, strings.TrimSpace(inline(text, false)))
+		}
+	})
+	return collapseBlankLines(out)
+}
+
+// eachLine calls fn for every line of md: code lines inside fences as they
+// are, other lines with their block markers removed and their inline syntax
+// left in. Fence delimiters are skipped and thematic breaks become "".
+func eachLine(md string, fn func(text string, code bool)) {
 	md = strings.ReplaceAll(md, "\r\n", "\n")
 	md = strings.ReplaceAll(md, "\r", "\n")
 
-	var out []string
 	fence := "" // the opening fence while inside a fenced code block
 	for _, line := range strings.Split(md, "\n") {
 		trimmed := strings.TrimLeft(line, " \t")
@@ -30,7 +44,7 @@ func PlainText(md string) string {
 				fence = ""
 				continue
 			}
-			out = append(out, strings.TrimRight(line, " \t"))
+			fn(line, true)
 			continue
 		}
 		if f := fenceOpener(trimmed); f != "" {
@@ -38,14 +52,11 @@ func PlainText(md string) string {
 			continue
 		}
 		if isRule(trimmed) {
-			out = append(out, "")
+			fn("", false)
 			continue
 		}
-
-		text := stripBlockMarkers(trimmed)
-		out = append(out, strings.TrimSpace(inline(text)))
+		fn(stripBlockMarkers(trimmed), false)
 	}
-	return collapseBlankLines(out)
 }
 
 func fenceOpener(s string) string {
@@ -158,8 +169,10 @@ func trimClosingHashes(s string) string {
 
 // inline removes inline syntax: emphasis and strikethrough delimiters, code
 // span backticks, link and image destinations, autolink brackets and
-// backslash escapes.
-func inline(s string) string {
+// backslash escapes. With opaque, code spans, links, images and autolinks
+// become a single U+FFFC instead of their text, for scanners that must not
+// look inside them.
+func inline(s string, opaque bool) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for i := 0; i < len(s); {
@@ -172,7 +185,7 @@ func inline(s string) string {
 		case c == '`':
 			n := runLen(s, i, '`')
 			if end := strings.Index(s[i+n:], s[i:i+n]); end >= 0 {
-				b.WriteString(strings.TrimSpace(s[i+n : i+n+end]))
+				b.WriteString(opaqueOr(opaque, strings.TrimSpace(s[i+n:i+n+end])))
 				i += n + end + n
 			} else {
 				b.WriteString(s[i : i+n])
@@ -181,7 +194,7 @@ func inline(s string) string {
 
 		case c == '!' && i+1 < len(s) && s[i+1] == '[':
 			if text, n, ok := link(s[i+1:]); ok {
-				b.WriteString(inline(text))
+				b.WriteString(opaqueOr(opaque, inline(text, false)))
 				i += 1 + n
 			} else {
 				b.WriteByte(c)
@@ -190,7 +203,7 @@ func inline(s string) string {
 
 		case c == '[':
 			if text, n, ok := link(s[i:]); ok {
-				b.WriteString(inline(text))
+				b.WriteString(opaqueOr(opaque, inline(text, false)))
 				i += n
 			} else {
 				b.WriteByte(c)
@@ -199,7 +212,7 @@ func inline(s string) string {
 
 		case c == '<':
 			if end := strings.IndexByte(s[i:], '>'); end > 1 && isAutolink(s[i+1:i+end]) {
-				b.WriteString(s[i+1 : i+end])
+				b.WriteString(opaqueOr(opaque, s[i+1:i+end]))
 				i += end + 1
 			} else {
 				b.WriteByte(c)
@@ -219,6 +232,13 @@ func inline(s string) string {
 		}
 	}
 	return b.String()
+}
+
+func opaqueOr(opaque bool, text string) string {
+	if opaque {
+		return string(object)
+	}
+	return text
 }
 
 // link parses "[text](destination)" at the start of s and returns the text

@@ -9,19 +9,24 @@ import (
 	notesync "notes/server/internal/sync"
 )
 
-// GET /api/v1/notes?limit=50&cursor=...
+// GET /api/v1/notes?limit=50&cursor=...&tag=...|untagged=true
 func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
 	limit, err := queryInt(r, "limit", notes.DefaultListSize)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
-	items, next, err := s.notes.List(r.Context(), int(min(limit, notes.MaxListLimit)), r.URL.Query().Get("cursor"))
+	filter, err := queryFilter(r)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
-	total, err := s.notes.Count(r.Context())
+	items, next, err := s.notes.List(r.Context(), filter, int(min(limit, notes.MaxListLimit)), r.URL.Query().Get("cursor"))
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	total, err := s.notes.Count(r.Context(), filter)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
@@ -152,7 +157,7 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, page)
 }
 
-// GET /api/v1/search?q=...&limit=30&offset=0
+// GET /api/v1/search?q=...&limit=30&offset=0&tag=...|untagged=true
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if len(q) > 500 {
@@ -171,10 +176,25 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	if offset > 10_000 {
 		offset = 10_000
 	}
-	results, err := search.Search(r.Context(), s.db, q, int(min(limit, search.MaxLimit)), int(offset))
+	filter, err := queryFilter(r)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	results, err := search.Search(r.Context(), s.db, q, filter, int(min(limit, search.MaxLimit)), int(offset))
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// GET /api/v1/tags
+func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
+	tags, err := search.ListTags(r.Context(), s.db)
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tags": tags})
 }

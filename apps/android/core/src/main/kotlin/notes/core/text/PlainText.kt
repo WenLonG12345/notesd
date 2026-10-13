@@ -6,8 +6,18 @@ package notes.core.text
 
 /** The text indexed for search: one line per block, Markdown syntax removed. */
 fun plainText(markdown: String): String {
-    val md = markdown.replace(Regex("\r\n?"), "\n")
     val out = ArrayList<String>()
+    eachLine(markdown) { text, code -> out += if (code) text.trimEnd(' ', '\t') else inline(text).trim(::isJsSpace) }
+    return collapseBlankLines(out)
+}
+
+/**
+ * Calls [fn] for every line: code lines inside fences as they are, other lines
+ * with block markers removed and inline syntax left in. Fence delimiters are
+ * skipped and thematic breaks become "".
+ */
+internal fun eachLine(markdown: String, fn: (text: String, code: Boolean) -> Unit) {
+    val md = markdown.replace(Regex("\r\n?"), "\n")
     var fence = "" // the opening fence while inside a fenced code block
     for (line in md.split('\n')) {
         val trimmed = line.trimStart(' ', '\t')
@@ -16,7 +26,7 @@ fun plainText(markdown: String): String {
                 fence = ""
                 continue
             }
-            out += line.trimEnd(' ', '\t')
+            fn(line, true)
             continue
         }
         val opener = fenceOpener(trimmed)
@@ -25,12 +35,11 @@ fun plainText(markdown: String): String {
             continue
         }
         if (isRule(trimmed)) {
-            out += ""
+            fn("", false)
             continue
         }
-        out += inline(stripBlockMarkers(trimmed)).trim(::isJsSpace)
+        fn(stripBlockMarkers(trimmed), false)
     }
-    return collapseBlankLines(out)
 }
 
 private const val PREVIEW_CHARS = 160
@@ -130,7 +139,14 @@ private fun trimClosingHashes(s: String): String {
     return s
 }
 
-private fun inline(s: String): String {
+/** U+FFFC: stands for code, links and anything else scanners mustn't look inside. */
+const val OBJECT = '\uFFFC'
+
+/**
+ * Removes inline syntax. With [opaque], code spans, links, images and
+ * autolinks become a single [OBJECT] instead of their text.
+ */
+internal fun inline(s: String, opaque: Boolean = false): String {
     val out = StringBuilder()
     var i = 0
     while (i < s.length) {
@@ -143,7 +159,7 @@ private fun inline(s: String): String {
             val ticks = s.substring(i, i + n)
             val end = s.indexOf(ticks, i + n)
             if (end >= 0) {
-                out.append(s.substring(i + n, end).trim(::isJsSpace))
+                if (opaque) out.append(OBJECT) else out.append(s.substring(i + n, end).trim(::isJsSpace))
                 i = end + n
             } else {
                 out.append(ticks)
@@ -152,7 +168,7 @@ private fun inline(s: String): String {
         } else if (c == '!' && i + 1 < s.length && s[i + 1] == '[') {
             val l = link(s.substring(i + 1))
             if (l != null) {
-                out.append(inline(l.first))
+                out.append(if (opaque) OBJECT.toString() else inline(l.first))
                 i += 1 + l.second
             } else {
                 out.append(c)
@@ -161,7 +177,7 @@ private fun inline(s: String): String {
         } else if (c == '[') {
             val l = link(s.substring(i))
             if (l != null) {
-                out.append(inline(l.first))
+                out.append(if (opaque) OBJECT.toString() else inline(l.first))
                 i += l.second
             } else {
                 out.append(c)
@@ -170,7 +186,7 @@ private fun inline(s: String): String {
         } else if (c == '<') {
             val end = s.indexOf('>', i)
             if (end - i > 1 && isAutolink(s.substring(i + 1, end))) {
-                out.append(s, i + 1, end)
+                if (opaque) out.append(OBJECT) else out.append(s, i + 1, end)
                 i = end + 1
             } else {
                 out.append(c)

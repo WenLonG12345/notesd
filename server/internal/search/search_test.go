@@ -104,7 +104,7 @@ func TestSearchRanksAndHighlights(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := Search(ctx, db, "grocer", 10, 0)
+	res, err := Search(ctx, db, "grocer", Filter{}, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestSearchRanksAndHighlights(t *testing.T) {
 		t.Fatalf("prefix search: got %+v, want a (title match) then b", res)
 	}
 
-	res, err = Search(ctx, db, "bread", 10, 0)
+	res, err = Search(ctx, db, "bread", Filter{}, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestSearchRanksAndHighlights(t *testing.T) {
 
 	// Accent-insensitive in both directions.
 	for _, q := range []string{"cafe", "café", "CAFÉ"} {
-		res, err := Search(ctx, db, q, 10, 0)
+		res, err := Search(ctx, db, q, Filter{}, 10, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -137,7 +137,7 @@ func TestSearchRanksAndHighlights(t *testing.T) {
 
 	// Hostile input never errors.
 	for _, q := range []string{`"`, `NEAR(`, `*`, `a AND`, `(`, `col:`, "\x00"} {
-		if _, err := Search(ctx, db, q, 10, 0); err != nil {
+		if _, err := Search(ctx, db, q, Filter{}, 10, 0); err != nil {
 			t.Errorf("Search(%q): %v", q, err)
 		}
 	}
@@ -145,8 +145,58 @@ func TestSearchRanksAndHighlights(t *testing.T) {
 	if n, err := Rebuild(ctx, db); err != nil || n != 3 {
 		t.Fatalf("Rebuild = %d, %v; want 3", n, err)
 	}
-	res, _ = Search(ctx, db, "groceries", 10, 0)
+	res, _ = Search(ctx, db, "groceries", Filter{}, 10, 0)
 	if len(res) != 2 {
 		t.Errorf("after rebuild: %d results, want 2", len(res))
+	}
+}
+
+func TestTagFixtures(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "shared", "markdown-fixtures", "tags.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Cases []struct {
+			Name     string   `json:"name"`
+			Title    string   `json:"title"`
+			Markdown string   `json:"markdown"`
+			Tags     []string `json:"tags"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Cases) == 0 {
+		t.Fatal("no fixtures")
+	}
+	for _, c := range f.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			got := []string{}
+			for _, tag := range Tags(c.Title, c.Markdown) {
+				got = append(got, tag.Name)
+				if tag.Key != strings.ToLower(tag.Name) {
+					t.Errorf("key %q for %q", tag.Key, tag.Name)
+				}
+			}
+			if strings.Join(got, "|") != strings.Join(c.Tags, "|") {
+				t.Errorf("Tags(%q, %q)\n got %q\nwant %q", c.Title, c.Markdown, got, c.Tags)
+			}
+		})
+	}
+}
+
+func TestTagKey(t *testing.T) {
+	cases := map[string]string{
+		"#Home/Repairs":      "home/repairs",
+		"summer trip":        "summer trip",
+		"#school / biology#": "school/biology",
+		"#":                  "",
+		"//":                 "",
+	}
+	for in, want := range cases {
+		if got := TagKey(in); got != want {
+			t.Errorf("TagKey(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

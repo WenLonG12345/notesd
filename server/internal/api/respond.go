@@ -10,6 +10,7 @@ import (
 
 	"notes/server/internal/auth"
 	"notes/server/internal/notes"
+	"notes/server/internal/search"
 	notesync "notes/server/internal/sync"
 )
 
@@ -114,4 +115,19 @@ func queryInt(r *http.Request, name string, def int64) (int64, error) {
 		return 0, &notes.ValidationError{Field: name, Message: fmt.Sprintf("%s must be a non-negative integer", name)}
 	}
 	return n, nil
+}
+
+// queryFilter reads ?tag= (a tag name, with or without #) or ?untagged=true.
+func queryFilter(r *http.Request) (search.Filter, error) {
+	q := r.URL.Query()
+	untagged := q.Get("untagged") == "true"
+	tag := q.Get("tag")
+	if tag == "" {
+		return search.Filter{Untagged: untagged}, nil
+	}
+	key := search.TagKey(tag)
+	if key == "" || untagged {
+		return search.Filter{}, &notes.ValidationError{Field: "tag", Message: "tag must be a tag name, without untagged"}
+	}
+	return search.Filter{Tag: key}, nil
 }

@@ -2,6 +2,7 @@ package notes_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -96,7 +97,7 @@ func TestCreateUpdateDeleteLifecycle(t *testing.T) {
 	if n.DeletedAt == nil || n.Title != "" || n.Content != "" || n.Revision != 3 {
 		t.Fatalf("tombstone: %+v", n)
 	}
-	if res, _ := search.Search(ctx, db, "milk", 10, 0); len(res) != 0 {
+	if res, _ := search.Search(ctx, db, "milk", search.Filter{}, 10, 0); len(res) != 0 {
 		t.Errorf("deleted note still searchable: %+v", res)
 	}
 
@@ -272,7 +273,7 @@ func TestListPagination(t *testing.T) {
 		if pages > 10 {
 			t.Fatal("pagination does not terminate")
 		}
-		items, next, err := s.List(ctx, 5, cursor)
+		items, next, err := s.List(ctx, search.Filter{}, 5, cursor)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -285,7 +286,7 @@ func TestListPagination(t *testing.T) {
 	if len(all) != total-1 {
 		t.Fatalf("listed %d notes, want %d", len(all), total-1)
 	}
-	if n, err := s.Count(ctx); err != nil || n != total-1 {
+	if n, err := s.Count(ctx, search.Filter{}); err != nil || n != total-1 {
 		t.Fatalf("count = %d, %v; want %d", n, err, total-1)
 	}
 	seen := map[string]bool{}
@@ -301,7 +302,7 @@ func TestListPagination(t *testing.T) {
 	if all[0].ID != "n22" || all[0].Preview != "Body of note 22" {
 		t.Errorf("first item = %+v", all[0])
 	}
-	if _, _, err := s.List(ctx, 5, "!!garbage"); err == nil {
+	if _, _, err := s.List(ctx, search.Filter{}, 5, "!!garbage"); err == nil {
 		t.Error("garbage cursor accepted")
 	}
 }
@@ -396,6 +397,9 @@ func TestConcurrentMutationsDistinctNotes(t *testing.T) {
 		}
 		seqs = append(seqs, seq)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if int64(len(seqs)) != total {
 		t.Fatalf("%d notes, want %d", len(seqs), total)
 	}
@@ -452,12 +456,106 @@ func TestFailedMutationRollsBack(t *testing.T) {
 	if n.Revision != 1 || n.Content != "C" || currentSeq(t, db) != 1 {
 		t.Fatalf("partial state after failed update: %+v seq=%d", n, currentSeq(t, db))
 	}
-	if res, _ := search.Search(ctx, db, "boom", 10, 0); len(res) != 0 {
+	if res, _ := search.Search(ctx, db, "boom", search.Filter{}, 10, 0); len(res) != 0 {
 		t.Fatal("search index kept the failed write")
 	}
 	// The operation was not recorded, so a corrected retry is not a replay.
 	r, err := s.Update(ctx, notes.UpdateInput{OperationID: "y", ID: "n", BaseRevision: 1, Title: "T", Content: "fine"})
 	if err != nil || r.Replayed || r.Revision != 2 || r.ChangeSeq != 2 {
 		t.Fatalf("after rollback: %+v %v", r, err)
+	}
+}
+
+func tagNames(t *testing.T, db *database.DB) map[string]int {
+	t.Helper()
+	tags, err := search.ListTags(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]int{}
+	for _, tag := range tags {
+		out[tag.Name] = tag.Count
+	}
+	return out
+}
+
+func listIDs(t *testing.T, s *notes.Store, f search.Filter) []string {
+	t.Helper()
+	items, _, err := s.List(ctx, f, 50, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{}
+	for _, it := range items {
+		ids = append(ids, it.ID)
+	}
+	sort.Strings(ids)
+	if n, err := s.Count(ctx, f); err != nil || n != len(ids) {
+		t.Fatalf("Count(%+v) = %d, %v; list has %d", f, n, err, len(ids))
+	}
+	return ids
+}
+
+func TestTagsFollowNotes(t *testing.T) {
+	db, s := setup(t)
+	create(t, s, "a", "Roof #Home", "Call about #home/repairs/roof")
+	create(t, s, "b", "", "#home/garden and #work")
+	create(t, s, "c", "Plain", "no tags, # heading-ish, C#")
+	create(t, s, "d", "", "#homework")
+
+	// "home" is spelled as in b, the newest note using it.
+	want := map[string]int{"home": 2, "home/repairs": 1, "home/repairs/roof": 1, "home/garden": 1, "work": 1, "homework": 1}
+	if got := tagNames(t, db); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("tags = %v, want %v", got, want)
+	}
+
+	// A parent matches its nested tags but not a tag that merely starts with it.
+	if ids := listIDs(t, s, search.Filter{Tag: "home"}); fmt.Sprint(ids) != "[a b]" {
+		t.Fatalf("home = %v", ids)
+	}
+	if ids := listIDs(t, s, search.Filter{Tag: "home/repairs"}); fmt.Sprint(ids) != "[a]" {
+		t.Fatalf("home/repairs = %v", ids)
+	}
+	if ids := listIDs(t, s, search.Filter{Untagged: true}); fmt.Sprint(ids) != "[c]" {
+		t.Fatalf("untagged = %v", ids)
+	}
+	if res, _ := search.Search(ctx, db, "home", search.Filter{Tag: "work"}, 10, 0); len(res) != 1 || res[0].ID != "b" {
+		t.Fatalf("search in #work = %+v", res)
+	}
+
+	// Edits and deletion keep tags in step; the newest spelling names a tag.
+	if _, err := s.Update(ctx, notes.UpdateInput{OperationID: "u", ID: "b", BaseRevision: 1, Title: "", Content: "#WORK only"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Delete(ctx, notes.DeleteInput{OperationID: "x", ID: "a", BaseRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	want = map[string]int{"WORK": 1, "homework": 1}
+	if got := tagNames(t, db); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("after edits tags = %v, want %v", got, want)
+	}
+	if ids := listIDs(t, s, search.Filter{Untagged: true}); fmt.Sprint(ids) != "[c]" {
+		t.Fatalf("untagged after delete = %v", ids)
+	}
+}
+
+func TestRebuildIfNeeded(t *testing.T) {
+	db, s := setup(t)
+	create(t, s, "a", "", "#kept")
+	// A database from before tags: notes but no tag rows.
+	if err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`DELETE FROM note_tags`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if rebuilt, err := search.RebuildIfNeeded(ctx, db); err != nil || !rebuilt {
+		t.Fatalf("first: %v %v", rebuilt, err)
+	}
+	if got := tagNames(t, db); got["kept"] != 1 {
+		t.Fatalf("tags after rebuild = %v", got)
+	}
+	if rebuilt, err := search.RebuildIfNeeded(ctx, db); err != nil || rebuilt {
+		t.Fatalf("second: %v %v", rebuilt, err)
 	}
 }

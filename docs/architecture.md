@@ -119,6 +119,9 @@ CREATE TABLE sync_state (
     generation  TEXT    NOT NULL             -- sync generation ID (§11.4)
 );
 
+-- Tags in live notes (§7.5), kept with the search index.
+CREATE TABLE note_tags (note_seq INTEGER REFERENCES notes(seq), key TEXT, name TEXT, PRIMARY KEY (note_seq, key));
+
 CREATE TABLE applied_operations (
     operation_id  TEXT PRIMARY KEY,
     request_hash  TEXT    NOT NULL,
@@ -334,13 +337,27 @@ Serialization rules are shared and deterministic for app-produced documents, for
 
 Lists, checklists, paragraph styles, cursor behaviour and serialization need substantial custom engineering on top of native text components, so the native editors are prototyped first.
 
+### 7.5 Tags
+
+Tags are plain text in the note, as in Bear: there is no tag field, so tags sync, merge and conflict with the text that holds them, and no protocol or document-format change is needed. Every platform derives them with the same extractor, pinned by `shared/markdown-fixtures/tags.json`; editors only style them.
+
+- **Syntax:** `#tag`, or `#multi word tag#` closed by a `#` that follows a non-space and ends a word. `/` nests to any depth: `#home/repairs`, `#school projects/biology 101#`.
+- **Where:** the title (plain text) and every body line except fenced code. A tag starts at the beginning of a line or after whitespace, `(`, `[` or `{`; `# Heading` is a heading, `C#` and URL fragments are not tags. Code spans, links, images and autolinks never hold tags; emphasis does not interrupt them.
+- **End:** a one-word tag ends at whitespace or punctuation other than `-`, `_` and `/` (`#one,` is `one`). A multi-word tag stays on one line.
+- **Numbers:** a one-word tag made only of digits, `-`, `_` and `/` is not a tag (`#1 priority`); `#2024#` is.
+- **Identity:** levels are trimmed, inner spaces collapsed and empty levels dropped; the key is the result lowercased. A note lists each key once, with its first spelling; across notes, a tag is named as in the most recently updated note using it.
+- **Hierarchy:** `#a/b` implies `a`. Filtering by a tag includes its nested tags; counts are distinct notes.
+- **Lifetime:** a tag exists while a live note uses it.
+
+Renaming and deleting tags (rewriting every note) are not implemented yet.
+
 ## 8. Search
 
 Every platform uses SQLite FTS5: mobile searches its local database with no network, and the web app calls `GET /api/v1/search` on the server.
 
 ### 8.1 Indexed content
 
-The index holds titles and plain text extracted from Markdown, so formatting never affects results (`This is **important**.` is indexed as `This is important.`). Extraction preserves word boundaries and follows the same rules on server and mobile, checked with shared fixtures. Each note mutation updates the index in the same transaction, and the index can be rebuilt from the notes table without touching sync state.
+The index holds titles and plain text extracted from Markdown, so formatting never affects results (`This is **important**.` is indexed as `This is important.`). Extraction preserves word boundaries and follows the same rules on server and mobile, checked with shared fixtures. Each note mutation updates the index in the same transaction, and the index can be rebuilt from the notes table without touching sync state. Tags (§7.5) are indexed alongside, in `note_tags`. A migration that changes derived data asks for a rebuild, which the server runs at startup.
 
 ### 8.2 Ranking
 
@@ -382,13 +399,14 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 | `POST` | `/api/v1/auth/password` | Change the password; signs out every other session |
 | `GET` | `/api/v1/auth/sessions` | List signed-in browsers and devices |
 | `DELETE` | `/api/v1/auth/sessions/:id` | Revoke a session |
-| `GET` | `/api/v1/notes` | List notes (paginated), with `total` |
+| `GET` | `/api/v1/notes` | List notes (paginated), with `total`; `?tag=` or `?untagged=true` filters |
 | `GET` | `/api/v1/notes/:id` | Retrieve a note (`410` with the tombstone if deleted) |
 | `POST` | `/api/v1/notes` | Create a note |
 | `PUT` | `/api/v1/notes/:id` | Update a note |
 | `DELETE` | `/api/v1/notes/:id` | Delete a note |
 | `GET` | `/api/v1/sync` | Download changes |
-| `GET` | `/api/v1/search` | Search notes |
+| `GET` | `/api/v1/search` | Search notes; same filters as listing |
+| `GET` | `/api/v1/tags` | Tags in live notes, with counts |
 | `GET` | `/healthz` | Process health |
 | `GET` | `/readyz` | Database readiness |
 

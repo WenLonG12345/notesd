@@ -48,7 +48,7 @@ NOTES_PASSWORD='…' notes-server create-owner --username me --data-dir /var/lib
 | `serve` (default) | Run the server |
 | `create-owner --username NAME` | Create the owner account |
 | `reset-password` | Set a new password and sign out every session |
-| `reindex` | Rebuild the search index from the notes table |
+| `reindex` | Rebuild the search index and tags from the notes table (also done automatically at startup when a migration asks for it) |
 | `check` | `PRAGMA integrity_check`; never modifies the database |
 | `version` | Print the version |
 
@@ -88,13 +88,14 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | POST | `/auth/password` | `{currentPassword, newPassword}`; signs out other sessions |
 | GET | `/auth/sessions` | signed-in browsers and devices |
 | DELETE | `/auth/sessions/{id}` | revoke one |
-| GET | `/notes?limit=&cursor=` | live notes, newest first, with `preview` (plain text, one line per block, ≤160 chars); `nextCursor` is opaque; `total` counts all live notes |
+| GET | `/notes?limit=&cursor=&tag=&untagged=` | live notes, newest first, with `preview` (plain text, one line per block, ≤160 chars); `nextCursor` is opaque; `total` counts the matching live notes. `tag` (with or without `#`) keeps notes with that tag or one nested under it; `untagged=true` keeps notes without tags |
 | POST | `/notes` | `{operationId, id, title, content, createdAt?, updatedAt?, conflictOf?}` → 201 |
 | GET | `/notes/{id}` | 410 with the tombstone in `current` if deleted |
 | PUT | `/notes/{id}` | `{operationId, baseRevision, title, content, updatedAt?}`; both fields required |
 | DELETE | `/notes/{id}` | `{operationId, baseRevision}` |
 | GET | `/sync?since=&limit=&generation=` | `{changes, nextCursor, hasMore, generation}` |
-| GET | `/search?q=&limit=&offset=` | `{results: [{id, title, excerpt, updatedAt}]}` |
+| GET | `/search?q=&limit=&offset=&tag=&untagged=` | `{results: [{id, title, excerpt, updatedAt}]}`; filters as for `/notes` |
+| GET | `/tags` | `{tags: [{key, name, count}]}` sorted by key; parents of nested tags included, `count` is distinct notes including nested tags |
 
 `/healthz` (process up) and `/readyz` (database reachable) sit outside
 `/api/v1`. Every other path serves the web app, falling back to `index.html`.
@@ -132,7 +133,7 @@ cmd/notes-server   CLI, configuration, graceful shutdown
 internal/database  connection pools, pragmas, migration runner, integrity check
 internal/notes     create/update/delete, revisions, tombstones, idempotency, listing
 internal/sync      change feed
-internal/search    Markdown → plain text, FTS5 query building, search, reindex
+internal/search    Markdown → plain text and tags, FTS5 query building, search, tag listing, reindex
 internal/auth      Argon2id, sessions, setup token, login rate limiting
 internal/api       routing, auth/CSRF middleware, handlers, gzip, logging
 internal/web       embedded web app (apps/web builds into internal/web/dist)

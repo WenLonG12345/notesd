@@ -366,15 +366,17 @@ type ListItem struct {
 	UpdatedAt int64  `json:"updatedAt"`
 }
 
-// Count is the number of live (not deleted) notes.
-func (s *Store) Count(ctx context.Context) (n int, err error) {
-	err = s.db.R.QueryRowContext(ctx, `SELECT count(*) FROM notes WHERE deleted_at IS NULL`).Scan(&n)
+// Count is the number of live (not deleted) notes matching filter.
+func (s *Store) Count(ctx context.Context, filter search.Filter) (n int, err error) {
+	cond, args := filter.SQL()
+	err = s.db.R.QueryRowContext(ctx, `SELECT count(*) FROM notes n WHERE n.deleted_at IS NULL AND `+cond, args...).Scan(&n)
 	return n, err
 }
 
-// List returns live notes, most recently updated first. cursor is the
-// opaque value returned by the previous page, or "" for the first page.
-func (s *Store) List(ctx context.Context, limit int, cursor string) (items []ListItem, next string, err error) {
+// List returns live notes matching filter, most recently updated first.
+// cursor is the opaque value returned by the previous page, or "" for the
+// first page.
+func (s *Store) List(ctx context.Context, filter search.Filter, limit int, cursor string) (items []ListItem, next string, err error) {
 	if limit <= 0 {
 		limit = DefaultListSize
 	}
@@ -385,6 +387,7 @@ func (s *Store) List(ctx context.Context, limit int, cursor string) (items []Lis
 	if err != nil {
 		return nil, "", &ValidationError{"cursor", "invalid cursor"}
 	}
+	cond, args := filter.SQL()
 	rows, err := s.db.R.QueryContext(ctx, `
 		SELECT n.id, n.title, n.revision, n.created_at, n.updated_at,
 		       substr(COALESCE(f.body_text, ''), 1, ?)
@@ -392,9 +395,10 @@ func (s *Store) List(ctx context.Context, limit int, cursor string) (items []Lis
 		LEFT JOIN notes_fts f ON f.rowid = n.seq
 		WHERE n.deleted_at IS NULL
 		  AND (? = 0 OR (n.updated_at, n.id) < (?, ?))
+		  AND `+cond+`
 		ORDER BY n.updated_at DESC, n.id DESC
 		LIMIT ?`,
-		previewFetch, boolInt(cursor != ""), afterTime, afterID, limit+1)
+		append(append([]any{previewFetch, boolInt(cursor != ""), afterTime, afterID}, args...), limit+1)...)
 	if err != nil {
 		return nil, "", err
 	}
