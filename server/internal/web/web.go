@@ -1,0 +1,80 @@
+// Package web serves the web application's build output, embedded into the
+// binary at compile time.
+//
+// apps/web builds into internal/web/dist. Requests for files that exist are
+// served directly (fingerprinted files under /assets/ are cached for a
+// year); any other path that does not look like a file gets index.html, so
+// client-side routes work on reload.
+package web
+
+import (
+	"embed"
+	"io/fs"
+	"net/http"
+	"path"
+	"strings"
+)
+
+//go:embed all:dist
+var dist embed.FS
+
+// Handler returns the static file handler for the embedded web app.
+func Handler() http.Handler {
+	root, err := fs.Sub(dist, "dist")
+	if err != nil {
+		panic(err)
+	}
+	files := http.FileServerFS(root)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		setSecurityHeaders(w.Header())
+
+		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		if name == "" || name == "index.html" {
+			serveIndex(w, r, root)
+			return
+		}
+		if info, err := fs.Stat(root, name); err != nil || info.IsDir() {
+			if err != nil && path.Ext(name) != "" {
+				http.NotFound(w, r)
+				return
+			}
+			serveIndex(w, r, root)
+			return
+		}
+		if strings.HasPrefix(name, "assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		files.ServeHTTP(w, r)
+	})
+}
+
+func serveIndex(w http.ResponseWriter, r *http.Request, root fs.FS) {
+	b, err := fs.ReadFile(root, "index.html")
+	if err != nil {
+		http.Error(w, "web app not built", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = w.Write(b)
+}
+
+func setSecurityHeaders(h http.Header) {
+	h.Set("Content-Security-Policy",
+		"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "+
+			"object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Referrer-Policy", "same-origin")
+	h.Set("X-Frame-Options", "DENY")
+}
