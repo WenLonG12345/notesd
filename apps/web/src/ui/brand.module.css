@@ -1,0 +1,29 @@
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mark {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--accent);
+  box-shadow: inset 0 -5px 0 var(--accent-deep);
+}
+
+.word {
+  font: 400 22px/1 var(--font-serif);
+}
+
+.lg .mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  box-shadow: inset 0 -6px 0 var(--accent-deep);
+}
+
+.lg .word {
+  font-size: 24px;
+}

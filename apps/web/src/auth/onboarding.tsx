@@ -2,13 +2,20 @@ import { useCallback, useRef, useState, type FormEvent } from 'react'
 import { auth } from '../api/auth'
 import { ApiError } from '../api/client'
 import { Button } from '../ui/button'
+import { Dim, Hi, Terminal } from '../ui/code'
 import { Field } from '../ui/field'
+import { Kicker } from '../ui/kicker'
+import { PasswordMeter } from '../ui/password-meter'
+import { useShake } from '../ui/shake'
+import { Steps } from '../ui/steps'
 import { useAuth } from './auth-context'
+import { AuthLayout } from './auth-layout'
 import { genericMessage } from './errors'
 import styles from './auth.module.css'
 
 type Step = 'welcome' | 'token' | 'account'
 const order: Step[] = ['welcome', 'token', 'account']
+const stepName: Record<Step, string> = { welcome: 'Welcome', token: 'Connect', account: 'Account' }
 
 type FieldErrors = Partial<Record<'username' | 'password' | 'confirm', string>>
 
@@ -23,6 +30,8 @@ export function Onboarding() {
   const [errors, setErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  const [tokenRef, shakeToken] = useShake<HTMLDivElement>()
+  const [accountRef, shakeAccount] = useShake<HTMLDivElement>()
   const navigated = useRef(false)
 
   function go(next: Step) {
@@ -40,6 +49,7 @@ export function Onboarding() {
     e.preventDefault()
     if (!token.trim()) {
       setTokenError('Paste the setup token from the server log.')
+      shakeToken()
       return
     }
     setTokenError(undefined)
@@ -54,7 +64,10 @@ export function Onboarding() {
     else if (confirm !== password) next.confirm = "The passwords don't match."
     setErrors(next)
     setFormError(undefined)
-    if (Object.keys(next).length > 0) return
+    if (Object.keys(next).length > 0) {
+      shakeAccount()
+      return
+    }
 
     setBusy(true)
     try {
@@ -73,10 +86,12 @@ export function Onboarding() {
         }
         if (err.status === 400 && (err.field === 'username' || err.field === 'password')) {
           setErrors({ [err.field]: sentence(err.message) })
+          shakeAccount()
           return
         }
       }
       setFormError(genericMessage(err))
+      shakeAccount()
       return
     }
 
@@ -88,69 +103,85 @@ export function Onboarding() {
     }
   }
 
-  const stepNumber = order.indexOf(step) + 1
+  const index = order.indexOf(step)
 
   return (
-    <main className={styles.screen}>
-      <div className={styles.panel}>
-        <p className={styles.progress}>Step {stepNumber} of 3</p>
+    <AuthLayout aside={<Steps current={index} total={order.length} />}>
+      {step === 'welcome' && (
+        <div className={styles.stack}>
+          <Kicker>
+            Step 1 of 3 · {stepName.welcome}
+          </Kicker>
+          <h1 ref={heading} tabIndex={-1} className={styles.hero}>
+            A quiet place for everything you write.
+          </h1>
+          <p className={styles.lede}>
+            Notes runs on your own server. What you write stays there, and every device you sign in on stays in
+            sync. This server has no account yet, so let’s create yours.
+          </p>
+          <Button variant="solid" onClick={() => go('token')}>
+            Get started
+          </Button>
+        </div>
+      )}
 
-        {step === 'welcome' && (
-          <>
-            <h1 ref={heading} tabIndex={-1}>
-              Welcome to Notes
-            </h1>
-            <p>
-              This server doesn't have an account yet. You'll create the owner account now. It's the only
-              account, and every device you sign in on uses it.
-            </p>
-            <div className={styles.actions}>
-              <Button variant="primary" onClick={() => go('token')}>
-                Set up my account
-              </Button>
-            </div>
-          </>
-        )}
-
-        {step === 'token' && (
-          <form onSubmit={submitToken} noValidate>
-            <h1 ref={heading} tabIndex={-1}>
-              Paste the setup token
-            </h1>
-            <p>The server printed a setup token in its log when it started. Paste it here. The line looks like:</p>
-            <pre className={styles.example}>
-              <code>setup_token=THQvj2U_aMzG…</code>
-            </pre>
+      {step === 'token' && (
+        <form className={styles.stack} onSubmit={submitToken} noValidate>
+          <Kicker>
+            Step 2 of 3 · {stepName.token}
+          </Kicker>
+          <h1 ref={heading} tabIndex={-1}>
+            Paste your setup token
+          </h1>
+          <p className={styles.lede}>
+            When the server starts without an account, it prints a one‑time token to its log. It proves you’re
+            the person who installed it.
+          </p>
+          <Terminal label="Example server log">
+            <Dim>level=WARN </Dim>msg="no owner account yet…"{'\n'}
+            <Dim>{'           '}</Dim>setup_token=<Hi>THQvj2U_aMzG…</Hi>
+          </Terminal>
+          <div ref={tokenRef}>
             <Field
               label="Setup token"
+              hideLabel
+              mono
               name="setupToken"
+              placeholder="Paste the token"
               autoComplete="off"
               spellCheck={false}
               value={token}
-              onChange={(e) => setToken(e.target.value)}
+              onChange={(e) => {
+                setToken(e.target.value)
+                setTokenError(undefined)
+              }}
               error={tokenError}
               hint={
                 <>
-                  No access to the log? Run <code>notes-server create-owner</code> on the server instead.
+                  No access to the log? Run <code>notes-server create-owner --username NAME</code> on the server instead.
                 </>
               }
             />
-            <div className={styles.actions}>
-              <Button variant="primary" type="submit">
-                Continue
-              </Button>
-              <Button variant="quiet" onClick={() => go('welcome')}>
-                Back
-              </Button>
-            </div>
-          </form>
-        )}
+          </div>
+          <div className={styles.actions}>
+            <Button onClick={() => go('welcome')}>Back</Button>
+            <Button variant="solid" type="submit" grow>
+              Continue
+            </Button>
+          </div>
+        </form>
+      )}
 
-        {step === 'account' && (
-          <form onSubmit={(e) => void submitAccount(e)} noValidate>
-            <h1 ref={heading} tabIndex={-1}>
-              Create your account
-            </h1>
+      {step === 'account' && (
+        <form className={styles.stack} onSubmit={(e) => void submitAccount(e)} noValidate>
+          <Kicker>
+            Step 3 of 3 · {stepName.account}
+          </Kicker>
+          <h1 ref={heading} tabIndex={-1}>
+            Choose how you’ll sign in
+          </h1>
+          <p className={styles.lede}>This is the only account on this server.</p>
+          <div ref={accountRef} className={styles.fields}>
             <Field
               label="Username"
               name="username"
@@ -165,12 +196,14 @@ export function Onboarding() {
               label="Password"
               name="password"
               type="password"
+              placeholder="At least 8 characters"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               error={errors.password}
-              hint="At least 8 characters."
-            />
+            >
+              <PasswordMeter password={password} />
+            </Field>
             <Field
               label="Confirm password"
               name="confirm"
@@ -185,18 +218,18 @@ export function Onboarding() {
                 {formError}
               </p>
             )}
-            <div className={styles.actions}>
-              <Button variant="primary" type="submit" busy={busy}>
-                {busy ? 'Creating account…' : 'Create account'}
-              </Button>
-              <Button variant="quiet" onClick={() => go('token')} disabled={busy}>
-                Back
-              </Button>
-            </div>
-          </form>
-        )}
-      </div>
-    </main>
+          </div>
+          <div className={styles.actions}>
+            <Button onClick={() => go('token')} disabled={busy}>
+              Back
+            </Button>
+            <Button variant="accent" type="submit" grow busy={busy}>
+              {busy ? 'Creating account…' : 'Create account'}
+            </Button>
+          </div>
+        </form>
+      )}
+    </AuthLayout>
   )
 }
 

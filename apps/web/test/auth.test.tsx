@@ -14,13 +14,13 @@ describe('first run', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByText('Step 1 of 3')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Set up my account' }))
+    expect(await screen.findByText(/^Step 1 of 3/)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Get started' }))
 
-    expect(screen.getByText('Step 2 of 3')).toBeTruthy()
+    expect(screen.getByText(/^Step 2 of 3/)).toBeTruthy()
     await user.type(screen.getByLabelText('Setup token'), `${server.setupToken}{Enter}`)
 
-    expect(screen.getByText('Step 3 of 3')).toBeTruthy()
+    expect(screen.getByText(/^Step 3 of 3/)).toBeTruthy()
     await user.type(screen.getByLabelText('Username'), 'cassio')
     await user.type(screen.getByLabelText('Password'), 'correct horse')
     await user.type(screen.getByLabelText('Confirm password'), 'correct horse{Enter}')
@@ -34,7 +34,7 @@ describe('first run', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: 'Set up my account' }))
+    await user.click(await screen.findByRole('button', { name: 'Get started' }))
     await user.click(screen.getByRole('button', { name: 'Continue' }))
     expect(screen.getByText('Paste the setup token from the server log.')).toBeTruthy()
 
@@ -54,7 +54,7 @@ describe('first run', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: 'Set up my account' }))
+    await user.click(await screen.findByRole('button', { name: 'Get started' }))
     await user.type(screen.getByLabelText('Setup token'), 'not-the-token{Enter}')
     await user.type(screen.getByLabelText('Username'), 'cassio')
     await user.type(screen.getByLabelText('Password'), 'correct horse')
@@ -74,7 +74,7 @@ describe('first run', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: 'Set up my account' }))
+    await user.click(await screen.findByRole('button', { name: 'Get started' }))
     await user.type(screen.getByLabelText('Setup token'), `${server.setupToken}{Enter}`)
     await user.type(screen.getByLabelText('Username'), 'cassio')
     const tooLong = 'x'.repeat(1025)
@@ -94,14 +94,14 @@ describe('first run', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: 'Set up my account' }))
+    await user.click(await screen.findByRole('button', { name: 'Get started' }))
     await user.type(screen.getByLabelText('Setup token'), `${server.setupToken}{Enter}`)
     await createOwner(server)
     await user.type(screen.getByLabelText('Username'), 'cassio')
     await user.type(screen.getByLabelText('Password'), 'correct horse')
     await user.type(screen.getByLabelText('Confirm password'), 'correct horse{Enter}')
 
-    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Welcome back.' })).toBeTruthy()
   })
 
   it('goes back through the steps', async () => {
@@ -109,13 +109,13 @@ describe('first run', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: 'Set up my account' }))
+    await user.click(await screen.findByRole('button', { name: 'Get started' }))
     await user.type(screen.getByLabelText('Setup token'), 'tok{Enter}')
     await user.click(screen.getByRole('button', { name: 'Back' }))
     expect(screen.getByLabelText<HTMLInputElement>('Setup token').value).toBe('tok')
-    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Paste the setup token' }))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Paste your setup token' }))
     await user.click(screen.getByRole('button', { name: 'Back' }))
-    expect(screen.getByRole('heading', { name: 'Welcome to Notes' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'A quiet place for everything you write.' })).toBeTruthy()
   })
 })
 
@@ -135,11 +135,11 @@ describe('sign in', () => {
     await signedInAs(username)
 
     await user.click(screen.getByRole('button', { name: 'Sign out' }))
-    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Welcome back.' })).toBeTruthy()
     // The session is gone: a reload lands on sign-in again.
     first.unmount()
     render(<App />)
-    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Welcome back.' })).toBeTruthy()
   })
 
   it('keeps the session across a reload', async () => {
@@ -182,8 +182,8 @@ describe('server down', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: "Can't reach the server" })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Can’t reach the server' })).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Try again' }))
-    expect(await screen.findByRole('heading', { name: "Can't reach the server" })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Can’t reach the server' })).toBeTruthy()
   })
 })

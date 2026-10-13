@@ -380,34 +380,27 @@ back" and retry pending saves on `online` event / focus.
 
 ## 6. Design direction
 
-Not a template dashboard. One memorable thing, everything else quiet.
+The source of truth is the prototype in `design-system/` (`Notes.dc.html`,
+all states in `Notes Screens.dc.html`): warm paper background with soft
+blurred color fields, frosted-glass surfaces, Instrument Serif headings,
+Instrument Sans body, JetBrains Mono for labels and code, one amber accent.
+It replaces the earlier direction in this section (two-pane sidebar,
+blue-teal accent, no shadows).
 
-- **Typography**: one self-hosted variable sans with real italics and
-  tabular numerals (e.g. Inter is the safe choice; a more characterful
-  option such as "Instrument Sans" or "Geist" is welcome). Body 1rem /
-  1.55, editor content 1.0625rem / 1.6 with a 68ch max line length, H1 1.6em,
-  H2 1.3em, H3 1.1em, tight letter-spacing on headings. The note title
-  input is set in the same face at ~1.8em, not a different font.
-- **Color**: near-white paper `#FAFAF8` / ink `#1A1A1A`; sidebar a shade
-  darker `#F2F1ED`; one accent for selection, links and the checked task
-  box — pick a saturated blue-teal around `#1F6F8B` (not purple, not
-  terracotta); muted text `#6B6B66`; hairline `#E4E2DC`. Dark mode via
-  `prefers-color-scheme` with the same roles re-mapped (paper `#161615`,
-  ink `#ECEAE4`). Define everything as CSS variables in `tokens.css`.
-- **Layout**: left-aligned; generous editor padding (3.5rem top, 3rem sides
-  on desktop); the sidebar separated by a hairline, not a shadow; selected
-  row uses a soft accent tint, no cards, no drop shadows anywhere.
-- **The one memorable thing**: the save status is a small live
-  indicator in the editor header — a dot that breathes while saving and
-  settles when saved, with the state word next to it. Everything else is
-  still.
-- **Motion**: only in response to actions (pane switch on mobile, dialog
-  open, status change); respect `prefers-reduced-motion`.
-- **Copy**: sentence case, plain verbs ("New note", "Delete note", "Sign
-  in", "Save changes"), errors say what happened and what to do.
-- **Accessibility**: visible focus rings, buttons have labels, list is a
-  `listbox`/`option` or links, editor toolbar buttons have `aria-pressed`,
-  dialogs trap focus, color contrast ≥ 4.5:1.
+In code:
+
+- Tokens: `src/styles/tokens.css` (light default; dark from the OS or an
+  explicit `data-theme` on `<html>`, see `src/theme.ts`).
+- Fonts are self-hosted via `@fontsource` (`src/styles/fonts.css`); the CSP
+  forbids font CDNs.
+- Primitives in `src/ui/`: `Button` (solid, accent, chip, ghost, danger,
+  danger-text × lg/md/sm), `Field`, `Surface` (glass sheet/tile),
+  `Backdrop`, `Brand`, `Kicker`, `Terminal`/`Command`, `StatusPill` (the
+  breathing save dot), `Banner` (error/warn), `Steps`, `PasswordMeter`,
+  `Dialog`, `useShake`.
+- Kept from the plan regardless of the prototype: visible focus rings,
+  labelled controls, `prefers-reduced-motion`, real error copy, CLI
+  commands that exist (`notes-server …`).
 
 ## 7. Order of work
 

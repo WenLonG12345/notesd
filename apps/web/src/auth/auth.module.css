@@ -1,63 +1,111 @@
 .screen {
-  min-height: 100%;
-  display: grid;
-  place-items: start center;
-  padding: 18vh 16px 48px;
+  position: relative;
+  z-index: 1;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
 }
 
-.panel {
+.column {
   width: 100%;
-  max-width: 400px;
+  max-width: 468px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.panel h1 {
-  font-size: 1.6rem;
-  margin: 0 0 12px;
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
 }
 
-.panel h1:focus {
-  outline: none;
+.card {
+  padding: 36px 36px 30px;
 }
 
-.panel form {
-  display: grid;
+/* One step or form inside the card. */
+.stack {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 
-.panel form h1 {
-  margin-bottom: 0;
-}
-
-.panel p {
-  margin: 0 0 4px;
-}
-
-.progress {
-  color: var(--muted);
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
-  margin-bottom: 8px !important;
-}
-
-.example {
+.stack h1 {
   margin: 0;
+  font: 400 38px/1.05 var(--font-serif);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.stack h1:focus {
+  outline: none;
+}
+
+.hero {
+  font-size: 46px !important;
+  line-height: 1.02 !important;
+}
+
+.lede {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.hero + .lede {
+  font-size: 16px;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .actions {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
-}
-
-.notice {
-  color: var(--muted);
+  margin-top: 4px;
 }
 
 .formError {
+  margin: 0;
+  font-size: 13px;
   color: var(--danger);
 }
 
-.footnote {
-  color: var(--muted);
-  font-size: 0.8125rem;
+.help {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hair);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.host {
+  text-align: center;
+  font: 400 12px var(--font-mono);
+  color: var(--ink-3);
+}
+
+@media (max-width: 600px) {
+  .card {
+    padding: 28px 22px 24px;
+  }
+
+  .stack h1 {
+    font-size: 32px;
+  }
+
+  .hero {
+    font-size: 38px !important;
+  }
 }

@@ -1,0 +1,7 @@
+/* Self-hosted (the CSP allows no font CDNs); Vite bundles the woff2 files
+   into /assets. */
+@import '@fontsource-variable/instrument-sans/wght.css';
+@import '@fontsource-variable/instrument-sans/wght-italic.css';
+@import '@fontsource/instrument-serif/400.css';
+@import '@fontsource/instrument-serif/400-italic.css';
+@import '@fontsource-variable/jetbrains-mono/wght.css';

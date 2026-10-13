@@ -1,0 +1,21 @@
+.steps {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.step {
+  height: 4px;
+  width: 12px;
+  border-radius: 4px;
+  background: var(--hair-strong);
+  transition: all 0.3s;
+}
+
+.done {
+  background: var(--accent-deep);
+}
+
+.current {
+  width: 28px;
+}
