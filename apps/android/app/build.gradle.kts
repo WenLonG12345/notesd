@@ -35,6 +35,10 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            // Fixtures shared with the web app and the server.
+            it.systemProperty("notes.sharedDir", rootProject.file("../../shared").absolutePath)
+        }
     }
 
     lint {
@@ -66,4 +70,5 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.junit)
+    testImplementation(libs.androidx.test.core)
 }

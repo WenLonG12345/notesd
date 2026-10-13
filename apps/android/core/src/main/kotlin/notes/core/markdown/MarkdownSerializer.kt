@@ -44,9 +44,7 @@ internal class MarkdownSerializer {
     private fun render(node: Block, siblings: List<Block>, index: Int) {
         when (node) {
             // The editor's first line is the note's title, stored in its own field.
-            is Block.Title -> {
-                Unit
-            }
+            is Block.Title -> {}
 
             is Block.Paragraph -> {
                 renderInline(node.content)
