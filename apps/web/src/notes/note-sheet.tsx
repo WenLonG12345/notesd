@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { ApiError } from '../api/client'
 import { notes as api } from '../api/notes'
+import { NoteBody, type NoteBodyHandle } from '../editor/editor'
 import { Banner } from '../ui/banner'
 import { Button } from '../ui/button'
 import { Dialog } from '../ui/dialog'
@@ -136,26 +137,32 @@ type EditorProps = {
 
 function Editor({ saver, isDraft, onClose, onCreated, onDeleted, onOpenDraft }: EditorProps) {
   const snap = useSyncExternalStore(saver.subscribe, saver.getSnapshot)
-  const [fields, setFields] = useState<Fields>(() => saver.fields())
-  // The saver reads these at save time; refs keep them current without re-attaching.
-  const live = useRef(fields)
+  const [initial] = useState<Fields>(() => saver.fields())
+  const [title, setTitle] = useState(initial.title)
+  // The saver reads the title from here and the body from the editor, at save time.
+  const liveTitle = useRef(initial.title)
   const titleRef = useRef<HTMLInputElement>(null)
-  const bodyRef = useRef<HTMLTextAreaElement>(null)
+  const bodyRef = useRef<NoteBodyHandle>(null)
+  const finalBody = useRef<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<'ask' | 'changed' | null>(null)
   const [deleteError, setDeleteError] = useState<string>()
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
-    const detach = saver.attach(() => live.current)
+    const detach = saver.attach(() => ({
+      title: liveTitle.current,
+      content: bodyRef.current?.markdown() ?? finalBody.current ?? initial.content,
+    }))
     const off = saver.onRemoteChange((next) => {
-      live.current = next
-      setFields(next)
+      liveTitle.current = next.title
+      setTitle(next.title)
+      bodyRef.current?.replace(next.content)
     })
     return () => {
       off()
       detach()
     }
-  }, [saver])
+  }, [saver, initial.content])
 
   useEffect(() => {
     if (isDraft) titleRef.current?.focus()
@@ -165,12 +172,6 @@ function Editor({ saver, isDraft, onClose, onCreated, onDeleted, onOpenDraft }: 
     if (isDraft && snap.created) onCreated(saver.id)
   }, [isDraft, snap.created, saver.id, onCreated])
 
-  const change = (patch: Partial<Fields>) => {
-    const next = { ...live.current, ...patch }
-    live.current = next
-    setFields(next)
-    saver.edit()
-  }
 
   const runDelete = async () => {
     setDeleting(true)
@@ -285,40 +286,34 @@ function Editor({ saver, isDraft, onClose, onCreated, onDeleted, onOpenDraft }: 
           id="note-title"
           ref={titleRef}
           className={styles.title}
-          value={fields.title}
+          value={title}
           placeholder="Title"
           spellCheck={false}
           autoComplete="off"
-          onChange={(e) => change({ title: e.target.value })}
+          onChange={(e) => {
+            liveTitle.current = e.target.value
+            setTitle(e.target.value)
+            saver.edit()
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === 'ArrowDown') {
               e.preventDefault()
-              bodyRef.current?.focus()
+              bodyRef.current?.focusStart()
             }
           }}
         />
         <div className={styles.meta}>{meta}</div>
       </div>
 
-      <div className={styles.body}>
-        <label htmlFor="note-body" className="visually-hidden">
-          Note text
-        </label>
-        <textarea
-          id="note-body"
-          ref={bodyRef}
-          className={styles.textarea}
-          value={fields.content}
-          placeholder="Start writing…"
-          onChange={(e) => change({ content: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key === 'Backspace' && e.currentTarget.value === '') {
-              e.preventDefault()
-              titleRef.current?.focus()
-            }
-          }}
-        />
-      </div>
+      <NoteBody
+        ref={bodyRef}
+        initialMarkdown={initial.content}
+        onChange={() => saver.edit()}
+        onExitToTitle={() => titleRef.current?.focus()}
+        onUnmount={(markdown) => {
+          finalBody.current = markdown
+        }}
+      />
 
       {confirmDelete && (
         <Dialog labelledBy="delete-title" onClose={() => setConfirmDelete(null)}>

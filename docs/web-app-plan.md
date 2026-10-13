@@ -304,16 +304,18 @@ OrderedList, ListItem, TaskList, TaskItem (nested: true), Link
 (openOnClick: false, autolink, validate http/https/mailto), Blockquote,
 UndoRedo (Tiptap 3's name for History), Placeholder. Explicitly
 **exclude** Code, CodeBlock, HorizontalRule, Image, Table, Underline,
-Highlight, etc. Tiptap 3's StarterKit also bundles Link, Underline,
-ListKeymap and TrailingNode: turn off what isn't allowed and configure Link
-through StarterKit rather than adding it twice. TaskList/TaskItem live in
-`@tiptap/extension-list` in v3.
+Highlight, etc. Built from the individual extension packages, not
+StarterKit, so nothing outside the list can slip in (`src/editor/
+extensions.ts`; TaskList/TaskItem/ListKeymap come from
+`@tiptap/extension-list` in v3). Plus two atoms, `rawBlock` and `rawInline`,
+for Markdown outside the dialect (below).
 
 Title is a separate plain `<input>` above the editor (not part of the
 document). Content is the Tiptap document.
 
 Toolbar: bold, italic, strikethrough, H1/H2/H3, bullet list, numbered list,
-checklist, blockquote, link (dialog with URL input; Cmd/Ctrl-K). Keyboard
+checklist, blockquote, link (inline URL field under the toolbar, as in the
+design; Cmd/Ctrl-K; http, https and mailto only). Keyboard
 shortcuts come from the extensions. Show active state per button.
 
 ### Markdown conversion (`editor/markdown.ts`)
@@ -331,7 +333,14 @@ shortcuts come from the extensions. Show active state per button.
   `*italic*`, `~~strike~~`, `- ` bullets, `1.` ordered, `- [ ]`/`- [x]`
   tasks, `# ` headings, `> ` quotes, `[text](url)`, `\` + newline for
   hard breaks (§7.4), one blank line between blocks, no trailing whitespace, file
-  ends with a single `\n` (or is empty).
+  ends with a single `\n` (or is empty). A list right after a sibling list
+  of the same kind switches marker (`-`↔`*`, `.`↔`)`), or Markdown would
+  merge them. A list mixing tasks and plain items stays a bullet list (the
+  brackets are text). Trailing spaces inside raw code blocks are trimmed
+  with the rest.
+- The saver compares server text in canonical form, so a note stored as
+  `* a` elsewhere doesn't count as locally changed when the editor writes
+  `- a`.
 - Tests (`markdown.test.ts`): every case in
   `shared/markdown-fixtures/plaintext.json` must parse without throwing and
   re-serialize to a string that parses to an equal document (semantic

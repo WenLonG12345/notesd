@@ -51,34 +51,6 @@
   margin-top: 6px;
 }
 
-.body {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-  padding: 24px 48px 60px;
-}
-
-.textarea {
-  flex: 1;
-  min-height: 50vh;
-  width: 100%;
-  resize: none;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font-size: 17px;
-  line-height: 1.65;
-  color: var(--ink);
-}
-
-.textarea:focus-visible {
-  outline: none;
-}
-
-.textarea::placeholder {
-  color: var(--ink-3);
-}
-
 .placeholder {
   padding: 40px 48px 60px;
   display: flex;
@@ -146,10 +118,6 @@
 
   .title {
     font-size: 34px;
-  }
-
-  .body {
-    padding: 24px 20px 60px;
   }
 
   .placeholder {

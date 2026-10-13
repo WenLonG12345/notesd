@@ -1,5 +1,6 @@
 import { ApiError, NetworkError } from '../api/client'
 import { notes } from '../api/notes'
+import { canonical } from '../editor/markdown'
 import type { MutationResult, Note } from '../api/types'
 import type { SaveState } from '../ui/status-pill'
 
@@ -30,6 +31,14 @@ type Hooks = {
   saved?: (id: string, fields: Fields, result: MutationResult) => void
   /** A new note was created by resolving a conflict. */
   copied?: (saver: NoteSaver) => void
+}
+
+/**
+ * The editor saves canonical Markdown, so the server's text is compared in
+ * that form too: "* a" stored elsewhere isn't a local change to "- a".
+ */
+function canonicalFields(f: Fields): Fields {
+  return { title: f.title, content: canonical(f.content) }
 }
 
 // Tests shorten these; nothing else should touch them.
@@ -79,7 +88,7 @@ export class NoteSaver {
     this.created = init.revision !== undefined
     this.updatedAt = init.updatedAt ?? null
     // A note the server doesn't have yet has nothing acknowledged: empty base.
-    this.base = this.created ? { ...init.fields } : { title: '', content: '' }
+    this.base = this.created ? canonicalFields(init.fields) : { title: '', content: '' }
     const fields = { ...init.fields }
     this.read = () => fields
     this.snapshot = this.makeSnapshot()
@@ -295,9 +304,10 @@ export class NoteSaver {
     // The latest local text, including edits typed after the rejected request.
     const local = this.read()
     const base = this.base
+    const server = canonicalFields(current)
     const pick = (key: keyof Fields): string | null => {
       const mine = local[key]
-      const theirs = current[key]
+      const theirs = server[key]
       if (mine === base[key]) return theirs
       if (theirs === base[key] || theirs === mine) return mine
       return null
@@ -324,7 +334,7 @@ export class NoteSaver {
   /** Make the server's version our base. */
   private adopt(current: Note) {
     this.revision = current.revision
-    this.base = { title: current.title, content: current.content }
+    this.base = canonicalFields(current)
     this.updatedAt = current.updatedAt
     this.created = true
     this.problem = null

@@ -1,71 +1,24 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import type { Note, NoteList } from '../src/api/types'
 import { App } from '../src/app'
-import { createOwner, startServer, type TestServer } from './server'
+import {
+  bodyText,
+  createNote,
+  editElsewhere,
+  getNote,
+  listNotes,
+  newNoteButton,
+  op,
+  openTile,
+  saved,
+  signedIn,
+  titleInput,
+  typeAtEnd,
+  type Session,
+} from './helpers'
+import { createOwner, startServer } from './server'
 
-type Session = { id: string }
-
-/**
- * A server with an owner account and the app signed in to it. seed runs
- * before the app loads, so the grid starts with those notes.
- */
-async function signedIn({ path = '/', seed }: { path?: string; seed?: (server: TestServer) => Promise<void> } = {}) {
-  const server = await startServer()
-  const { username, password } = await createOwner(server)
-  // The other client (curl, a phone) signs in too, for edits from "another device".
-  await server.api('POST', '/auth/login', { username, password, client: 'web' })
-  await seed?.(server)
-  window.history.replaceState(null, '', path)
-  const user = userEvent.setup()
-  render(<App />)
-  await user.type(await screen.findByLabelText('Username'), username)
-  await user.type(screen.getByLabelText('Password'), `${password}{Enter}`)
-  await screen.findByRole('heading', { name: 'All notes' })
-  return { server, user, password }
-}
-
-let opSeq = 0
-const op = () => `test-op-${++opSeq}`
-
-async function createNote(server: TestServer, title: string, content = '') {
-  const id = crypto.randomUUID()
-  const res = await server.api('POST', '/notes', { operationId: op(), id, title, content })
-  expect(res.status).toBe(201)
-  return id
-}
-
-async function getNote(server: TestServer, id: string) {
-  return (await server.api<Note>('GET', `/notes/${id}`)).body
-}
-
-async function listNotes(server: TestServer) {
-  return (await server.api<NoteList>('GET', '/notes?limit=100')).body.notes
-}
-
-/** Edits a note as another device would. */
-async function editElsewhere(server: TestServer, id: string, patch: Partial<Pick<Note, 'title' | 'content'>>) {
-  const note = await getNote(server, id)
-  const res = await server.api('PUT', `/notes/${id}`, {
-    operationId: op(),
-    baseRevision: note.revision,
-    title: patch.title ?? note.title,
-    content: patch.content ?? note.content,
-  })
-  expect(res.status).toBe(200)
-}
-
-const titleInput = () => screen.getByLabelText<HTMLInputElement>('Title')
-const body = () => screen.getByLabelText<HTMLTextAreaElement>('Note text')
-// The header button; the mobile floating one is only hidden by CSS, which jsdom lacks.
-const newNoteButton = () => screen.getAllByRole('button', { name: 'New note' })[0] as HTMLElement
-const saved = () => screen.findByText('Saved', {}, { timeout: 3000 })
-
-async function openTile(user: ReturnType<typeof userEvent.setup>, title: string) {
-  await user.click(await screen.findByRole('link', { name: new RegExp(title) }))
-  await screen.findByLabelText('Title')
-}
 
 describe('creating', () => {
   it('saves a new note on its first edit and lists it', async () => {
@@ -77,9 +30,10 @@ describe('creating', () => {
     // Not in the URL until the server has it.
     expect(window.location.pathname).toBe('/')
 
+    // Enter moves focus into the body; ProseMirror's focus() doesn't take in
+    // jsdom, so that part is checked in a real browser, not here.
     await user.type(titleInput(), 'Groceries{Enter}')
-    expect(document.activeElement).toBe(body())
-    await user.type(body(), 'Milk and eggs')
+    await typeAtEnd(user, 'Milk and eggs')
     await waitFor(() => expect(window.location.pathname).toMatch(/^\/notes\//))
     await waitFor(async () => {
       const [note] = await listNotes(server)
@@ -115,7 +69,7 @@ describe('creating', () => {
     await user.type(screen.getByLabelText('Password'), `${password}{Enter}`)
 
     await waitFor(() => expect(titleInput().value).toBe('Deep link'))
-    expect(body().value).toBe('Hello')
+    expect(bodyText()).toBe('Hello')
   })
 
   it('says so when the linked note is gone', async () => {
@@ -136,10 +90,10 @@ describe('editing', () => {
     })
     await openTile(user, 'Plan')
 
-    await waitFor(() => expect(body().value).toBe('Step one'))
-    await user.type(body(), ', step two')
+    await waitFor(() => expect(bodyText()).toBe('Step one'))
+    await typeAtEnd(user, ', step two')
     await saved()
-    await waitFor(async () => expect((await getNote(server, id)).content).toBe('Step one, step two'))
+    await waitFor(async () => expect((await getNote(server, id)).content).toBe('Step one, step two\n'))
     expect((await getNote(server, id)).revision).toBeGreaterThan(1)
   })
 
@@ -151,16 +105,16 @@ describe('editing', () => {
       },
     })
     await openTile(user, 'Shopping')
-    await waitFor(() => expect(body().value).toBe('Buy milk'))
+    await waitFor(() => expect(bodyText()).toBe('Buy milk'))
 
     await editElsewhere(server, id, { title: 'Groceries' })
-    await user.type(body(), ' and bread')
+    await typeAtEnd(user, ' and bread')
 
     await waitFor(() => expect(titleInput().value).toBe('Groceries'))
     await saved()
     await waitFor(async () => {
       const note = await getNote(server, id)
-      expect(note).toMatchObject({ title: 'Groceries', content: 'Buy milk and bread' })
+      expect(note).toMatchObject({ title: 'Groceries', content: 'Buy milk and bread\n' })
     })
     expect(screen.queryByText(/Changed on another device/)).toBeNull()
   })
@@ -173,10 +127,10 @@ describe('editing', () => {
       },
     })
     await openTile(user, 'Trip')
-    await waitFor(() => expect(body().value).toBe('Pack light'))
+    await waitFor(() => expect(bodyText()).toBe('Pack light'))
 
     await editElsewhere(server, id, { content: 'Pack light, bring a charger' })
-    await user.type(body(), ', no laptop')
+    await typeAtEnd(user, ', no laptop')
 
     expect(await screen.findByText(/Changed on another device/)).toBeTruthy()
     expect(screen.getByText('Conflict')).toBeTruthy()
@@ -184,7 +138,7 @@ describe('editing', () => {
     expect((await getNote(server, id)).content).toBe('Pack light, bring a charger')
 
     await user.click(screen.getByRole('button', { name: 'Keep mine' }))
-    await waitFor(() => expect(body().value).toBe('Pack light, bring a charger'))
+    await waitFor(() => expect(bodyText()).toBe('Pack light, bring a charger'))
     await waitFor(async () => {
       const copy = (await listNotes(server)).find((n) => n.title === 'Trip (Conflicted copy)')
       expect(copy?.preview).toBe('Pack light, no laptop')
@@ -201,18 +155,18 @@ describe('editing', () => {
       },
     })
     await openTile(user, 'Trip')
-    await waitFor(() => expect(body().value).toBe('Pack light'))
+    await waitFor(() => expect(bodyText()).toBe('Pack light'))
 
     await editElsewhere(server, id, { content: 'Theirs' })
-    await user.type(body(), ' mine')
+    await typeAtEnd(user, ' mine')
     await user.click(await screen.findByRole('button', { name: 'Use theirs' }))
 
-    expect(body().value).toBe('Theirs')
+    expect(bodyText()).toBe('Theirs')
     expect(screen.getByText('Saved')).toBeTruthy()
     // Editing continues against their revision.
-    await user.type(body(), ' and more')
+    await typeAtEnd(user, ' and more')
     await saved()
-    await waitFor(async () => expect((await getNote(server, id)).content).toBe('Theirs and more'))
+    await waitFor(async () => expect((await getNote(server, id)).content).toBe('Theirs and more\n'))
     expect((await listNotes(server)).map((n) => n.title)).toEqual(['Trip'])
   })
 
@@ -224,17 +178,17 @@ describe('editing', () => {
       },
     })
     await openTile(user, 'Ideas')
-    await waitFor(() => expect(body().value).toBe('One'))
+    await waitFor(() => expect(bodyText()).toBe('One'))
 
     const note = await getNote(server, id)
     await server.api('DELETE', `/notes/${id}`, { operationId: op(), baseRevision: note.revision })
-    await user.type(body(), ', two')
+    await typeAtEnd(user, ', two')
 
     expect(await screen.findByText('This note was deleted on another device.')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Keep as new note' }))
 
     await waitFor(() => expect(titleInput().value).toBe('Ideas (Recovered copy)'))
-    expect(body().value).toBe('One, two')
+    expect(bodyText()).toBe('One, two')
     await waitFor(async () => {
       const notes = await listNotes(server)
       expect(notes.map((n) => [n.title, n.preview])).toEqual([['Ideas (Recovered copy)', 'One, two']])
@@ -252,17 +206,17 @@ describe('failures', () => {
       },
     })
     await openTile(user, 'Offline')
-    await waitFor(() => expect(body().value).toBe('Start'))
+    await waitFor(() => expect(bodyText()).toBe('Start'))
 
     server.setOffline(true)
-    await user.type(body(), ' typed offline')
+    await typeAtEnd(user, ' typed offline')
     expect(await screen.findByText(/Couldn’t reach the server/)).toBeTruthy()
     expect(screen.getByText('Couldn’t save')).toBeTruthy()
 
     server.setOffline(false)
     await saved()
     expect(screen.queryByText(/Couldn’t reach the server/)).toBeNull()
-    expect((await getNote(server, id)).content).toBe('Start typed offline')
+    expect((await getNote(server, id)).content).toBe('Start typed offline\n')
   })
 
   it('replays a save whose response was lost instead of applying it twice', async () => {
@@ -273,14 +227,14 @@ describe('failures', () => {
       },
     })
     await openTile(user, 'Replay')
-    await waitFor(() => expect(body().value).toBe('A'))
+    await waitFor(() => expect(bodyText()).toBe('A'))
 
     server.loseNextResponse((method) => method === 'PUT')
-    await user.type(body(), 'B')
+    await typeAtEnd(user, 'B')
     await saved()
 
     const note = await getNote(server, id)
-    expect(note.content).toBe('AB')
+    expect(note.content).toBe('AB\n')
     // One update: the retry was answered from the idempotency record, not as a conflict.
     expect(note.revision).toBe(2)
     expect(screen.queryByText(/Changed on another device/)).toBeNull()
@@ -297,7 +251,7 @@ describe('failures', () => {
 
     // What a dev proxy that rewrites Host looks like to the server.
     server.setOrigin('http://localhost:5173')
-    await user.type(body(), 'B')
+    await typeAtEnd(user, 'B')
 
     expect(await screen.findByText(/The server didn’t accept this save: cross-origin request rejected/)).toBeTruthy()
     expect(screen.getByText('Couldn’t save')).toBeTruthy()
@@ -307,7 +261,7 @@ describe('failures', () => {
     server.setOrigin(server.url)
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     await saved()
-    expect((await getNote(server, id)).content).toBe('AB')
+    expect((await getNote(server, id)).content).toBe('AB\n')
   })
 
   it('asks to sign in again when the session ends mid-edit, then saves', async () => {
@@ -318,21 +272,21 @@ describe('failures', () => {
       },
     })
     await openTile(user, 'Session')
-    await waitFor(() => expect(body().value).toBe('Before'))
+    await waitFor(() => expect(bodyText()).toBe('Before'))
 
     // Revoke the browser's session from the other client.
     const { body: list } = await server.api<{ sessions: Session[]; currentId: string }>('GET', '/auth/sessions')
     const browserSession = list.sessions.find((s) => s.id !== list.currentId)
     await server.api('DELETE', `/auth/sessions/${browserSession?.id}`)
 
-    await user.type(body(), ' after')
+    await typeAtEnd(user, ' after')
     const dialog = await screen.findByRole('dialog', { name: 'Sign in again' })
     // The editor is still there underneath with the unsaved text.
-    expect(body().value).toBe('Before after')
+    expect(bodyText()).toBe('Before after')
 
     await user.type(within(dialog).getByLabelText('Password'), `${password}{Enter}`)
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sign in again' })).toBeNull())
-    await waitFor(async () => expect((await getNote(server, id)).content).toBe('Before after'))
+    await waitFor(async () => expect((await getNote(server, id)).content).toBe('Before after\n'))
     await saved()
   })
 })

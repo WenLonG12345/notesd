@@ -1,0 +1,309 @@
+.toolbarRow {
+  position: relative;
+  z-index: 2;
+  padding: 14px 40px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  padding: 5px;
+  border-radius: 15px;
+  background: var(--chip);
+  border: 1px solid var(--edge);
+}
+
+.tool {
+  flex: none;
+  width: 36px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wide {
+  width: auto;
+  padding: 0 9px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tool:hover {
+  background: var(--hover);
+}
+
+.tool[aria-pressed='true'] {
+  background: var(--on);
+}
+
+.sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  background: var(--hair);
+  margin: 0 5px;
+}
+
+.italicGlyph {
+  font: italic 400 19px var(--font-serif);
+}
+
+.monoGlyph {
+  font: 500 12px var(--font-mono);
+}
+
+.checkGlyph {
+  width: 14px;
+  height: 14px;
+  border-radius: 4.5px;
+  border: 1.6px solid currentcolor;
+}
+
+.quoteGlyph {
+  font: 400 26px/1 var(--font-serif);
+  padding-top: 9px;
+}
+
+.linkGlyph {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.linkForm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  animation: fade-in 0.15s;
+}
+
+.linkInput {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--hair);
+  background: var(--field);
+  color: var(--ink);
+  padding: 0 11px;
+  font: 13px var(--font-mono);
+}
+
+.linkInput:focus-visible {
+  outline: none;
+  border-color: var(--accent-deep);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.linkInput[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.linkApply {
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--solid);
+  color: var(--on-solid);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.linkError {
+  flex-basis: 100%;
+  font-size: 12.5px;
+  color: var(--danger);
+}
+
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 48px 60px;
+}
+
+.content {
+  min-height: 100%;
+}
+
+/* --- document typography (from the design prototype) --- */
+
+.prose {
+  outline: none;
+  min-height: 40vh;
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--ink);
+  max-width: 68ch;
+  overflow-wrap: anywhere;
+}
+
+.prose :global(p.is-editor-empty:first-child::before) {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--ink-3);
+  pointer-events: none;
+}
+
+.prose p {
+  margin: 0 0 0.65em;
+}
+
+.prose h1 {
+  font: 400 36px/1.15 var(--font-serif);
+  letter-spacing: -0.01em;
+  margin: 0.7em 0 0.3em;
+}
+
+.prose h2 {
+  font: 400 27px/1.2 var(--font-serif);
+  margin: 0.7em 0 0.3em;
+}
+
+.prose h3 {
+  font: 600 17px/1.3 var(--font-sans);
+  margin: 0.9em 0 0.3em;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.4em;
+  margin: 0 0 0.8em;
+}
+
+.prose li {
+  margin: 0.25em 0;
+  padding-left: 0.2em;
+}
+
+.prose li > p {
+  margin: 0;
+}
+
+.prose blockquote {
+  margin: 1em 0;
+  padding: 0 0 0 20px;
+  border-left: 1.5px solid var(--hair-strong);
+  font: italic 400 21px/1.45 var(--font-serif);
+  color: var(--ink-2);
+}
+
+.prose a {
+  color: var(--link);
+  text-underline-offset: 3px;
+}
+
+/* Task lists: Tiptap renders <li data-checked><label><input/></label><div/></li>. */
+.prose ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.prose ul[data-type='taskList'] ul[data-type='taskList'] {
+  padding-left: 1.6em;
+}
+
+.prose ul[data-type='taskList'] > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-left: 2px;
+}
+
+.prose ul[data-type='taskList'] > li > label {
+  flex: none;
+  margin-top: 0.32em;
+  user-select: none;
+}
+
+.prose ul[data-type='taskList'] > li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.prose ul[data-type='taskList'] > li input[type='checkbox'] {
+  appearance: none;
+  margin: 0;
+  display: block;
+  width: 17px;
+  height: 17px;
+  border-radius: 6px;
+  border: 1.5px solid var(--ink-3);
+  background: var(--field);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.prose ul[data-type='taskList'] > li input[type='checkbox']:checked {
+  background: var(--accent);
+  border-color: var(--accent-deep);
+  box-shadow:
+    inset 0 0 0 3px var(--accent),
+    inset 0 0 0 9px oklch(0.25 0.012 60);
+}
+
+.prose li[data-checked='true'] > div {
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+
+/* Raw Markdown the editor can't represent: shown as written, read-only. */
+.prose pre[data-raw] {
+  margin: 0 0 0.8em;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--hair-strong);
+  background: var(--chip);
+  font: 400 13px/1.6 var(--font-mono);
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  cursor: default;
+}
+
+.prose code[data-raw] {
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--chip);
+  border: 1px dashed var(--hair-strong);
+  font: 400 0.85em var(--font-mono);
+  color: var(--ink-2);
+}
+
+.prose :global(.ProseMirror-selectednode) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .toolbarRow {
+    padding: 14px 12px 0;
+  }
+
+  .toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .scroller {
+    padding: 24px 20px 60px;
+  }
+}

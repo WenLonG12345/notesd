@@ -29,6 +29,13 @@ HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
   this.open = false
 }
 
+// ProseMirror measures the DOM to scroll the selection into view; jsdom has
+// no layout, so these report empty boxes.
+const emptyRect = () => DOMRect.fromRect({ x: 0, y: 0, width: 0, height: 0 })
+Range.prototype.getBoundingClientRect ??= emptyRect
+Range.prototype.getClientRects ??= () => ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }) as unknown as DOMRectList
+document.elementFromPoint ??= () => null
+
 // Nor does it turn Escape into a cancel event on the topmost modal dialog.
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return
