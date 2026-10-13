@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
 const outDir = resolve(import.meta.dirname, '../../server/internal/web/dist')
-const server = 'http://127.0.0.1:8080'
+const server = process.env.NOTES_SERVER ?? 'http://127.0.0.1:8080'
 
 export default defineConfig({
   plugins: [
@@ -21,7 +21,12 @@ export default defineConfig({
   ],
   build: { outDir, emptyOutDir: true },
   server: {
-    proxy: { '/api': server, '/healthz': server, '/readyz': server },
+    // changeOrigin must stay false (the string shorthand turns it on): the
+    // server rejects mutations whose Origin host differs from Host, and the
+    // browser's Origin is the Vite dev server.
+    proxy: Object.fromEntries(
+      ['/api', '/healthz', '/readyz'].map((path) => [path, { target: server, changeOrigin: false }]),
+    ),
   },
   test: {
     environment: 'jsdom',

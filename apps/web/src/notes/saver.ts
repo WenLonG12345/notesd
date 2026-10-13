@@ -269,8 +269,10 @@ export class NoteSaver {
       this.set('failed')
       return
     }
-    if (err instanceof NetworkError || (err instanceof ApiError && (err.status >= 500 || err.status === 403))) {
-      // 403 is a CSRF failure: transient while the session is being re-established.
+    // Only transport failures and server errors are worth retrying. A 403
+    // (CSRF/origin check) won't fix itself: an ended session fails with 401
+    // before that check runs.
+    if (err instanceof NetworkError || (err instanceof ApiError && err.status >= 500)) {
       this.problem = { kind: 'offline' }
       this.set('failed')
       const delay = Math.min(timing.retryBaseMs * 2 ** this.attempts, timing.retryMaxMs)

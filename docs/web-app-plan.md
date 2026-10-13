@@ -137,7 +137,10 @@ Setup tasks:
      Cookies work because the proxy keeps the same origin from the
      browser's point of view. Note the server rejects mutations whose
      `Origin` host differs from the request `Host`; through the proxy both
-     are `localhost:5173`, so this is fine.
+     are `localhost:5173`, so this is fine — **only with `changeOrigin:
+     false`**. Vite's string shorthand (`'/api': url`) turns `changeOrigin`
+     on, rewrites `Host` to the target, and every save fails with `403
+     csrf_failed`. `NOTES_SERVER` overrides the target.
 3. Dev loop: terminal 1 `cd server && go run ./cmd/notes-server`, terminal 2
    `cd apps/web && pnpm dev`, open http://localhost:5173.
 4. Production check: `pnpm build`, then `cd server && go build

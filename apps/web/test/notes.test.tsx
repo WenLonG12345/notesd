@@ -286,6 +286,30 @@ describe('failures', () => {
     expect(screen.queryByText(/Changed on another device/)).toBeNull()
   })
 
+  it('reports a save the server refuses instead of retrying it as offline', async () => {
+    let id = ''
+    const { server, user } = await signedIn({
+      seed: async (s) => {
+        id = await createNote(s, 'Refused', 'A')
+      },
+    })
+    await openTile(user, 'Refused')
+
+    // What a dev proxy that rewrites Host looks like to the server.
+    server.setOrigin('http://localhost:5173')
+    await user.type(body(), 'B')
+
+    expect(await screen.findByText(/The server didn’t accept this save: cross-origin request rejected/)).toBeTruthy()
+    expect(screen.getByText('Couldn’t save')).toBeTruthy()
+    expect(screen.queryByText(/Couldn’t reach the server/)).toBeNull()
+    expect((await getNote(server, id)).content).toBe('A')
+
+    server.setOrigin(server.url)
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await saved()
+    expect((await getNote(server, id)).content).toBe('AB')
+  })
+
   it('asks to sign in again when the session ends mid-edit, then saves', async () => {
     let id = ''
     const { server, user, password } = await signedIn({

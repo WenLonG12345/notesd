@@ -9,6 +9,8 @@ export type TestServer = {
   setupToken: string
   /** Browser requests fail as if the network were down. */
   setOffline: (offline: boolean) => void
+  /** Browser requests claim this Origin, e.g. a misconfigured proxy's. */
+  setOrigin: (origin: string) => void
   /** The next matching browser request reaches the server, but its response is lost. */
   loseNextResponse: (match: (method: string, path: string) => boolean) => void
   /** Calls the API as a separate client (its own cookie jar). */
@@ -36,6 +38,9 @@ export async function startServer(): Promise<TestServer> {
     setupToken,
     setOffline: (offline) => {
       browser.offline = offline
+    },
+    setOrigin: (origin) => {
+      browser.origin = origin
     },
     loseNextResponse: (match) => {
       browser.lose = match
@@ -99,6 +104,7 @@ function readStartup(proc: ChildProcess): Promise<{ url: string; setupToken: str
 type CookieFetch = typeof fetch & {
   csrf?: string
   offline?: boolean
+  origin?: string
   lose?: ((method: string, path: string) => boolean) | undefined
 }
 
@@ -109,7 +115,7 @@ function cookieFetch(base: string): CookieFetch {
     if (fn.offline) throw new TypeError('Failed to fetch')
     const headers = new Headers(init.headers)
     // Same-origin browser requests carry Origin on mutations.
-    headers.set('Origin', base)
+    headers.set('Origin', fn.origin ?? base)
     if (jar.size > 0) headers.set('Cookie', [...jar].map(([k, v]) => `${k}=${v}`).join('; '))
 
     // jsdom's AbortSignal isn't Node's; bridge it so aborts still reach fetch.
