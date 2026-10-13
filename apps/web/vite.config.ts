@@ -23,5 +23,9 @@ export default defineConfig({
   server: {
     proxy: { '/api': server, '/healthz': server, '/readyz': server },
   },
-  test: { environment: 'node', passWithNoTests: true },
+  test: {
+    environment: 'jsdom',
+    globalSetup: ['test/global-setup.ts'],
+    setupFiles: ['test/setup.ts'],
+  },
 })

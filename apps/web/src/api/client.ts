@@ -66,7 +66,7 @@ export async function request<T>(
       keepalive: options.keepalive,
     })
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err
+        if (isAbort(err)) throw err
     throw new NetworkError(err)
   }
 
@@ -81,6 +81,12 @@ export async function request<T>(
     for (const listener of unauthenticatedListeners) listener()
   }
   throw error
+}
+
+// By name, not instanceof: DOMException isn't always an Error subclass and
+// differs across realms.
+function isAbort(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'name' in err && err.name === 'AbortError'
 }
 
 async function errorBody(res: Response): Promise<ErrorBody> {

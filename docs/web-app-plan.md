@@ -118,7 +118,12 @@ Dependencies use `^` ranges; `pnpm-lock.yaml` is what pins them.
 Type checking is `pnpm typecheck`: `tsc --noEmit` for `src`, plus
 `tsconfig.node.json` for `vite.config.ts` (Node types stay out of browser
 code; no `-b`, no project references); Vite does
-the transpiling. Lint is `pnpm lint` (oxlint, `.oxlintrc.json`):
+the transpiling. Tests favor integration over unit: `test/*.test.tsx` render the whole
+`<App />` in jsdom against the real Go server (built once per run by
+`test/global-setup.ts`, a fresh instance and data dir per test, a cookie jar
+standing in for the browser's), so `pnpm test` needs Go installed. Unit tests
+in `src/` only cover what the real server can't produce.
+Lint is `pnpm lint` (oxlint, `.oxlintrc.json`):
 typescript-eslint cannot load TypeScript 7, and oxlint needs no TS API. If TypeScript 7 rejects a type from a dependency, fix it
 with a local `.d.ts` shim, not by downgrading.
 

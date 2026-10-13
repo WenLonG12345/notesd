@@ -29,5 +29,15 @@
   },
   "env": {
     "browser": true
-  }
+  },
+  "overrides": [
+    {
+      "files": [
+        "test/**"
+      ],
+      "rules": {
+        "no-await-in-loop": "off"
+      }
+    }
+  ]
 }

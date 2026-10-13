@@ -1,8 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "lib": ["es2023"],
-    "types": ["node"]
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["node", "vite/client"]
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "test"]
 }
