@@ -73,6 +73,7 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
     private var recorded = false
     private var changeStart = 0
     private var changeEnd = 0
+    private var scrollAfterLayout = false
 
     // Marks toggled with a collapsed selection, applied to what's typed next.
     private var pendingStart = -1
@@ -373,6 +374,7 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
                 guard--
                 editing = false
             }
+            scrollAfterLayout = true
             onChange?.invoke()
             publishState()
         }
@@ -560,6 +562,16 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
     }
 
     // --- touch ---------------------------------------------------------------
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        // TextView defers its scroll-to-cursor while a layout is pending, and in Compose this layout can come after
+        // the frame's pre-draw (Enter on a list item at the bottom), leaving the new line hidden until the caret blinks.
+        if (scrollAfterLayout) {
+            scrollAfterLayout = false
+            post { bringPointIntoView(selectionEnd) }
+        }
+    }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
