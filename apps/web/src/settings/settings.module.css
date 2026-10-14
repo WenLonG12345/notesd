@@ -36,26 +36,6 @@
   gap: 16px;
 }
 
-.identity {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.avatar {
-  width: 52px;
-  height: 52px;
-  flex: none;
-  border-radius: 17px;
-  background: var(--accent);
-  box-shadow: inset 0 -6px 0 var(--accent-deep);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font: 400 28px/1 var(--font-serif);
-  color: var(--on-accent);
-}
-
 .who {
   display: flex;
   flex-direction: column;
@@ -63,8 +43,9 @@
   min-width: 0;
 }
 
-.name {
-  font: 400 30px/1 var(--font-serif);
+.host {
+  font: 500 22px/1.2 var(--font-mono);
+  letter-spacing: -0.02em;
   overflow: hidden;
   text-overflow: ellipsis;
 }

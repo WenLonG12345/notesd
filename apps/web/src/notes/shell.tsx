@@ -115,7 +115,6 @@ function ShellView({ username }: { username: string }) {
       <div className={styles.app}>
         {showList && (
           <NoteList
-            username={username}
             selectedId={selectedId}
             query={query}
             onQuery={setQuery}

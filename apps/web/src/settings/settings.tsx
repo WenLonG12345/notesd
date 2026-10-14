@@ -30,16 +30,11 @@ export function SettingsSheet({ username, onClose }: { username: string; onClose
       </div>
 
       <div className={styles.row}>
-        <Surface as="section" className={[styles.card, styles.wide].join(' ')} aria-labelledby="account-kicker">
-          <Kicker id="account-kicker">Signed in as</Kicker>
-          <div className={styles.identity}>
-            <div className={styles.avatar} aria-hidden="true">
-              {(username[0] ?? '·').toUpperCase()}
-            </div>
-            <div className={styles.who}>
-              <span className={styles.name}>{username}</span>
-              <span className={styles.muted}>Owner · {window.location.host}</span>
-            </div>
+        <Surface as="section" className={[styles.card, styles.wide].join(' ')} aria-labelledby="server-kicker">
+          <Kicker id="server-kicker">Server</Kicker>
+          <div className={styles.who}>
+            <span className={styles.host}>{window.location.host}</span>
+            <span className={styles.muted}>Signed in as {username}</span>
           </div>
         </Surface>
         <Appearance />

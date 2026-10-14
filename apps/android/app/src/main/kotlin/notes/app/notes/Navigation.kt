@@ -155,7 +155,6 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow()) {
                 NotesListScreen(
                     vm = viewModel { NotesListViewModel(graph.store, graph.deletions, graph.sync, graph.listFilter) },
                     signedOut = account is Account.SignedOut,
-                    account = (account as? Account.SignedIn)?.username,
                     beside = twoPane,
                     tagTree = graph.tagTree,
                     selected = if (twoPane) (backStack.lastOrNull() as? EditorKey)?.id else null,

@@ -19,6 +19,16 @@ export function SearchIcon({ size = 14 }: Props) {
   )
 }
 
+export function SettingsIcon({ size = 16 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+      <path d="M2.5 5h5.5M12 5h1.5M2.5 11h1.5M8 11h5.5" />
+      <circle cx="10" cy="5" r="1.5" />
+      <circle cx="6" cy="11" r="1.5" />
+    </svg>
+  )
+}
+
 export function TrashIcon({ size = 16 }: Props) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

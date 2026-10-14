@@ -125,15 +125,13 @@ import notes.core.db.SyncEvent
 import notes.core.sync.SyncStatus
 
 /**
- * The notes list. [selected] is the note open beside it in two-pane layouts;
- * [account] is the signed-in user's name, shown as the settings button's initial.
+ * The notes list. [selected] is the note open beside it in two-pane layouts.
  * [beside]: a note pane sits to the right, so the list draws the line between them.
  */
 @Composable
 fun NotesListScreen(
     vm: NotesListViewModel,
     signedOut: Boolean,
-    account: String?,
     selected: String?,
     beside: Boolean,
     tagTree: TagTreeState,
@@ -339,7 +337,7 @@ fun NotesListScreen(
                 }
             }
 
-            TopBar(collapsed, scope ?: "Notes", account, onSettings, Modifier.align(Alignment.TopCenter))
+            TopBar(collapsed, scope ?: "Notes", onSettings, Modifier.align(Alignment.TopCenter))
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                 ToastHost(toasts, Modifier.align(Alignment.CenterHorizontally))
                 Footer(state.notes.size, searching, onNew)
@@ -365,7 +363,7 @@ private fun results(n: Int) = if (n == 1) "1 result" else "$n results"
 
 /** Transparent over the large title; once it scrolls away, a glass bar with the title small. */
 @Composable
-private fun TopBar(collapsed: Boolean, title: String, account: String?, onSettings: () -> Unit, modifier: Modifier) {
+private fun TopBar(collapsed: Boolean, title: String, onSettings: () -> Unit, modifier: Modifier) {
     val t = LocalTokens.current
     val shown by animateFloatAsState(if (collapsed) 1f else 0f, tween(200), label = "bar")
     Box(modifier.fillMaxWidth()) {
@@ -389,14 +387,13 @@ private fun TopBar(collapsed: Boolean, title: String, account: String?, onSettin
                     .clearAndSetSemantics { },
                 textAlign = TextAlign.Center
             )
-            AccountButton(account, onSettings)
+            SettingsButton(onSettings)
         }
     }
 }
 
-/** Settings: the account's initial in serif when signed in (web: .account), otherwise a sliders icon. */
 @Composable
-private fun AccountButton(account: String?, onClick: () -> Unit) {
+private fun SettingsButton(onClick: () -> Unit) {
     val t = LocalTokens.current
     val interaction = remember { MutableInteractionSource() }
     Box(
@@ -407,7 +404,6 @@ private fun AccountButton(account: String?, onClick: () -> Unit) {
             .semantics { contentDescription = "Settings" },
         contentAlignment = Alignment.Center
     ) {
-        val initial = account?.trim()?.firstOrNull()?.uppercaseChar()
         Box(
             Modifier
                 .size(38.dp)
@@ -416,11 +412,7 @@ private fun AccountButton(account: String?, onClick: () -> Unit) {
                 .border(1.dp, t.edge, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            if (initial != null) {
-                Text(initial.toString(), style = Type.title.copy(fontSize = 19.sp, lineHeight = 19.sp), color = t.ink)
-            } else {
-                Icon(Icons.Settings, null, Modifier.size(20.dp), tint = t.ink)
-            }
+            Icon(Icons.Settings, null, Modifier.size(20.dp), tint = t.ink)
         }
     }
 }

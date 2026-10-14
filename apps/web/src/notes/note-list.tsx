@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from 'react'
 import { Button } from '../ui/button'
-import { PlusIcon, SearchIcon } from '../ui/icons'
+import { PlusIcon, SearchIcon, SettingsIcon } from '../ui/icons'
 import { ConnectionBanner } from './connection'
 import { groupByDate, listTime } from './list-time'
 import { useSearch } from './search'
@@ -9,7 +9,6 @@ import { TagsSection } from './tags-section'
 import styles from './note-list.module.css'
 
 type Props = {
-  username: string
   selectedId: string | null
   query: string
   onQuery: (q: string) => void
@@ -19,7 +18,7 @@ type Props = {
   mobile: boolean
 }
 
-export function NoteList({ username, selectedId, query, onQuery, onSelect, onNew, onSettings, mobile }: Props) {
+export function NoteList({ selectedId, query, onQuery, onSelect, onNew, onSettings, mobile }: Props) {
   const { items, status, hasMore, total, loadMore, refresh, version, tags, filter, setFilter } = useNotes()
   const search = useSearch(query, filter, version)
   const scope = !filter ? null : 'tag' in filter ? `#${filter.name}` : 'Untagged'
@@ -49,14 +48,8 @@ export function NoteList({ username, selectedId, query, onQuery, onSelect, onNew
           ) : (
             <h1 className={styles.heading}>Notes</h1>
           )}
-          <button
-            type="button"
-            className={styles.account}
-            onClick={onSettings}
-            aria-label={`Settings for ${username}`}
-            title="Settings"
-          >
-            {(username[0] ?? '·').toUpperCase()}
+          <button type="button" className={styles.settings} onClick={onSettings} aria-label="Settings" title="Settings">
+            <SettingsIcon size={17} />
           </button>
           {!mobile && (
             <Button variant="accent" size="sm" className={styles.newNote} onClick={onNew}>

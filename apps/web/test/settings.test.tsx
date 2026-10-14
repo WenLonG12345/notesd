@@ -4,7 +4,7 @@ import { createNote, noteTitle, signedIn } from './helpers'
 
 async function openSettings() {
   const ctx = await signedIn()
-  await ctx.user.click(screen.getByRole('button', { name: /^Settings for/ }))
+  await ctx.user.click(screen.getByRole('button', { name: 'Settings' }))
   await screen.findByRole('heading', { name: 'Settings' })
   return ctx
 }
@@ -68,7 +68,7 @@ describe('closing settings', () => {
     })
     await waitFor(() => expect(noteTitle()).toBe('Behind'))
     const path = window.location.pathname
-    await user.click(screen.getByRole('button', { name: /^Settings for/ }))
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
     expect(noteTitle()).toBe('Behind')
 
     await user.click(await screen.findByRole('button', { name: 'Done' }))

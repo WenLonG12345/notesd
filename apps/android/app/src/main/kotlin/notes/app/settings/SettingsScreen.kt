@@ -118,7 +118,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onConnect: () -> Unit, o
                     modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 8.dp).semantics { heading() }
                 )
 
-                Section("Account")
+                Section("Server")
                 Card {
                     when (val a = account) {
                         Account.None -> {
@@ -249,50 +249,47 @@ private fun Divider() {
     Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(LocalTokens.current.hair))
 }
 
-/** The signed-in user: their initial on the accent square, name, and server. */
+/** The server's address, then the account on it; [note] flags a problem, such as being signed out. */
 @Composable
 private fun Who(username: String, server: String, note: String?) {
     val t = LocalTokens.current
-    Row(
-        Modifier.fillMaxWidth().padding(16.dp).semantics(mergeDescendants = true) {},
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(t.accent),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                username.trim().take(1).uppercase(),
-                style = Type.title.copy(fontSize = 22.sp, lineHeight = 22.sp),
-                color = t.onAccent
-            )
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(username, style = Type.rowTitle, color = t.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (note != null) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        note,
-                        style = Type.label.copy(fontSize = 12.sp),
-                        color = t.warnInk,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(t.warnBg)
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-            }
+    Column(Modifier.fillMaxWidth().padding(16.dp).semantics(mergeDescendants = true) {}) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 server.toHttpUrlOrNull()?.let { it.host + if (it.port != 80 && it.port != 443) ":${it.port}" else "" }
                     ?: server,
-                style = Type.mono.copy(fontSize = 12.5.sp),
-                color = t.ink3,
+                style = Type.mono.copy(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium),
+                color = t.ink,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
+            if (note != null) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    note,
+                    style = Type.label.copy(fontSize = 12.sp),
+                    color = t.warnInk,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(t.warnBg)
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+            }
         }
+        Text(
+            if (note ==
+                null
+            ) {
+                "Signed in as $username"
+            } else {
+                "Account: $username"
+            },
+            style = Type.rowMeta,
+            color = t.ink3,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

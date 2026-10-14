@@ -6,7 +6,9 @@ import { createOwner, startServer } from './server'
 
 async function signedInAs(username: string) {
   expect(await screen.findByRole('heading', { name: 'Notes', level: 1 })).toBeTruthy()
-  expect(screen.getByRole('button', { name: `Settings for ${username}` })).toBeTruthy()
+  await userEvent.click(screen.getByRole('button', { name: 'Settings' }))
+  expect(await screen.findByText(`Signed in as ${username}`)).toBeTruthy()
+  await userEvent.click(screen.getByRole('button', { name: 'Done' }))
 }
 
 describe('first run', () => {
@@ -136,7 +138,7 @@ describe('sign in', () => {
     await user.type(screen.getByLabelText('Password'), `${password}{Enter}`)
     await signedInAs(username)
 
-    await user.click(screen.getByRole('button', { name: `Settings for ${username}` }))
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
     await user.click(await screen.findByRole('button', { name: 'Sign out' }))
     expect(await screen.findByRole('heading', { name: 'Welcome back.' })).toBeTruthy()
     // The session is gone: a reload lands on sign-in again.

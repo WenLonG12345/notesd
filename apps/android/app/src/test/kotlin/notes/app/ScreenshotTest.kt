@@ -16,6 +16,8 @@ import kotlinx.coroutines.runBlocking
 import notes.app.editor.SAMPLE_MARKDOWN
 import notes.app.editor.SAMPLE_TITLE
 import notes.core.api.RemoteNote
+import notes.core.api.Session
+import notes.core.api.SignIn
 import notes.core.api.SyncPage
 import org.junit.After
 import org.junit.Assume.assumeTrue
@@ -222,5 +224,19 @@ class ScreenshotTest {
         compose.onNode(hasContentDescription("Settings")).performClick()
         compose.waitUntilExactlyOneExists(hasText("Appearance", ignoreCase = true))
         shoot("settings")
+    }
+
+    @Test
+    fun settingsSignedIn() {
+        runBlocking {
+            graph.accounts.signedIn(
+                "https://notes.example.com/",
+                SignIn(Session("s", "device", "P", 1, 1), "cassio", "a", Long.MAX_VALUE, "r", Long.MAX_VALUE)
+            )
+        }
+        launch()
+        compose.onNode(hasContentDescription("Settings")).performClick()
+        compose.waitUntilExactlyOneExists(hasText("Appearance", ignoreCase = true))
+        shoot("settings-signed-in")
     }
 }
