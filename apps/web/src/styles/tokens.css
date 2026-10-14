@@ -74,12 +74,12 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --bg: oklch(0.19 0.008 70);
-    --ink: oklch(0.94 0.008 80);
-    --ink-2: oklch(0.77 0.01 75);
-    --ink-3: oklch(0.67 0.01 75);
-    --glass: rgb(44 40 36 / 0.72);
-    --glass-hi: rgb(50 46 42 / 0.88);
+    --bg: oklch(0.19 0.005 250);
+    --ink: oklch(0.94 0.004 250);
+    --ink-2: oklch(0.77 0.005 250);
+    --ink-3: oklch(0.67 0.005 250);
+    --glass: rgb(39 41 43 / 0.72);
+    --glass-hi: rgb(45 47 49 / 0.88);
     --edge: rgb(255 255 255 / 0.08);
     --hair: rgb(255 255 255 / 0.08);
     --hair-strong: rgb(255 255 255 / 0.16);
@@ -90,10 +90,10 @@
     --inset: inset 0 1px 0 rgb(255 255 255 / 0.06);
     --shadow: 0 14px 34px -18px rgb(0 0 0 / 0.65);
     --shadow-lg: 0 40px 90px -30px rgb(0 0 0 / 0.75);
-    --scrim: rgb(14 12 10 / 0.5);
-    --solid: oklch(0.93 0.008 80);
-    --on-solid: oklch(0.2 0.01 70);
-    --code: oklch(0.13 0.006 70 / 0.85);
+    --scrim: rgb(11 13 14 / 0.5);
+    --solid: oklch(0.93 0.004 250);
+    --on-solid: oklch(0.2 0.005 250);
+    --code: oklch(0.13 0.004 250 / 0.85);
     --link: oklch(0.82 0.12 78);
     --tint: oklch(0.82 0.13 80);
     --danger: oklch(0.74 0.15 27);
@@ -106,7 +106,7 @@
     --warn-bg: oklch(0.33 0.05 60 / 0.75);
     --warn-edge: oklch(0.45 0.07 60);
     --warn-ink: oklch(0.9 0.06 70);
-    --blob-1: oklch(0.42 0.08 75);
+    --blob-1: oklch(0.42 0.065 75);
     --blob-2: oklch(0.38 0.06 155);
     --blob-3: oklch(0.36 0.07 300);
     --blob-opacity: 0.45;
@@ -115,12 +115,12 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: oklch(0.19 0.008 70);
-  --ink: oklch(0.94 0.008 80);
-  --ink-2: oklch(0.77 0.01 75);
-  --ink-3: oklch(0.67 0.01 75);
-  --glass: rgb(44 40 36 / 0.72);
-  --glass-hi: rgb(50 46 42 / 0.88);
+  --bg: oklch(0.19 0.005 250);
+  --ink: oklch(0.94 0.004 250);
+  --ink-2: oklch(0.77 0.005 250);
+  --ink-3: oklch(0.67 0.005 250);
+  --glass: rgb(39 41 43 / 0.72);
+  --glass-hi: rgb(45 47 49 / 0.88);
   --edge: rgb(255 255 255 / 0.08);
   --hair: rgb(255 255 255 / 0.08);
   --hair-strong: rgb(255 255 255 / 0.16);
@@ -131,10 +131,10 @@
   --inset: inset 0 1px 0 rgb(255 255 255 / 0.06);
   --shadow: 0 14px 34px -18px rgb(0 0 0 / 0.65);
   --shadow-lg: 0 40px 90px -30px rgb(0 0 0 / 0.75);
-  --scrim: rgb(14 12 10 / 0.5);
-  --solid: oklch(0.93 0.008 80);
-  --on-solid: oklch(0.2 0.01 70);
-  --code: oklch(0.13 0.006 70 / 0.85);
+  --scrim: rgb(11 13 14 / 0.5);
+  --solid: oklch(0.93 0.004 250);
+  --on-solid: oklch(0.2 0.005 250);
+  --code: oklch(0.13 0.004 250 / 0.85);
   --link: oklch(0.82 0.12 78);
   --tint: oklch(0.82 0.13 80);
   --danger: oklch(0.74 0.15 27);
@@ -147,7 +147,7 @@
   --warn-bg: oklch(0.33 0.05 60 / 0.75);
   --warn-edge: oklch(0.45 0.07 60);
   --warn-ink: oklch(0.9 0.06 70);
-  --blob-1: oklch(0.42 0.08 75);
+  --blob-1: oklch(0.42 0.065 75);
   --blob-2: oklch(0.38 0.06 155);
   --blob-3: oklch(0.36 0.07 300);
   --blob-opacity: 0.45;
