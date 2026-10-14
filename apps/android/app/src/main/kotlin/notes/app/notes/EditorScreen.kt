@@ -82,6 +82,7 @@ import notes.app.editor.LinkSheet
 import notes.app.editor.LinkTap
 import notes.app.editor.NoteEditText
 import notes.app.editor.TagStrip
+import notes.app.editor.keepCursorInView
 import notes.app.ui.Banner
 import notes.app.ui.BannerKind
 import notes.app.ui.IconAction
@@ -272,6 +273,7 @@ fun EditorScreen(
                             }
                         }
                         scroller.addView(this, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+                        scroller.keepCursorInView(this)
                     }
                     scroller
                 },
