@@ -82,6 +82,8 @@ import notes.app.ui.Banner
 import notes.app.ui.BannerKind
 import notes.app.ui.IconAction
 import notes.app.ui.Icons
+import notes.app.ui.KeyboardBarContent
+import notes.app.ui.LocalKeyboardBar
 import notes.app.ui.LocalTokens
 import notes.app.ui.NotesButton
 import notes.app.ui.NotesDialog
@@ -153,6 +155,28 @@ fun EditorScreen(
     }
 
     val typing = WindowInsets.isImeVisible
+    // The keyboard can be up for the list's search beside the note; the toolbars are only for typing here.
+    var focused by remember { mutableStateOf(false) }
+    val keyboardBar = LocalKeyboardBar.current
+    val toolbars: @Composable () -> Unit = {
+        Reveal(typing && focused) {
+            Column {
+                state.tag?.let { tag ->
+                    TagStrip(
+                        tag,
+                        tags,
+                        onPick = { name -> editor?.insertTag(tag.start, tag.end, name) },
+                        onShow = {
+                            save()
+                            onOpenTag(it)
+                        }
+                    )
+                }
+                FormattingBar(state, { editor }, onLink = { linkDialog = editor?.linkContext() })
+            }
+        }
+    }
+    if (keyboardBar != null) KeyboardBarContent(keyboardBar, toolbars)
     Column(Modifier.fillMaxSize().background(t.bg).statusBarsPadding().imePadding()) {
         Row(
             Modifier
@@ -219,6 +243,7 @@ fun EditorScreen(
                         }
                         onFormatState = { state = it }
                         onLinkTap = { linkTap = it }
+                        setOnFocusChangeListener { _, has -> focused = has }
                         editor = this
                         // A new note opens ready to type the title. Focus alone doesn't raise the keyboard, and
                         // neither works before the view is attached.
@@ -238,22 +263,7 @@ fun EditorScreen(
                 // Compose doesn't clip a native view: the edge stretch would draw the text over the top bar.
                 modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()
             )
-            Reveal(typing) {
-                Column {
-                    state.tag?.let { tag ->
-                        TagStrip(
-                            tag,
-                            tags,
-                            onPick = { name -> editor?.insertTag(tag.start, tag.end, name) },
-                            onShow = {
-                                save()
-                                onOpenTag(it)
-                            }
-                        )
-                    }
-                    FormattingBar(state, { editor }, onLink = { linkDialog = editor?.linkContext() })
-                }
-            }
+            if (keyboardBar != null) Spacer(Modifier.height(keyboardBar.height)) else toolbars()
             if (!typing) Spacer(Modifier.navigationBarsPadding())
         }
     }

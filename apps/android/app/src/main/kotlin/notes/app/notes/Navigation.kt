@@ -18,9 +18,11 @@ import androidx.compose.material3.adaptive.layout.calculatePaneScaffoldDirective
 import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
 import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneStrategy
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -44,6 +46,9 @@ import notes.app.account.OnboardingScreen
 import notes.app.account.OnboardingViewModel
 import notes.app.settings.SettingsScreen
 import notes.app.ui.EaseOut
+import notes.app.ui.KeyboardBar
+import notes.app.ui.KeyboardBarSlot
+import notes.app.ui.LocalKeyboardBar
 import notes.app.ui.LocalReduceMotion
 import notes.app.ui.hideKeyboard
 import notes.core.api.ApiClient
@@ -168,127 +173,135 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow()) {
     }
 
     val ms = if (reduce) 0 else MOTION_MS
-    Row(Modifier.fillMaxSize()) {
-        if (wide && backStack.lastOrNull() !is OnboardingKey) {
-            TagsPane(
-                vm = viewModel(key = "tags:sidebar") { TagsViewModel(graph.store, graph.listFilter) },
-                state = graph.tagTree,
-                docked = true,
-                onShow = ::show,
-                onSettings = { if (backStack.lastOrNull() != SettingsKey) backStack += SettingsKey },
-                modifier = Modifier.width(280.dp)
-            )
-        }
-        Box(Modifier.weight(1f)) {
-            NavDisplay(
-                backStack = backStack,
-                onBack = { pop() },
-                entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator()
-                ),
-                sceneStrategies = listOf(listDetail, SinglePaneSceneStrategy()),
-                // Forward: the new screen slides in a quarter-width and fades up; the old one drifts back.
-                transitionSpec = {
-                    ContentTransform(
-                        slideInHorizontally(tween(ms, easing = EaseOut)) { it / 4 } + fadeIn(tween(ms / 2)),
-                        slideOutHorizontally(tween(ms, easing = EaseOut)) { -it / 10 } + fadeOut(tween(ms))
+    val keyboardBar = remember { KeyboardBar() }
+    CompositionLocalProvider(LocalKeyboardBar provides keyboardBar) {
+        Box(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxSize()) {
+                if (wide && backStack.lastOrNull() !is OnboardingKey) {
+                    TagsPane(
+                        vm = viewModel(key = "tags:sidebar") { TagsViewModel(graph.store, graph.listFilter) },
+                        state = graph.tagTree,
+                        docked = true,
+                        onShow = ::show,
+                        onSettings = { if (backStack.lastOrNull() != SettingsKey) backStack += SettingsKey },
+                        modifier = Modifier.width(280.dp)
                     )
-                },
-                popTransitionSpec = {
-                    slideInHorizontally(tween(ms, easing = EaseOut)) { -it / 10 } + fadeIn(tween(ms)) togetherWith
-                        slideOutHorizontally(tween(ms, easing = EaseOut)) { it / 4 } + fadeOut(tween(ms / 2))
-                },
-                // The back gesture shrinks the screen toward the edge it came from, revealing the one beneath.
-                predictivePopTransitionSpec = {
-                    slideInHorizontally(tween(ms)) { -it / 10 } + fadeIn(tween(ms)) togetherWith
-                        scaleOut(tween(ms), targetScale = 0.9f) + fadeOut(tween(ms))
-                },
-                entryProvider = entryProvider {
-                    entry<TagsKey> {
-                        TagsPane(
-                            vm = viewModel { TagsViewModel(graph.store, graph.listFilter) },
-                            state = graph.tagTree,
-                            docked = false,
-                            onShow = ::show,
-                            onSettings = { backStack += SettingsKey }
-                        )
-                    }
-                    entry<NotesKey>(
-                        metadata = ListDetailSceneStrategy.listPane(detailPlaceholder = {
-                            NothingOpen(hasNotes = true, onNew = ::new)
-                        })
-                    ) {
-                        NotesListScreen(
-                            vm = viewModel {
-                                NotesListViewModel(graph.store, graph.deletions, graph.sync, graph.listFilter)
-                            },
-                            signedOut = account is Account.SignedOut,
-                            beside = twoPane,
-                            selected = if (twoPane) (backStack.lastOrNull() as? EditorKey)?.id else null,
-                            onSignIn = { backStack += OnboardingKey(signInAgain = true) },
-                            onOpen = { open(it) },
-                            onNew = ::new,
-                            onTags = if (wide) null else ({ tags() })
-                        )
-                    }
-                    entry<EditorKey>(metadata = ListDetailSceneStrategy.detailPane()) { key ->
-                        EditorScreen(
-                            vm = viewModel(key = key.id) {
-                                EditorViewModel(graph.store, key.id, graph.scope, key.startTag)
-                            },
-                            showBack = !twoPane,
-                            connected = account != Account.None,
-                            onBack = { pop() },
-                            onDelete = {
-                                graph.deletions.request(key.id)
-                                pop()
-                            },
-                            onOpen = { backStack += EditorKey(it) },
-                            onOpenTag = { name ->
-                                graph.listFilter.value = NoteFilter.Tag(tagKey(name), name)
-                                // One pane: the list is a screen away.
-                                if (!twoPane) home()
-                            }
-                        )
-                    }
-                    entry<SettingsKey> {
-                        val from = backStack.getOrNull(backStack.lastIndexOf(SettingsKey) - 1)
-                        SettingsScreen(
-                            graph,
-                            backLabel = if (from == TagsKey) "Tags" else "Notes",
-                            onBack = { pop() },
-                            onConnect = { backStack += OnboardingKey() },
-                            onSignIn = { backStack += OnboardingKey(signInAgain = true) }
-                        )
-                    }
-                    entry<OnboardingKey> { key ->
-                        val signedOut = account as? Account.SignedOut
-                        val firstRun = backStack.size == 1
-                        OnboardingScreen(
-                            vm = viewModel {
-                                OnboardingViewModel(
-                                    graph.accounts,
-                                    graph.deviceName,
-                                    { ApiClient(it) },
-                                    lockedServer = signedOut?.server?.takeIf { key.signInAgain },
-                                    username = signedOut?.username.orEmpty()
-                                )
-                            },
-                            onDone = { home() },
-                            onSkip = if (firstRun && account == Account.None) {
-                                {
-                                    graph.setOnboardingDismissed(true)
-                                    home()
-                                }
-                            } else {
-                                null
-                            },
-                            onExit = if (firstRun) null else ({ pop() })
-                        )
-                    }
                 }
-            )
+                Box(Modifier.weight(1f)) {
+                    NavDisplay(
+                        backStack = backStack,
+                        onBack = { pop() },
+                        entryDecorators = listOf(
+                            rememberSaveableStateHolderNavEntryDecorator(),
+                            rememberViewModelStoreNavEntryDecorator()
+                        ),
+                        sceneStrategies = listOf(listDetail, SinglePaneSceneStrategy()),
+                        // Forward: the new screen slides in a quarter-width and fades up; the old one drifts back.
+                        transitionSpec = {
+                            ContentTransform(
+                                slideInHorizontally(tween(ms, easing = EaseOut)) { it / 4 } + fadeIn(tween(ms / 2)),
+                                slideOutHorizontally(tween(ms, easing = EaseOut)) { -it / 10 } + fadeOut(tween(ms))
+                            )
+                        },
+                        popTransitionSpec = {
+                            slideInHorizontally(tween(ms, easing = EaseOut)) {
+                                -it / 10
+                            } + fadeIn(tween(ms)) togetherWith
+                                slideOutHorizontally(tween(ms, easing = EaseOut)) { it / 4 } + fadeOut(tween(ms / 2))
+                        },
+                        // The back gesture shrinks the screen toward the edge it came from, revealing the one beneath.
+                        predictivePopTransitionSpec = {
+                            slideInHorizontally(tween(ms)) { -it / 10 } + fadeIn(tween(ms)) togetherWith
+                                scaleOut(tween(ms), targetScale = 0.9f) + fadeOut(tween(ms))
+                        },
+                        entryProvider = entryProvider {
+                            entry<TagsKey> {
+                                TagsPane(
+                                    vm = viewModel { TagsViewModel(graph.store, graph.listFilter) },
+                                    state = graph.tagTree,
+                                    docked = false,
+                                    onShow = ::show,
+                                    onSettings = { backStack += SettingsKey }
+                                )
+                            }
+                            entry<NotesKey>(
+                                metadata = ListDetailSceneStrategy.listPane(detailPlaceholder = {
+                                    NothingOpen(hasNotes = true, onNew = ::new)
+                                })
+                            ) {
+                                NotesListScreen(
+                                    vm = viewModel {
+                                        NotesListViewModel(graph.store, graph.deletions, graph.sync, graph.listFilter)
+                                    },
+                                    signedOut = account is Account.SignedOut,
+                                    beside = twoPane,
+                                    selected = if (twoPane) (backStack.lastOrNull() as? EditorKey)?.id else null,
+                                    onSignIn = { backStack += OnboardingKey(signInAgain = true) },
+                                    onOpen = { open(it) },
+                                    onNew = ::new,
+                                    onTags = if (wide) null else ({ tags() })
+                                )
+                            }
+                            entry<EditorKey>(metadata = ListDetailSceneStrategy.detailPane()) { key ->
+                                EditorScreen(
+                                    vm = viewModel(key = key.id) {
+                                        EditorViewModel(graph.store, key.id, graph.scope, key.startTag)
+                                    },
+                                    showBack = !twoPane,
+                                    connected = account != Account.None,
+                                    onBack = { pop() },
+                                    onDelete = {
+                                        graph.deletions.request(key.id)
+                                        pop()
+                                    },
+                                    onOpen = { backStack += EditorKey(it) },
+                                    onOpenTag = { name ->
+                                        graph.listFilter.value = NoteFilter.Tag(tagKey(name), name)
+                                        // One pane: the list is a screen away.
+                                        if (!twoPane) home()
+                                    }
+                                )
+                            }
+                            entry<SettingsKey> {
+                                val from = backStack.getOrNull(backStack.lastIndexOf(SettingsKey) - 1)
+                                SettingsScreen(
+                                    graph,
+                                    backLabel = if (from == TagsKey) "Tags" else "Notes",
+                                    onBack = { pop() },
+                                    onConnect = { backStack += OnboardingKey() },
+                                    onSignIn = { backStack += OnboardingKey(signInAgain = true) }
+                                )
+                            }
+                            entry<OnboardingKey> { key ->
+                                val signedOut = account as? Account.SignedOut
+                                val firstRun = backStack.size == 1
+                                OnboardingScreen(
+                                    vm = viewModel {
+                                        OnboardingViewModel(
+                                            graph.accounts,
+                                            graph.deviceName,
+                                            { ApiClient(it) },
+                                            lockedServer = signedOut?.server?.takeIf { key.signInAgain },
+                                            username = signedOut?.username.orEmpty()
+                                        )
+                                    },
+                                    onDone = { home() },
+                                    onSkip = if (firstRun && account == Account.None) {
+                                        {
+                                            graph.setOnboardingDismissed(true)
+                                            home()
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                    onExit = if (firstRun) null else ({ pop() })
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+            KeyboardBarSlot(keyboardBar, Modifier.align(Alignment.BottomCenter))
         }
     }
 }
