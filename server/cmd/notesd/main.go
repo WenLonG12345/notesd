@@ -193,13 +193,14 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 	if err != nil {
 		return err
 	}
-	log.Info("notesd started", "version", version, "listen", ln.Addr().String(),
-		"database", db.Path, "schema_version", database.LatestVersion())
+	// Before "started": test harnesses (and people) read the log up to the listen address.
 	if token != "" {
 		log.Warn("no owner account yet: open setup_url to create it, "+
 			"or run `notesd create-owner --username NAME`",
 			"setup_url", setupURL(public, ln.Addr(), token), "setup_token", token)
 	}
+	log.Info("notesd started", "version", version, "listen", ln.Addr().String(),
+		"database", db.Path, "schema_version", database.LatestVersion())
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
