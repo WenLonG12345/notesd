@@ -18,6 +18,7 @@ import (
 
 	"notes/server/internal/auth"
 	"notes/server/internal/database"
+	"notes/server/internal/mail"
 	"notes/server/internal/notes"
 	"notes/server/internal/web"
 )
@@ -27,6 +28,8 @@ type Config struct {
 	// PublicURL is the externally visible base URL, if known. An https URL
 	// makes cookies Secure; its host is accepted as an Origin.
 	PublicURL *url.URL
+	// ResendURL overrides Resend's API base URL (tests).
+	ResendURL string
 }
 
 // Server serves the API and web app.
@@ -35,6 +38,7 @@ type Server struct {
 	notes   *notes.Store
 	auth    *auth.Service
 	limiter *auth.Limiter
+	mailer  *mail.Client
 	log     *slog.Logger
 	cfg     Config
 }
@@ -44,6 +48,7 @@ func New(db *database.DB, store *notes.Store, authSvc *auth.Service, log *slog.L
 	return &Server{
 		db: db, notes: store, auth: authSvc, log: log, cfg: cfg,
 		limiter: auth.NewLimiter(10, 15*time.Minute),
+		mailer:  mail.NewClient(cfg.ResendURL),
 	}
 }
 
@@ -72,6 +77,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/notes/{id}", s.authed(s.getNote))
 	mux.Handle("PUT /api/v1/notes/{id}", s.authed(s.updateNote))
 	mux.Handle("DELETE /api/v1/notes/{id}", s.authed(s.deleteNote))
+	mux.Handle("POST /api/v1/notes/{id}/email", s.authed(s.emailNote))
+
+	mux.Handle("GET /api/v1/settings/email", s.authed(s.emailSettings))
+	mux.Handle("PUT /api/v1/settings/email", s.authed(s.saveEmailSettings))
+	mux.Handle("DELETE /api/v1/settings/email", s.authed(s.deleteEmailSettings))
 
 	mux.Handle("GET /api/v1/sync", gzipped(s.authed(s.sync)))
 	mux.Handle("GET /api/v1/search", gzipped(s.authed(s.search)))

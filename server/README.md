@@ -63,6 +63,7 @@ NOTESD_PASSWORD='…' notesd create-owner --username me --data-dir /var/lib/note
 | `--log-level` | `NOTESD_LOG_LEVEL` | `info` |
 | `--log-format` | `NOTESD_LOG_FORMAT` | `text` (`json` also available) |
 | `--setup-token` | `NOTESD_SETUP_TOKEN` | generated and logged |
+| `--resend-url` | `NOTESD_RESEND_URL` | `https://api.resend.com` (tests point it at a fake) |
 
 Passwords for CLI commands come from `NOTESD_PASSWORD` or the first line of
 stdin. On memory-constrained hosts, set `GOMEMLIMIT` (e.g. `GOMEMLIMIT=64MiB`).
@@ -96,8 +97,12 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | GET | `/notes/{id}` | 410 with the tombstone in `current` if deleted |
 | PUT | `/notes/{id}` | `{operationId, baseRevision, title, content, updatedAt?}`; both fields required |
 | DELETE | `/notes/{id}` | `{operationId, baseRevision}` |
+| POST | `/notes/{id}/email` | `{to: [address, …], revision}` → `{id}` (Resend's). Sends the stored note: HTML rendered from the Markdown plus the Markdown as plain text, subject = title. `revision` must be the server's current one (`409 stale_revision` otherwise: sync first). Up to 10 recipients. `409 email_not_configured` without settings; `502 email_failed` with Resend's `message` when Resend refuses (unverified domain, bad key) |
 | GET | `/sync?since=&limit=&generation=` | `{changes, nextCursor, hasMore, generation}` |
 | GET | `/search?q=&limit=&offset=&tag=&untagged=` | `{results: [{id, title, excerpt, updatedAt}]}`; filters as for `/notes` |
+| GET | `/settings/email` | `{configured, from, keyHint}`; the key itself is never returned, `keyHint` is its last 4 characters |
+| PUT | `/settings/email` | `{apiKey?, from}`; `apiKey` (starts with `re_`) may be omitted to keep the saved one. Not checked against Resend: send-only keys can't call anything but sending, so a bad key shows on the first send |
+| DELETE | `/settings/email` | forget the key and sender |
 | GET | `/tags` | `{tags: [{key, name, count}]}` sorted by key; parents of nested tags included, `count` is distinct notes including nested tags |
 
 `/healthz` (process up) and `/readyz` (database reachable) sit outside
@@ -137,6 +142,7 @@ internal/database  connection pools, pragmas, migration runner, integrity check
 internal/notes     create/update/delete, revisions, tombstones, idempotency, listing
 internal/sync      change feed
 internal/search    Markdown → plain text and tags, FTS5 query building, search, tag listing, reindex
+internal/mail      email settings, note Markdown → HTML email, Resend client
 internal/auth      Argon2id, sessions, setup token, login rate limiting
 internal/api       routing, auth/CSRF middleware, handlers, gzip, logging
 internal/web       embedded web app (apps/web builds into internal/web/dist)

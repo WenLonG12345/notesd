@@ -3,6 +3,7 @@ module notes/server
 go 1.23
 
 require (
+	github.com/yuin/goldmark v1.8.6
 	golang.org/x/crypto v0.31.0
 	modernc.org/sqlite v1.34.4
 )

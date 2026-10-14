@@ -122,6 +122,9 @@ CREATE TABLE sync_state (
 -- Tags in live notes (§7.5), kept with the search index.
 CREATE TABLE note_tags (note_seq INTEGER REFERENCES notes(seq), key TEXT, name TEXT, PRIMARY KEY (note_seq, key));
 
+-- Server-wide settings from the apps: the Resend key and sender for emailing notes.
+CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
 CREATE TABLE applied_operations (
     operation_id  TEXT PRIMARY KEY,
     request_hash  TEXT    NOT NULL,
@@ -404,6 +407,8 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 | `POST` | `/api/v1/notes` | Create a note |
 | `PUT` | `/api/v1/notes/:id` | Update a note |
 | `DELETE` | `/api/v1/notes/:id` | Delete a note |
+| `POST` | `/api/v1/notes/:id/email` | Email the note as stored, through Resend |
+| `GET` `PUT` `DELETE` | `/api/v1/settings/email` | The Resend API key (write-only) and sender |
 | `GET` | `/api/v1/sync` | Download changes |
 | `GET` | `/api/v1/search` | Search notes; same filters as listing |
 | `GET` | `/api/v1/tags` | Tags in live notes, with counts |
@@ -417,6 +422,7 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 - The authoritative, up-to-date reference is `server/README.md`; the OpenAPI document in `shared/api/` is still to be written.
 - Listing and sync use cursor pagination; sync cursors are based only on server-assigned sequences, never offsets.
 - Search queries are parameterized, validated, limited and paginated.
+- Emailing sends the server's copy, not the client's: the request carries the revision the client shows, and a different one is `409 stale_revision`, so the client syncs first and the email matches what the sender saw. Browsers can't call Resend directly, and one key serves every device.
 - Major versions are explicit. Mobile apps may stay outdated for long periods, so breaking changes to note format, sync semantics or authentication need a compatibility strategy.
 
 ## 10. Security

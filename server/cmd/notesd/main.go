@@ -13,7 +13,7 @@
 //
 // Flags may also be set through environment variables: NOTESD_DATA_DIR,
 // NOTESD_LISTEN, NOTESD_PUBLIC_URL, NOTESD_LOG_LEVEL, NOTESD_LOG_FORMAT,
-// NOTESD_SETUP_TOKEN. Commands that take a password read it from
+// NOTESD_SETUP_TOKEN, NOTESD_RESEND_URL. Commands that take a password read it from
 // NOTESD_PASSWORD or, failing that, from the first line of standard input.
 package main
 
@@ -59,6 +59,7 @@ type options struct {
 	logLevel   string
 	logFormat  string
 	setupToken string
+	resendURL  string
 	username   string
 }
 
@@ -78,6 +79,7 @@ func run(args []string) error {
 		fs.StringVar(&o.logLevel, "log-level", env("NOTESD_LOG_LEVEL", "info"), "debug, info, warn or error")
 		fs.StringVar(&o.logFormat, "log-format", env("NOTESD_LOG_FORMAT", "text"), "text or json")
 		fs.StringVar(&o.setupToken, "setup-token", env("NOTESD_SETUP_TOKEN", ""), "first-run setup token (generated and logged if empty)")
+		fs.StringVar(&o.resendURL, "resend-url", env("NOTESD_RESEND_URL", ""), "Resend API base URL for emailing notes (default https://api.resend.com)")
 	case "create-owner":
 		fs.StringVar(&o.username, "username", "", "owner username")
 	case "reset-password", "reindex", "check":
@@ -181,7 +183,7 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 		return err
 	}
 	srv := &http.Server{
-		Handler:           api.New(db, notes.NewStore(db), authSvc, log, api.Config{PublicURL: public}).Handler(),
+		Handler:           api.New(db, notes.NewStore(db), authSvc, log, api.Config{PublicURL: public, ResendURL: o.resendURL}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,

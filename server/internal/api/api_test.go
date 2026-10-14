@@ -36,6 +36,11 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvWith(t, api.Config{})
+}
+
+func newEnvWith(t *testing.T, cfg api.Config) *env {
+	t.Helper()
 	ctx := context.Background()
 	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "notes.db"))
 	if err != nil {
@@ -47,7 +52,7 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := httptest.NewServer(api.New(db, notes.NewStore(db), a, log, api.Config{}).Handler())
+	srv := httptest.NewServer(api.New(db, notes.NewStore(db), a, log, cfg).Handler())
 	t.Cleanup(srv.Close)
 	return &env{t: t, srv: srv, auth: a}
 }

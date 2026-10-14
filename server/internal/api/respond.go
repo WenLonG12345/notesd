@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"notes/server/internal/auth"
+	"notes/server/internal/mail"
 	"notes/server/internal/notes"
 	"notes/server/internal/search"
 	notesync "notes/server/internal/sync"
@@ -69,11 +70,20 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	var verr *notes.ValidationError
 	var aerr *auth.InputError
 	var conflict *notes.ConflictError
+	var merr *mail.InputError
+	var send *mail.SendError
 	switch {
 	case errors.As(err, &verr):
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: verr.Message, Field: verr.Field})
 	case errors.As(err, &aerr):
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: aerr.Message, Field: aerr.Field})
+	case errors.As(err, &merr):
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: merr.Message, Field: merr.Field})
+	case errors.Is(err, mail.ErrNotConfigured):
+		writeError(w, http.StatusConflict, "email_not_configured", "add a Resend API key in Settings to send email")
+	case errors.As(err, &send):
+		s.log.WarnContext(r.Context(), "email failed", "status", send.Status, "error", send.Message)
+		writeError(w, http.StatusBadGateway, "email_failed", send.Message)
 	case errors.As(err, &conflict):
 		cur := conflict.Current
 		writeJSON(w, http.StatusConflict, errorBody{Error: conflict.Code, Current: &cur})
