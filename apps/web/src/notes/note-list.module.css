@@ -72,21 +72,43 @@
   color: var(--ink);
 }
 
-.settings {
+.showTags {
   flex: none;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  border: 1px solid var(--edge);
-  background: var(--chip);
-  color: var(--ink);
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink-2);
   cursor: pointer;
 }
 
-.settings:hover {
-  background: var(--glass-hi);
+.showTags:hover {
+  background: var(--hover);
+}
+
+/* Matches the note pane's back link on phones. */
+.back {
+  align-self: flex-start;
+  height: 32px;
+  margin: -6px 0 -2px -6px;
+  padding: 0 8px 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--tint);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.chevron {
+  font-size: 24px;
+  line-height: 1;
+  margin-top: -3px;
 }
 
 .newNote {
@@ -319,9 +341,9 @@
     font-size: 30px;
   }
 
-  .settings {
-    width: 36px;
-    height: 36px;
+  .back {
+    height: 40px;
+    font-size: 16px;
   }
 
   .searchInput {

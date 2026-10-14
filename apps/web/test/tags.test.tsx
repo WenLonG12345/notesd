@@ -1,20 +1,21 @@
-import { screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { App } from '../src/app'
 import {
   bodyText,
   createNote,
   list,
   listNotes,
+  mediumLayout,
   newNoteButton,
   noteTitle,
   openNote,
+  phoneLayout,
   row,
   signedIn,
   typeAtEnd,
   typeInTitle,
 } from './helpers'
-
-beforeEach(() => localStorage.clear())
 
 async function withTags() {
   return signedIn({
@@ -27,7 +28,8 @@ async function withTags() {
   })
 }
 
-const tags = () => within(list()).getByRole('list', { name: 'Tags' })
+const panel = () => screen.getByRole('navigation', { name: 'Tags' })
+const tags = () => within(panel()).getByRole('list', { name: 'Tags' })
 const tagRow = (name: string) => within(tags()).getByRole('button', { name: new RegExp(`^#${name},`, 'i') })
 const rowTitles = () =>
   within(list())
@@ -37,7 +39,7 @@ const rowTitles = () =>
 describe('tags in the sidebar', () => {
   it('lists tags with counts, nested ones under their parent', async () => {
     const { user } = await withTags()
-    await within(list()).findByRole('list', { name: 'Tags' })
+    await waitFor(() => tags())
 
     expect(tagRow('home').getAttribute('aria-label')).toBe('#Home, 2 notes')
     expect(tagRow('work').getAttribute('aria-label')).toBe('#work, 1 note')
@@ -56,7 +58,7 @@ describe('tags in the sidebar', () => {
     expect(within(list()).getByText('2 notes')).toBeTruthy()
     expect(screen.getByRole('searchbox', { name: 'Search notes' }).getAttribute('placeholder')).toBe('Search in #Home')
 
-    await user.click(within(list()).getByRole('button', { name: 'Untagged' }))
+    await user.click(within(panel()).getByRole('button', { name: 'Untagged' }))
     await waitFor(() => expect(rowTitles()).toEqual(['Loose']))
 
     await user.click(within(list()).getByRole('button', { name: 'Show all notes' }))
@@ -119,5 +121,71 @@ describe('typing a tag', () => {
     expect(within(options).getAllByRole('option').map((o) => o.textContent)).toEqual(['#home/repairs'])
     await user.keyboard('{Enter}')
     await waitFor(() => expect(bodyText()).toBe('No tags here #home/repairs '))
+  })
+})
+
+describe('tags sidebar', () => {
+  it('hides and comes back, and stays as left', async () => {
+    const { user } = await withTags()
+    await user.click(within(panel()).getByRole('button', { name: 'Hide tags' }))
+    expect(screen.queryByRole('navigation', { name: 'Tags' })).toBeNull()
+
+    await user.click(within(list()).getByRole('button', { name: 'Show tags' }))
+    expect(panel()).toBeTruthy()
+    expect(within(list()).queryByRole('button', { name: 'Show tags' })).toBeNull()
+    expect(localStorage.getItem('notes.sidebar.hidden')).toBe('false')
+  })
+
+  it('reopens on the list last shown', async () => {
+    const { user } = await withTags()
+    await user.click(await waitFor(() => tagRow('work')))
+    await within(list()).findByRole('heading', { name: /#work/ })
+
+    cleanup()
+    render(<App />)
+    expect(await within(await screen.findByRole('complementary', { name: 'Notes' })).findByRole('heading', { name: /#work/ })).toBeTruthy()
+    await waitFor(() => expect(rowTitles()).toEqual(['Standup']))
+  })
+})
+
+describe('tags screen on a phone', () => {
+  it('goes from the list to the tags and back to the list, filtered', async () => {
+    phoneLayout()
+    const { user } = await withTags()
+    expect(screen.queryByRole('navigation', { name: 'Tags' })).toBeNull()
+
+    await user.click(within(list()).getByRole('button', { name: 'Tags' }))
+    expect(window.location.pathname).toBe('/tags')
+    expect(screen.queryByRole('complementary', { name: 'Notes' })).toBeNull()
+    await user.click(await waitFor(() => tagRow('home')))
+
+    expect(window.location.pathname).toBe('/')
+    expect(await within(list()).findByRole('heading', { name: /#Home/ })).toBeTruthy()
+    await waitFor(() => expect(rowTitles().toSorted()).toEqual(['Garden', 'Roof']))
+  })
+
+  it('opens settings from the tags screen and returns to it', async () => {
+    phoneLayout()
+    const { user } = await withTags()
+    await user.click(within(list()).getByRole('button', { name: 'Tags' }))
+    await user.click(within(panel()).getByRole('button', { name: 'Settings' }))
+    await user.click(await screen.findByRole('button', { name: 'Done' }))
+    expect(window.location.pathname).toBe('/tags')
+    expect(panel()).toBeTruthy()
+  })
+})
+
+describe('tags screen beside a note', () => {
+  it('takes the list’s place and keeps the note open', async () => {
+    mediumLayout()
+    const { user } = await withTags()
+    await openNote(user, 'Loose')
+    await user.click(within(list()).getByRole('button', { name: 'Tags' }))
+
+    expect(screen.queryByRole('complementary', { name: 'Notes' })).toBeNull()
+    expect(noteTitle()).toBe('Loose')
+    await user.click(await waitFor(() => tagRow('work')))
+    expect(await within(list()).findByRole('heading', { name: /#work/ })).toBeTruthy()
+    expect(noteTitle()).toBe('Loose')
   })
 })

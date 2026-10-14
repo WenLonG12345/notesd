@@ -73,6 +73,15 @@ export function ChevronIcon({ size = 12 }: Props) {
   )
 }
 
+export function SidebarIcon({ size = 16 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="10" rx="2" />
+      <path d="M6.5 3v10" />
+    </svg>
+  )
+}
+
 export function HashIcon({ size = 14 }: Props) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">

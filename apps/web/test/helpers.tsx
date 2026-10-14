@@ -9,7 +9,12 @@ export type Session = { id: string }
 
 /** One pane at a time, as on a phone. Reset after each test. */
 export function phoneLayout() {
-  globalThis.phoneLayout = true
+  globalThis.layout = 'phone'
+}
+
+/** List and note side by side, without room for the tags sidebar. Reset after each test. */
+export function mediumLayout() {
+  globalThis.layout = 'medium'
 }
 
 /**

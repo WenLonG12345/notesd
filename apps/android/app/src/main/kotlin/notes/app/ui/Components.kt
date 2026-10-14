@@ -526,3 +526,23 @@ fun Backdrop(modifier: Modifier = Modifier) {
         }
     }
 }
+
+/** The tinted "‹ Label" back link at the top of a screen, named after where it goes. */
+@Composable
+fun BackLink(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val t = LocalTokens.current
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        modifier
+            .heightIn(min = 48.dp)
+            .pressScale(interaction, 0.94f)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(interaction, ripple(), role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "Back" }
+            .padding(start = 6.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Back, null, Modifier.size(22.dp), tint = t.tint)
+        Text(label, style = Type.body.copy(fontSize = 16.sp), color = t.tint)
+    }
+}

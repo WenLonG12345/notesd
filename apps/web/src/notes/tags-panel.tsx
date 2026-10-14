@@ -1,17 +1,19 @@
 import { useId, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { TagCount } from '../api/types'
-import { ChevronIcon, HashIcon } from '../ui/icons'
+import { ChevronIcon, HashIcon, SettingsIcon, SidebarIcon } from '../ui/icons'
 import type { ListFilter } from './store'
 import { buildTree, type TagNode } from './tag-tree'
-import styles from './tags-section.module.css'
+import styles from './tags-panel.module.css'
 
 type Props = {
   tags: TagCount[]
   filter: ListFilter
   onFilter: (filter: ListFilter) => void
+  onSettings: () => void
+  /** Docked beside the list (wide screens), it can be hidden; otherwise it's a screen of its own. */
+  onHide?: () => void
 }
 
-const OPEN_KEY = 'notes.tags.open'
 const EXPANDED_KEY = 'notes.tags.expanded'
 
 // Per-browser conveniences: storage can be missing or throw (private windows).
@@ -32,17 +34,11 @@ function save(key: string, value: unknown) {
   }
 }
 
-/** All notes, Untagged and the tag tree, at the top of the note list. */
-export function TagsSection({ tags, filter, onFilter }: Props) {
-  const id = useId()
+/** Where the list can point: All notes, Untagged and the tag tree. Settings live here too. */
+export function TagsPanel({ tags, filter, onFilter, onSettings, onHide }: Props) {
+  const headingId = useId()
   const tree = useMemo(() => buildTree(tags), [tags])
-  const [open, setOpen] = useState(() => load(OPEN_KEY, true))
   const [expanded, setExpanded] = useState(() => new Set(load<string[]>(EXPANDED_KEY, [])))
-
-  const toggleOpen = () => {
-    setOpen(!open)
-    save(OPEN_KEY, !open)
-  }
 
   const setNodeOpen = (key: string, on: boolean) => {
     const next = new Set(expanded)
@@ -113,53 +109,65 @@ export function TagsSection({ tags, filter, onFilter }: Props) {
     )
   }
 
+  const Heading = onHide ? 'h2' : 'h1'
+
   return (
-    <div className={styles.section} onKeyDown={onKeyDown}>
-      <button type="button" className={styles.header} aria-expanded={open} aria-controls={id} onClick={toggleOpen}>
-        <span className={styles.headerChevron}>
-          <ChevronIcon size={10} />
-        </span>
-        Tags
-      </button>
-      {open && (
-        <div id={id}>
-          <ul className={styles.list} aria-label="Show">
-            <li>
-              <div className={styles.item}>
-                <span className={styles.expander} aria-hidden="true" />
-                <button
-                  type="button"
-                  className={styles.row}
-                  data-row=""
-                  aria-current={selected === 'all' ? 'true' : undefined}
-                  onClick={() => onFilter(null)}
-                >
-                  <span className={styles.label}>All notes</span>
-                </button>
-              </div>
-            </li>
-            <li>
-              <div className={styles.item}>
-                <span className={styles.expander} aria-hidden="true" />
-                <button
-                  type="button"
-                  className={styles.row}
-                  data-row=""
-                  aria-current={selected === 'untagged' ? 'true' : undefined}
-                  onClick={() => onFilter({ untagged: true })}
-                >
-                  <span className={styles.label}>Untagged</span>
-                </button>
-              </div>
-            </li>
+    <nav className={[styles.panel, onHide ? styles.docked : ''].join(' ')} aria-labelledby={headingId}>
+      <div className={styles.header}>
+        <span className={styles.mark} aria-hidden="true" />
+        <Heading id={headingId} className={styles.heading}>
+          Tags
+        </Heading>
+        {onHide && (
+          <button type="button" className={styles.tool} onClick={onHide} aria-label="Hide tags" title="Hide tags">
+            <SidebarIcon />
+          </button>
+        )}
+        <button type="button" className={styles.tool} onClick={onSettings} aria-label="Settings" title="Settings">
+          <SettingsIcon size={onHide ? 16 : 17} />
+        </button>
+      </div>
+      <div className={styles.scroll} onKeyDown={onKeyDown}>
+        <ul className={styles.list} aria-label="Show">
+          <li>
+            <div className={styles.item}>
+              <span className={styles.expander} aria-hidden="true" />
+              <button
+                type="button"
+                className={styles.row}
+                data-row=""
+                aria-current={selected === 'all' ? 'true' : undefined}
+                onClick={() => onFilter(null)}
+              >
+                <span className={styles.label}>All notes</span>
+              </button>
+            </div>
+          </li>
+          <li>
+            <div className={styles.item}>
+              <span className={styles.expander} aria-hidden="true" />
+              <button
+                type="button"
+                className={styles.row}
+                data-row=""
+                aria-current={selected === 'untagged' ? 'true' : undefined}
+                onClick={() => onFilter({ untagged: true })}
+              >
+                <span className={styles.label}>Untagged</span>
+              </button>
+            </div>
+          </li>
+        </ul>
+        {tree.length > 0 ? (
+          <ul className={styles.list} aria-label="Tags">
+            {tree.map((n) => renderNode(n, 0))}
           </ul>
-          {tree.length > 0 && (
-            <ul className={styles.list} aria-label="Tags">
-              {tree.map((n) => renderNode(n, 0))}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
+        ) : (
+          <p className={styles.hint}>
+            Type <code>#tag</code> in a note to group it here. <code>#parent/child</code> nests.
+          </p>
+        )}
+      </div>
+    </nav>
   )
 }

@@ -16,7 +16,6 @@ import notes.core.db.NoteStore
 import notes.core.db.NoteSummary
 import notes.core.db.SearchHit
 import notes.core.db.SyncEvent
-import notes.core.db.TagCount
 import notes.core.sync.SyncEngine
 import notes.core.sync.SyncStatus
 
@@ -64,10 +63,6 @@ class NotesListViewModel(
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ListState())
-
-    val tags: StateFlow<List<TagCount>> =
-        store.changes.onStart { emit(Unit) }.mapLatest { store.tags() }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun search(q: String) {
         query.value = q

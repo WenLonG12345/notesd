@@ -55,7 +55,7 @@ apps/android/
 
 Tags are text in the note (`#tag`, `#multi word#`, `#parent/child`; architecture §7.5). `core/text/Tags.kt` is the shared extractor, pinned by `shared/markdown-fixtures/tags.json`. The database keeps a `note_tags` table beside the search index, updated in the same transaction by every local save and every sync write, so tags need nothing from the sync protocol.
 
-- **List:** a collapsible Tags section above the notes (All notes, Untagged, the tree with counts). Choosing one filters the list and search; a new note starts with the selected tag and is still discarded if nothing else is typed.
+- **Tags:** All notes, Untagged and the tree with counts, on their own screen under the list ("‹ Tags"), or in a sidebar from 1000dp wide. Settings open from there. Choosing one filters the list and search, and the app reopens on the list last shown; a new note starts with the selected tag and is still discarded if nothing else is typed.
 - **Editor:** the `Normalizer` tints tags with a `TagSpan` that never reaches the document. With the cursor in a tag, a strip above the formatting bar suggests existing tags while you type, or offers the notes with that tag.
 
 ## Design

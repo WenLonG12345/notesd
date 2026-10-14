@@ -9,6 +9,28 @@ import { hasTag, tags, tagText } from './tags'
 /** What the list shows: every note, one tag (by key, with its nested tags), or notes without tags. */
 export type ListFilter = { tag: string; name: string } | { untagged: true } | null
 
+const FILTER_KEY = 'notes.filter'
+
+/** The list last shown in this browser, so the app reopens on it. Storage may be missing or throw. */
+function savedFilter(): ListFilter {
+  try {
+    const f = JSON.parse(localStorage.getItem(FILTER_KEY) ?? 'null') as ListFilter
+    if (f && 'tag' in f && typeof f.tag === 'string' && typeof f.name === 'string') return { tag: f.tag, name: f.name }
+    if (f && 'untagged' in f && f.untagged === true) return { untagged: true }
+  } catch {
+    // Starts on All notes.
+  }
+  return null
+}
+
+function saveFilter(filter: ListFilter) {
+  try {
+    localStorage.setItem(FILTER_KEY, JSON.stringify(filter))
+  } catch {
+    // Not remembered; nothing else depends on it.
+  }
+}
+
 function matches(filter: ListFilter, fields: Fields): boolean {
   if (!filter) return true
   const noteTags = tags(fields.title, fields.content)
@@ -73,9 +95,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     hidden: [],
     version: 0,
   })
-  const [filter, setFilterState] = useState<ListFilter>(null)
+  const [filter, setFilterState] = useState<ListFilter>(savedFilter)
   const [tagList, setTagList] = useState<TagCount[]>([])
-  const filterRef = useRef<ListFilter>(null)
+  const filterRef = useRef<ListFilter>(filter)
   /** Bumped per filter change: pages for an earlier filter are dropped. */
   const generation = useRef(0)
   const cursor = useRef('')
@@ -115,6 +137,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const setFilter = useCallback(
     (next: ListFilter) => {
       filterRef.current = next
+      saveFilter(next)
       generation.current++
       cursor.current = ''
       setFilterState(next)

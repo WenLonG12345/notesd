@@ -1,11 +1,10 @@
 import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from 'react'
 import { Button } from '../ui/button'
-import { PlusIcon, SearchIcon, SettingsIcon } from '../ui/icons'
+import { PlusIcon, SearchIcon, SidebarIcon } from '../ui/icons'
 import { ConnectionBanner } from './connection'
 import { groupByDate, listTime } from './list-time'
 import { useSearch } from './search'
 import { useNotes } from './store'
-import { TagsSection } from './tags-section'
 import styles from './note-list.module.css'
 
 type Props = {
@@ -14,12 +13,17 @@ type Props = {
   onQuery: (q: string) => void
   onSelect: (id: string) => void
   onNew: () => void
-  onSettings: () => void
+  /**
+   * The way to the tags: a back link when they're a screen of their own, a
+   * button when the docked sidebar is hidden, nothing when it's showing.
+   */
+  tags: 'back' | 'show' | null
+  onTags: () => void
   mobile: boolean
 }
 
-export function NoteList({ selectedId, query, onQuery, onSelect, onNew, onSettings, mobile }: Props) {
-  const { items, status, hasMore, total, loadMore, refresh, version, tags, filter, setFilter } = useNotes()
+export function NoteList({ selectedId, query, onQuery, onSelect, onNew, tags, onTags, mobile }: Props) {
+  const { items, status, hasMore, total, loadMore, refresh, version, filter, setFilter } = useNotes()
   const search = useSearch(query, filter, version)
   const scope = !filter ? null : 'tag' in filter ? `#${filter.name}` : 'Untagged'
   const searching = query.trim() !== ''
@@ -36,8 +40,17 @@ export function NoteList({ selectedId, query, onQuery, onSelect, onNew, onSettin
   return (
     <aside className={styles.list} aria-label="Notes">
       <div className={styles.header}>
+        {tags === 'back' && (
+          <button type="button" className={styles.back} onClick={onTags}>
+            <span className={styles.chevron} aria-hidden="true">
+              ‹
+            </span>
+            Tags
+          </button>
+        )}
         <div className={styles.titleRow}>
-          <span className={styles.mark} aria-hidden="true" />
+          {/* Beside the docked sidebar, its header carries the mark. */}
+          {tags !== null && <span className={styles.mark} aria-hidden="true" />}
           {scope ? (
             <h1 className={[styles.heading, styles.scoped].join(' ')}>
               <span className={styles.scope}>{scope}</span>
@@ -48,9 +61,11 @@ export function NoteList({ selectedId, query, onQuery, onSelect, onNew, onSettin
           ) : (
             <h1 className={styles.heading}>Notes</h1>
           )}
-          <button type="button" className={styles.settings} onClick={onSettings} aria-label="Settings" title="Settings">
-            <SettingsIcon size={17} />
-          </button>
+          {tags === 'show' && (
+            <button type="button" className={styles.showTags} onClick={onTags} aria-label="Show tags" title="Show tags">
+              <SidebarIcon />
+            </button>
+          )}
           {!mobile && (
             <Button variant="accent" size="sm" className={styles.newNote} onClick={onNew}>
               <PlusIcon />
@@ -126,7 +141,6 @@ export function NoteList({ selectedId, query, onQuery, onSelect, onNew, onSettin
                 </Button>
               </Message>
             )}
-            <TagsSection tags={tags} filter={filter} onFilter={setFilter} />
             {status === 'ready' && items.length === 0 && <Message>{scope ? `No notes in ${scope}.` : 'No notes yet.'}</Message>}
             {groupByDate(items).map((g) => (
               <Section key={g.label} label={g.label}>

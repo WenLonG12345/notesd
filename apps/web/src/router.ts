@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-export type Route = { name: 'notes' } | { name: 'note'; id: string } | { name: 'settings' }
+export type Route = { name: 'notes' } | { name: 'note'; id: string } | { name: 'settings' } | { name: 'tags' }
 
 const listeners = new Set<() => void>()
 
@@ -22,6 +22,7 @@ export function navigate(path: string, { replace = false } = {}) {
 
 export function parseRoute(pathname: string): Route {
   if (pathname === '/settings') return { name: 'settings' }
+  if (pathname === '/tags') return { name: 'tags' }
   const match = /^\/notes\/([A-Za-z0-9_-]{1,64})$/.exec(pathname)
   if (match?.[1]) return { name: 'note', id: match[1] }
   return { name: 'notes' }

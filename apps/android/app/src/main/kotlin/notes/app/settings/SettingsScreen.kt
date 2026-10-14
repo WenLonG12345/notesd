@@ -57,6 +57,7 @@ import kotlinx.coroutines.launch
 import notes.app.AppGraph
 import notes.app.BuildConfig
 import notes.app.account.Account
+import notes.app.ui.BackLink
 import notes.app.ui.BrandMark
 import notes.app.ui.ConfirmDialog
 import notes.app.ui.Icons
@@ -75,7 +76,13 @@ private sealed interface Confirm {
 }
 
 @Composable
-fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onConnect: () -> Unit, onSignIn: () -> Unit) {
+fun SettingsScreen(
+    graph: AppGraph,
+    backLabel: String,
+    onBack: () -> Unit,
+    onConnect: () -> Unit,
+    onSignIn: () -> Unit
+) {
     val t = LocalTokens.current
     val theme by graph.appearance.theme.collectAsStateWithLifecycle()
     val account by graph.accounts.account.collectAsStateWithLifecycle()
@@ -100,7 +107,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onConnect: () -> Unit, o
             Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            BackLink(onBack)
+            BackLink(backLabel, onBack)
         }
         Column(
             Modifier
@@ -202,25 +209,6 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onConnect: () -> Unit, o
         ) { act(graph::removeAllData) }
 
         null -> Unit
-    }
-}
-
-@Composable
-private fun BackLink(onClick: () -> Unit) {
-    val t = LocalTokens.current
-    val interaction = remember { MutableInteractionSource() }
-    Row(
-        Modifier
-            .heightIn(min = 48.dp)
-            .pressScale(interaction, 0.94f)
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(interaction, ripple(), role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = "Back" }
-            .padding(start = 6.dp, end = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(Icons.Back, null, Modifier.size(22.dp), tint = t.tint)
-        Text("Notes", style = Type.body.copy(fontSize = 16.sp), color = t.tint)
     }
 }
 

@@ -4,13 +4,11 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
 import androidx.core.view.children
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -32,7 +30,6 @@ import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
-// A phone's height: the tags sit above the notes.
 @Config(application = TestNotesApp::class, qualifiers = "w411dp-h891dp")
 class TagsFlowTest {
     @get:Rule
@@ -43,7 +40,7 @@ class TagsFlowTest {
     private lateinit var activity: MainActivity
 
     @Before
-    fun launch() {
+    fun seed() {
         graph.setOnboardingDismissed(true)
         runBlocking {
             graph.store.save("a", "Roof", "Call about #home/repairs\n")
@@ -51,9 +48,12 @@ class TagsFlowTest {
             graph.store.save("c", "Standup", "Notes #work\n")
             graph.store.save("d", "Loose", "No tags here\n")
         }
+    }
+
+    private fun launch() {
         scenario = ActivityScenario.launch(MainActivity::class.java)
         scenario.onActivity { activity = it }
-        compose.waitUntilExactlyOneExists(tag("#work, 1 note"))
+        compose.waitUntilExactlyOneExists(hasText("Standup"))
     }
 
     @After
@@ -64,20 +64,23 @@ class TagsFlowTest {
 
     private fun tag(description: String) = hasContentDescription(description)
 
-    private fun scrollTo(matcher: androidx.compose.ui.test.SemanticsMatcher) {
-        compose.onNode(hasScrollAction()).performScrollToNode(matcher)
+    /** From the list, back to the tags screen under it. */
+    private fun toTags() {
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitUntilExactlyOneExists(tag("#work, 1 note"))
     }
 
     @Test
-    fun `the list shows tags with counts and filters by one, nested tags included`() {
-        compose.waitUntilExactlyOneExists(tag("#home, 2 notes"))
+    fun `the list opens with the tags a back away, and a tag filters it, nested tags included`() {
+        launch()
+        compose.onNode(tag("#work, 1 note")).assertDoesNotExist()
+        toTags()
         compose.onNode(tag("#home, 2 notes")).performClick()
         compose.waitUntilExactlyOneExists(hasText("Garden"))
         compose.onNodeWithText("Roof").assertExists()
-        compose.onNodeWithText("Garden").assertExists()
         compose.onNodeWithText("Standup").assertDoesNotExist()
 
-        scrollTo(hasText("Untagged"))
+        toTags()
         compose.onNodeWithText("Untagged").performClick()
         compose.waitUntilExactlyOneExists(hasText("Loose"))
         compose.onNodeWithText("Roof").assertDoesNotExist()
@@ -89,7 +92,8 @@ class TagsFlowTest {
 
     @Test
     fun `nested tags show under an expanded parent`() {
-        compose.waitUntilExactlyOneExists(tag("Expand home"))
+        launch()
+        toTags()
         compose.onNode(tag("#home/repairs, 1 note")).assertDoesNotExist()
         compose.onNode(tag("Expand home")).performClick()
         compose.waitUntilExactlyOneExists(tag("#home/repairs, 1 note"))
@@ -97,13 +101,33 @@ class TagsFlowTest {
     }
 
     @Test
-    fun `a new note in a tag starts with it and is dropped if left blank`() {
+    fun `settings opens from the tags screen and goes back to it`() {
+        launch()
+        toTags()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Appearance", ignoreCase = true))
+        compose.onNodeWithText("Tags").assertExists()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.waitUntilExactlyOneExists(tag("#work, 1 note"))
+    }
+
+    @Test
+    fun `opens on the list's filter`() {
+        graph.listFilter.value = NoteFilter.Tag("work", "work")
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitUntilExactlyOneExists(hasText("Standup"))
+        compose.onNodeWithText("Roof").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Show all notes").assertExists()
+    }
+
+    @Test
+    fun `a new note in a tag starts with it and is dropped if left blank`() {
+        launch()
+        toTags()
         compose.onNode(tag("#work, 1 note")).performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription("Show all notes"))
 
         compose.onNodeWithContentDescription("New note").performClick()
-        compose.waitUntilExactlyOneExists(hasContentDescription("Back"))
         val editor = editor()
         compose.runOnUiThread {
             assertEquals("#work", editor.document().let { notes.core.markdown.Markdown.serialize(it).trim() })
@@ -113,7 +137,6 @@ class TagsFlowTest {
         assertEquals(4, runBlocking { graph.store.list().size })
 
         compose.onNodeWithContentDescription("New note").performClick()
-        compose.waitUntilExactlyOneExists(hasContentDescription("Back"))
         val second = editor()
         compose.runOnUiThread { second.text!!.insert(0, "Retro") }
         compose.onNodeWithContentDescription("Back").performClick()

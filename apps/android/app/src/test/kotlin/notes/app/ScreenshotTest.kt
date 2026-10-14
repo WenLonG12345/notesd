@@ -139,8 +139,11 @@ class ScreenshotTest {
         graph.setOnboardingDismissed(true)
         seed()
         launch()
+        compose.waitUntilExactlyOneExists(hasContentDescription("Back"))
+        compose.onNode(hasContentDescription("Back")).performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription("Expand travel"))
         compose.onNode(hasContentDescription("Expand travel")).performClick()
+        shoot("tags")
         compose.onNode(hasContentDescription("#travel/portugal, 1 note")).performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription("Show all notes"))
         shoot("list-tag")
@@ -221,6 +224,7 @@ class ScreenshotTest {
     fun settings() {
         graph.setOnboardingDismissed(true)
         launch()
+        compose.onNode(hasContentDescription("Back")).performClick()
         compose.onNode(hasContentDescription("Settings")).performClick()
         compose.waitUntilExactlyOneExists(hasText("Appearance", ignoreCase = true))
         shoot("settings")
@@ -235,8 +239,18 @@ class ScreenshotTest {
             )
         }
         launch()
+        compose.onNode(hasContentDescription("Back")).performClick()
         compose.onNode(hasContentDescription("Settings")).performClick()
         compose.waitUntilExactlyOneExists(hasText("Appearance", ignoreCase = true))
         shoot("settings-signed-in")
+    }
+
+    @Test
+    fun wide() {
+        graph.setOnboardingDismissed(true)
+        seed()
+        launch("w1280dp-h800dp")
+        compose.waitUntilExactlyOneExists(hasContentDescription("Expand travel"))
+        shoot("wide")
     }
 }

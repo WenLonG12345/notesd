@@ -1,6 +1,7 @@
 import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
 import { timing } from '../src/notes/saver'
+import { PHONE, WIDE } from '../src/ui/media'
 
 // Same behaviour, shorter waits.
 timing.debounceMs = 40
@@ -8,15 +9,16 @@ timing.retryBaseMs = 60
 timing.retryMaxMs = 200
 timing.undoDeleteMs = 300
 
-// jsdom has no media queries. Tests get the side-by-side layout unless they
-// ask for a phone (helpers.phoneLayout); nothing re-evaluates mid-render.
+// jsdom has no media queries. Tests get the wide layout (tags sidebar, list,
+// note) unless they ask for another (helpers.phoneLayout, mediumLayout);
+// nothing re-evaluates mid-render.
 declare global {
-  var phoneLayout: boolean
+  var layout: 'phone' | 'medium' | 'wide'
 }
-globalThis.phoneLayout = false
+globalThis.layout = 'wide'
 window.matchMedia ??= (query: string) =>
   ({
-    matches: query.includes('max-width') && globalThis.phoneLayout,
+    matches: (query === PHONE && globalThis.layout === 'phone') || (query === WIDE && globalThis.layout === 'wide'),
     media: query,
     onchange: null,
     addEventListener() {},
@@ -64,6 +66,7 @@ document.addEventListener('keydown', (e) => {
 
 afterEach(() => {
   cleanup()
-  globalThis.phoneLayout = false
+  globalThis.layout = 'wide'
+  localStorage.clear()
   window.history.replaceState(null, '', '/')
 })

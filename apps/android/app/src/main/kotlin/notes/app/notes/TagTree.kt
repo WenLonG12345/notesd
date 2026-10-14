@@ -3,25 +3,40 @@ package notes.app.notes
 import android.content.SharedPreferences
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -34,27 +49,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
+import notes.app.ui.Backdrop
+import notes.app.ui.BrandMark
 import notes.app.ui.Icons
-import notes.app.ui.Kicker
 import notes.app.ui.LocalTokens
 import notes.app.ui.Type
+import notes.app.ui.pressScale
 import notes.core.db.NoteFilter
+import notes.core.db.NoteStore
 import notes.core.db.TagCount
 
-/** Whether the tag section is open and which parent tags are expanded, kept in [prefs]. */
+/** Which parent tags are expanded, kept in [prefs]. */
 class TagTreeState(private val prefs: SharedPreferences) {
-    private val _open = MutableStateFlow(prefs.getBoolean(OPEN, true))
-    val open: StateFlow<Boolean> = _open
-
     private val _expanded = MutableStateFlow(prefs.getStringSet(EXPANDED, emptySet()).orEmpty().toSet())
     val expanded: StateFlow<Set<String>> = _expanded
-
-    fun setOpen(open: Boolean) {
-        _open.value = open
-        prefs.edit { putBoolean(OPEN, open) }
-    }
 
     fun setExpanded(key: String, expanded: Boolean) {
         val next = if (expanded) _expanded.value + key else _expanded.value - key
@@ -63,7 +81,6 @@ class TagTreeState(private val prefs: SharedPreferences) {
     }
 
     private companion object {
-        const val OPEN = "tags_open"
         const val EXPANDED = "tags_expanded"
     }
 }
@@ -89,20 +106,130 @@ private fun visibleRows(nodes: List<TagNode>, expanded: Set<String>, depth: Int 
         listOf(n to depth) + if (n.tag.key in expanded) visibleRows(n.children, expanded, depth + 1) else emptyList()
     }
 
-/** All notes, Untagged and the tag tree, as list items above the notes. */
-fun LazyListScope.tagSection(
+/** Every tag, for the tags screen and sidebar; the list's filter is shared with the notes list. */
+@OptIn(ExperimentalCoroutinesApi::class)
+class TagsViewModel(store: NoteStore, private val filter: MutableStateFlow<NoteFilter?>) : ViewModel() {
+    val tags: StateFlow<List<TagCount>> =
+        store.changes.onStart { emit(Unit) }.mapLatest { store.tags() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val selected: StateFlow<NoteFilter?> = filter
+
+    fun show(f: NoteFilter?) {
+        filter.value = f
+    }
+}
+
+/**
+ * Where the list can point: All notes, Untagged and the tag tree, with
+ * settings in the header. A screen of its own on narrower windows; [docked]
+ * beside the list on wide ones.
+ */
+@Composable
+fun TagsPane(
+    vm: TagsViewModel,
+    state: TagTreeState,
+    docked: Boolean,
+    onShow: (NoteFilter?) -> Unit,
+    onSettings: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val t = LocalTokens.current
+    val tags by vm.tags.collectAsStateWithLifecycle()
+    val filter by vm.selected.collectAsStateWithLifecycle()
+    val expanded by state.expanded.collectAsStateWithLifecycle()
+    val tree = remember(tags) { buildTagTree(tags) }
+    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+    Box(
+        modifier
+            .fillMaxHeight()
+            .background(t.bg)
+            .then(
+                if (docked) {
+                    Modifier.drawWithContent {
+                        drawContent()
+                        drawRect(t.hairStrong, Offset(size.width - 1f, 0f), Size(1f, size.height))
+                    }
+                } else {
+                    Modifier
+                }
+            )
+    ) {
+        if (!docked) Backdrop()
+        LazyColumn(
+            contentPadding = PaddingValues(bottom = bottom + 24.dp),
+            modifier = Modifier.fillMaxSize().statusBarsPadding()
+        ) {
+            item(key = "tags:title", contentType = "title") {
+                Row(
+                    Modifier.fillMaxWidth().padding(
+                        start = 20.dp,
+                        end = 8.dp,
+                        top = if (docked) 12.dp else 56.dp,
+                        bottom = 12.dp
+                    ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    BrandMark(if (docked) 22.dp else 26.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "Tags",
+                        style = if (docked) Type.title else Type.display,
+                        color = t.ink,
+                        modifier = Modifier.weight(1f).semantics { heading() }
+                    )
+                    SettingsButton(onSettings)
+                }
+            }
+            tagRows(tree, filter, expanded, onExpand = state::setExpanded, onFilter = onShow)
+            if (tree.isEmpty()) {
+                item(key = "tags:hint", contentType = "hint") {
+                    Text(
+                        "Type #tag in a note to group it here. #parent/child nests.",
+                        style = Type.small,
+                        color = t.ink3,
+                        modifier = Modifier.padding(start = 72.dp, end = 20.dp, top = 8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsButton(onClick: () -> Unit) {
+    val t = LocalTokens.current
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        Modifier
+            .size(48.dp)
+            .pressScale(interaction, 0.9f)
+            .clickable(interaction, ripple(bounded = false, radius = 22.dp), role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "Settings" },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(t.chip)
+                .border(1.dp, t.edge, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Settings, null, Modifier.size(20.dp), tint = t.ink)
+        }
+    }
+}
+
+/** All notes, Untagged and the tag tree, as list items. */
+private fun LazyListScope.tagRows(
     tree: List<TagNode>,
     filter: NoteFilter?,
-    open: Boolean,
     expanded: Set<String>,
-    onOpen: (Boolean) -> Unit,
     onExpand: (String, Boolean) -> Unit,
     onFilter: (NoteFilter?) -> Unit
 ) {
-    item(key = "tags:header", contentType = "tagsHeader") {
-        SectionHeader(open, onOpen, Modifier.animateItem())
-    }
-    if (!open) return
     item(key = "tags:all", contentType = "tag") {
         TagRow("All notes", null, 0, filter == null, null, { onFilter(null) }, null, Modifier.animateItem())
     }
@@ -138,28 +265,6 @@ fun LazyListScope.tagSection(
 }
 
 private fun notesCount(n: Int) = if (n == 1) "1 note" else "$n notes"
-
-@Composable
-private fun SectionHeader(open: Boolean, onOpen: (Boolean) -> Unit, modifier: Modifier) {
-    val t = LocalTokens.current
-    val turn by animateFloatAsState(if (open) 90f else 0f, label = "tagsChevron")
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .clickable(role = Role.Button, onClickLabel = if (open) "Hide tags" else "Show tags") { onOpen(!open) }
-            .padding(start = 18.dp, end = 16.dp)
-            .semantics {
-                heading()
-                stateDescription = if (open) "Shown" else "Hidden"
-            },
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(Icons.Chevron, null, Modifier.size(12.dp).rotate(turn), tint = t.ink3)
-        Spacer(Modifier.width(6.dp))
-        Kicker("Tags")
-    }
-}
 
 /**
  * One row: a 48dp expander for parents (or the same space empty), then the

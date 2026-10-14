@@ -9,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import notes.app.account.Account
 import notes.app.account.AccountStore
@@ -42,8 +44,8 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
 
     private val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
 
-    /** What the list shows. Shared, so the editor can open a tag's notes; not kept across restarts. */
-    val listFilter = MutableStateFlow<NoteFilter?>(null)
+    /** What the list shows. Shared, so the editor can open a tag's notes; kept so the app reopens on it. */
+    val listFilter = MutableStateFlow(decodeFilter(prefs.getString(LIST_FILTER, null)))
 
     /** Which parts of the list's tag tree are open, remembered across restarts. */
     val tagTree = TagTreeState(prefs)
@@ -93,8 +95,29 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
         if (Build.MODEL.startsWith(maker, ignoreCase = true)) Build.MODEL else "$maker ${Build.MODEL}"
     }
 
+    init {
+        scope.launch { listFilter.drop(1).collect { f -> prefs.edit { putString(LIST_FILTER, encodeFilter(f)) } } }
+    }
+
     private companion object {
         const val ONBOARDING_DISMISSED = "onboarding_dismissed"
+        const val LIST_FILTER = "list_filter"
         const val LOGOUT_WAIT_MS = 5_000L
     }
+}
+
+/** The list's filter in prefs: "untagged", or "tag:" + key + newline + name. */
+internal fun encodeFilter(f: NoteFilter?): String? = when (f) {
+    null -> null
+    NoteFilter.Untagged -> "untagged"
+    is NoteFilter.Tag -> "tag:${f.key}\n${f.name}"
+}
+
+internal fun decodeFilter(s: String?): NoteFilter? = when {
+    s == "untagged" -> NoteFilter.Untagged
+
+    s != null && s.startsWith("tag:") && '\n' in s ->
+        NoteFilter.Tag(s.substring(4).substringBefore('\n'), s.substringAfter('\n'))
+
+    else -> null
 }

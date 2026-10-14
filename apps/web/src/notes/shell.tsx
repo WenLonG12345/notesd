@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { navigate, parseRoute, usePathname } from '../router'
 import { SettingsSheet } from '../settings/settings'
 import { Backdrop } from '../ui/backdrop'
-import { PHONE, useMediaQuery } from '../ui/media'
+import { PHONE, WIDE, useMediaQuery } from '../ui/media'
 import { Toast } from '../ui/toast'
 import { EmptyPane } from './empty'
 import { NoteList } from './note-list'
 import { NotePane } from './note-pane'
 import type { NoteSaver } from './saver'
-import { NotesProvider, useNotes } from './store'
+import { NotesProvider, useNotes, type ListFilter } from './store'
+import { TagsPanel } from './tags-panel'
 import styles from './shell.module.css'
 
 export function Shell({ username }: { username: string }) {
@@ -24,21 +25,45 @@ type Notice = { id: string; text: string; undo: boolean }
 /** Messages after a delete that didn't go through stay up this long. */
 const NOTICE_MS = 5000
 
+const SIDEBAR_KEY = 'notes.sidebar.hidden'
+
+function loadSidebarHidden(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
 function ShellView({ username }: { username: string }) {
-  const route = parseRoute(usePathname())
+  const pathname = usePathname()
+  const route = parseRoute(pathname)
   const mobile = useMediaQuery(PHONE)
-  const { items, status, newDraft, remove, undoRemove, removed } = useNotes()
+  // Wide: the tags sit in a sidebar. Narrower, they're a screen of their own (/tags) in the list's place.
+  const wide = useMediaQuery(WIDE)
+  const [sidebarHidden, setSidebarHidden] = useState(loadSidebarHidden)
+  const { items, status, newDraft, remove, undoRemove, removed, tags, filter, setFilter } = useNotes()
   // A note the server doesn't have yet: open, but not in the URL until it's saved.
   const [draft, setDraft] = useState<NoteSaver | null>(null)
   const [query, setQuery] = useState('')
   const [notice, setNotice] = useState<Notice | null>(null)
 
-  // Settings opens over the app; the note behind it stays open.
+  // Settings and the tags screen open over the app; the note behind them stays open.
+  const over = route.name === 'settings' || route.name === 'tags'
   const routeNote = route.name === 'note' ? route.id : null
-  const [behindSettings, setBehindSettings] = useState(routeNote)
-  if (route.name !== 'settings' && routeNote !== behindSettings) setBehindSettings(routeNote)
-  const noteId = route.name === 'settings' ? behindSettings : routeNote
+  const [behind, setBehind] = useState(routeNote)
+  if (!over && routeNote !== behind) setBehind(routeNote)
+  const noteId = over ? behind : routeNote
   const selectedId = draft?.id ?? noteId
+  // Closing settings goes back to where it was opened, the tags screen included.
+  const [settingsFrom, setSettingsFrom] = useState(pathname)
+  if (route.name !== 'settings' && pathname !== settingsFrom) setSettingsFrom(pathname)
+  const listPath = behind ? `/notes/${behind}` : '/'
+
+  // Grown wide enough for the sidebar: the tags screen has nothing left to show.
+  useEffect(() => {
+    if (wide && route.name === 'tags') navigate(listPath, { replace: true })
+  }, [wide, route.name, listPath])
 
   // Back/forward replaces whatever draft was open.
   useEffect(() => {
@@ -106,13 +131,35 @@ function ShellView({ username }: { username: string }) {
     select(id)
   }
 
-  const showList = !mobile || selectedId === null
-  const showPane = !mobile || selectedId !== null
+  const hideSidebar = (hidden: boolean) => {
+    setSidebarHidden(hidden)
+    try {
+      localStorage.setItem(SIDEBAR_KEY, String(hidden))
+    } catch {
+      // Not remembered; nothing else depends on it.
+    }
+  }
+
+  const showFilter = (next: ListFilter) => {
+    setFilter(next)
+    // On a phone the list replaces the tags screen; side by side, the note stays open beside it.
+    if (!wide) navigate(mobile ? '/' : listPath)
+  }
+
+  const tagsScreen = !wide && route.name === 'tags'
+  const sidebar = wide && !sidebarHidden
+  const showList = !tagsScreen && (!mobile || selectedId === null)
+  const showPane = !mobile || (!tagsScreen && selectedId !== null)
+  const tagsPanel = (onHide?: () => void) => (
+    <TagsPanel tags={tags} filter={filter} onFilter={showFilter} onSettings={() => navigate('/settings')} onHide={onHide} />
+  )
 
   return (
     <>
       <Backdrop />
       <div className={styles.app}>
+        {sidebar && tagsPanel(() => hideSidebar(true))}
+        {tagsScreen && tagsPanel()}
         {showList && (
           <NoteList
             selectedId={selectedId}
@@ -120,7 +167,8 @@ function ShellView({ username }: { username: string }) {
             onQuery={setQuery}
             onSelect={select}
             onNew={startNote}
-            onSettings={() => navigate('/settings')}
+            tags={!wide ? 'back' : sidebarHidden ? 'show' : null}
+            onTags={() => (wide ? hideSidebar(false) : navigate('/tags'))}
             mobile={mobile}
           />
         )}
@@ -154,7 +202,7 @@ function ShellView({ username }: { username: string }) {
       {route.name === 'settings' && (
         <SettingsSheet
           username={username}
-          onClose={() => navigate(behindSettings ? `/notes/${behindSettings}` : '/')}
+          onClose={() => navigate(settingsFrom === '/settings' ? listPath : settingsFrom)}
         />
       )}
     </>

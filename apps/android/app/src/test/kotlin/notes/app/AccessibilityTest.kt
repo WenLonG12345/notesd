@@ -111,7 +111,10 @@ class AccessibilityTest {
         graph.setOnboardingDismissed(true)
         seed()
         launch()
+        compose.waitUntilExactlyOneExists(hasContentDescription("Back"))
+        compose.onNode(hasContentDescription("Back")).performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription("Expand travel"))
+        audit("tags")
         compose.onNode(hasContentDescription("Expand travel")).performClick()
         compose.onNode(hasContentDescription("#travel/portugal, 1 note")).performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription("Show all notes"))
@@ -141,6 +144,7 @@ class AccessibilityTest {
     fun settings() {
         graph.setOnboardingDismissed(true)
         launch()
+        compose.onNode(hasContentDescription("Back")).performClick()
         compose.onNode(hasContentDescription("Settings")).performClick()
         compose.waitUntilExactlyOneExists(hasText("Settings"))
         audit("settings")

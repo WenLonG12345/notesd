@@ -92,6 +92,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -100,6 +101,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import notes.app.ui.BackLink
 import notes.app.ui.Backdrop
 import notes.app.ui.Banner
 import notes.app.ui.BannerKind
@@ -134,20 +136,16 @@ fun NotesListScreen(
     signedOut: Boolean,
     selected: String?,
     beside: Boolean,
-    tagTree: TagTreeState,
     onSignIn: () -> Unit,
     onOpen: (String) -> Unit,
     onNew: () -> Unit,
-    onSettings: () -> Unit
+    /** To the tags screen; null when the tags sit in a sidebar beside the list. */
+    onTags: (() -> Unit)?
 ) {
     val t = LocalTokens.current
     val state by vm.state.collectAsStateWithLifecycle()
     val pending by vm.deletions.pending.collectAsStateWithLifecycle()
     val sync by vm.sync.collectAsStateWithLifecycle()
-    val tags by vm.tags.collectAsStateWithLifecycle()
-    val tagsOpen by tagTree.open.collectAsStateWithLifecycle()
-    val expanded by tagTree.expanded.collectAsStateWithLifecycle()
-    val tree = remember(tags) { buildTagTree(tags) }
     var query by rememberSaveable { mutableStateOf("") }
     var sheetFor by remember { mutableStateOf<Pair<String, String>?>(null) }
     val toasts = remember { SnackbarHostState() }
@@ -227,7 +225,7 @@ fun NotesListScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     item(key = "header", contentType = "header") {
-                        Header(sync.status, sync.pending, scope, onClear = { vm.filter(null) })
+                        Header(sync.status, sync.pending, scope, mark = onTags != null, onClear = { vm.filter(null) })
                     }
                     // Nothing to search before the first note.
                     if (state.notes.isNotEmpty() || query.isNotEmpty() || scope != null) {
@@ -248,17 +246,6 @@ fun NotesListScreen(
                                 onAction = onSignIn
                             )
                         }
-                    }
-                    if (!searching && (tags.isNotEmpty() || scope != null)) {
-                        tagSection(
-                            tree,
-                            state.filter,
-                            tagsOpen,
-                            expanded,
-                            onOpen = tagTree::setOpen,
-                            onExpand = tagTree::setExpanded,
-                            onFilter = vm::filter
-                        )
                     }
                     when {
                         !state.loaded -> Unit
@@ -337,7 +324,7 @@ fun NotesListScreen(
                 }
             }
 
-            TopBar(collapsed, scope ?: "Notes", onSettings, Modifier.align(Alignment.TopCenter))
+            TopBar(collapsed, scope ?: "Notes", onTags, Modifier.align(Alignment.TopCenter))
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                 ToastHost(toasts, Modifier.align(Alignment.CenterHorizontally))
                 Footer(state.notes.size, searching, onNew)
@@ -363,18 +350,17 @@ private fun results(n: Int) = if (n == 1) "1 result" else "$n results"
 
 /** Transparent over the large title; once it scrolls away, a glass bar with the title small. */
 @Composable
-private fun TopBar(collapsed: Boolean, title: String, onSettings: () -> Unit, modifier: Modifier) {
+private fun TopBar(collapsed: Boolean, title: String, onTags: (() -> Unit)?, modifier: Modifier) {
     val t = LocalTokens.current
     val shown by animateFloatAsState(if (collapsed) 1f else 0f, tween(200), label = "bar")
     Box(modifier.fillMaxWidth()) {
         if (shown > 0f) {
             Box(Modifier.matchParentSize().graphicsLayer { alpha = shown }.glass().hairline(t.hair))
         }
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 4.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Spacer(Modifier.width(48.dp))
             Text(
                 title,
                 style = Type.title.copy(fontSize = 20.sp),
@@ -382,49 +368,29 @@ private fun TopBar(collapsed: Boolean, title: String, onSettings: () -> Unit, mo
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
-                    .weight(1f)
+                    .padding(horizontal = 96.dp)
                     .graphicsLayer { alpha = shown }
                     .clearAndSetSemantics { },
                 textAlign = TextAlign.Center
             )
-            SettingsButton(onSettings)
+            if (onTags != null) BackLink("Tags", onTags, Modifier.align(Alignment.CenterStart))
         }
     }
 }
 
+/**
+ * The large title (the selected tag, if any, with a way back to all notes), with the sync state beneath it.
+ * [mark]: the brand mark leads the title, unless the tags sidebar beside the list already shows it.
+ */
 @Composable
-private fun SettingsButton(onClick: () -> Unit) {
-    val t = LocalTokens.current
-    val interaction = remember { MutableInteractionSource() }
-    Box(
-        Modifier
-            .size(48.dp)
-            .pressScale(interaction, 0.9f)
-            .clickable(interaction, ripple(bounded = false, radius = 22.dp), role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = "Settings" },
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(t.chip)
-                .border(1.dp, t.edge, RoundedCornerShape(12.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Settings, null, Modifier.size(20.dp), tint = t.ink)
-        }
-    }
-}
-
-/** The large title (the selected tag, if any, with a way back to all notes), with the sync state beneath it. */
-@Composable
-private fun Header(status: SyncStatus, pending: Int, scope: String?, onClear: () -> Unit) {
+private fun Header(status: SyncStatus, pending: Int, scope: String?, mark: Boolean, onClear: () -> Unit) {
     val t = LocalTokens.current
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            BrandMark(26.dp)
-            Spacer(Modifier.width(12.dp))
+            if (mark) {
+                BrandMark(26.dp)
+                Spacer(Modifier.width(12.dp))
+            }
             Text(
                 scope ?: "Notes",
                 style = Type.display,
@@ -449,13 +415,13 @@ private fun Header(status: SyncStatus, pending: Int, scope: String?, onClear: ()
             }
         }
         Spacer(Modifier.height(6.dp))
-        SyncState(status, pending)
+        SyncState(status, pending, if (mark) 38.dp else 0.dp)
     }
 }
 
 /** A quiet dot and a word: where sync stands. The dot breathes while syncing. */
 @Composable
-private fun SyncState(status: SyncStatus, pending: Int) {
+private fun SyncState(status: SyncStatus, pending: Int, indent: Dp) {
     val t = LocalTokens.current
     val toSend = if (pending > 0) " · $pending to send" else ""
     val (word, color) = when (status) {
@@ -469,7 +435,7 @@ private fun SyncState(status: SyncStatus, pending: Int) {
     val dot by animateColorAsState(color, label = "dot")
     val alpha = breathing(status == SyncStatus.Syncing)
     Row(
-        Modifier.padding(start = 38.dp).semantics(mergeDescendants = true) {},
+        Modifier.padding(start = indent).semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(7.dp).drawBehind { drawCircle(dot.copy(alpha = alpha)) })
