@@ -90,10 +90,10 @@ class ScreenshotTest {
         val day = 86_400_000L
         val notes = listOf(
             Triple(SAMPLE_TITLE, SAMPLE_MARKDOWN, now - 600_000),
-            Triple("Groceries", "- Oat milk\n- Sourdough\n- Lemons\n", now - 3_600_000),
-            Triple("Reading list", "The Overstory, Piranesi, A Psalm for the Wild-Built\n", now - 2 * day),
-            Triple("Lisbon trip", "Flights booked. Find a place near Alfama.\n", now - 4 * day),
-            Triple("Ideas", "A tiny garden on the balcony; herbs first.\n", now - 12 * day),
+            Triple("Groceries", "- Oat milk\n- Sourdough\n- Lemons\n\n#errands\n", now - 3_600_000),
+            Triple("Reading list", "The Overstory, Piranesi, A Psalm for the Wild-Built #books\n", now - 2 * day),
+            Triple("Lisbon trip", "Flights booked. Find a place near Alfama. #travel/portugal\n", now - 4 * day),
+            Triple("Ideas", "A tiny garden on the balcony; herbs first. #home/garden\n", now - 12 * day),
             Triple("Meeting notes", "Ship the Android app. Then pinning.\n", now - 40 * day)
         )
         graph.sync.store.applyPage(
@@ -130,6 +130,18 @@ class ScreenshotTest {
     fun editorLargeText() {
         RuntimeEnvironment.setFontScale(2f)
         editor("text200", null)
+    }
+
+    @Test
+    fun listByTag() {
+        graph.setOnboardingDismissed(true)
+        seed()
+        launch()
+        compose.waitUntilExactlyOneExists(hasContentDescription("Expand travel"))
+        compose.onNode(hasContentDescription("Expand travel")).performClick()
+        compose.onNode(hasContentDescription("#travel/portugal, 1 note")).performClick()
+        compose.waitUntilExactlyOneExists(hasContentDescription("Show all notes"))
+        shoot("list-tag")
     }
 
     @Test

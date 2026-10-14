@@ -27,6 +27,13 @@ fun tags(title: String, markdown: String): List<Tag> {
 /** The key for a tag name given with or without its # marks, or "". */
 fun tagKey(name: String): String = normalize(name.removePrefix("#").removeSuffix("#")).lowercase()
 
+/** How to write a tag in a note: closed with # when it needs it (spaces, digits only, punctuation). */
+fun tagText(name: String): String {
+    val open = "#$name"
+    val m = scanTags(open).singleOrNull()
+    return if (m != null && m.name == name && m.end == open.length) open else "$open#"
+}
+
 /** The tags in one line of visible text, where [OBJECT] stands for code, links and anything else tags can't be part of. */
 fun scanTags(line: String): List<TagMatch> {
     val r = line.codePoints().toArray()

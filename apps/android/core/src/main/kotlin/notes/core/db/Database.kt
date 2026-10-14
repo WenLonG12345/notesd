@@ -71,8 +71,23 @@ class Database(private val path: String, private val io: CoroutineDispatcher = D
         conn.execSQL("PRAGMA synchronous = NORMAL")
         conn.execSQL("PRAGMA busy_timeout = 5000")
         Migrations.apply(conn)
+        rebuildIfAsked(conn)
         writer = conn
         conn
+    }
+
+    /** A migration that changes derived data (search text, tags) asks for a rebuild. */
+    private fun rebuildIfAsked(conn: SQLiteConnection) {
+        val sql = Sql(conn)
+        if (sql.long("SELECT count(*) FROM rebuild_index") == 0L) return
+        conn.execSQL("BEGIN IMMEDIATE")
+        try {
+            sql.rebuildIndex()
+            conn.execSQL("COMMIT")
+        } catch (e: Throwable) {
+            conn.execSQL("ROLLBACK")
+            throw e
+        }
     }
 
     private suspend fun readerConnection(): SQLiteConnection = reader ?: run {

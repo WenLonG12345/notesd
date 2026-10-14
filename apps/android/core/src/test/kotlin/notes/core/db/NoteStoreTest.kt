@@ -212,4 +212,54 @@ class NoteStoreTest {
         store.save("a", "Alpha", "")
         edited.await()
     }
+
+    @Test
+    fun `tags follow edits, deletes and nesting`() = runBlocking {
+        store.save("a", "Roof #Home", "Call about #home/repairs/roof\n")
+        now = 2_000
+        store.save("b", "", "#home/garden and #work\n")
+        store.save("c", "Plain", "no tags, # heading-ish, C#\n")
+        store.save("d", "", "#homework\n")
+
+        assertEquals(
+            listOf(
+                TagCount("home", "home", 2),
+                TagCount("home/garden", "home/garden", 1),
+                TagCount("home/repairs", "home/repairs", 1),
+                TagCount("home/repairs/roof", "home/repairs/roof", 1),
+                TagCount("homework", "homework", 1),
+                TagCount("work", "work", 1)
+            ),
+            store.tags()
+        )
+        // A parent matches its nested tags, not a tag that merely starts with it.
+        assertEquals(setOf("a", "b"), store.list(NoteFilter.Tag("home", "home")).map { it.id }.toSet())
+        assertEquals(listOf("a"), store.list(NoteFilter.Tag("home/repairs", "home/repairs")).map { it.id })
+        assertEquals(listOf("c"), store.list(NoteFilter.Untagged).map { it.id })
+        assertEquals(listOf("b"), store.search("home", NoteFilter.Tag("work", "work")).map { it.id })
+
+        now = 3_000
+        store.save("b", "", "#WORK only\n")
+        store.delete("a")
+        assertEquals(listOf(TagCount("homework", "homework", 1), TagCount("work", "WORK", 1)), store.tags())
+        assertEquals(listOf("c"), store.list(NoteFilter.Untagged).map { it.id })
+    }
+
+    @Test
+    fun `an upgraded database fills in tags once`() = runBlocking {
+        store.save("a", "", "#kept\n")
+        db.close()
+        // As a database from before tags: the rows missing, a rebuild requested.
+        val conn = androidx.sqlite.driver.bundled.BundledSQLiteDriver().open(File(dir, "notes.db").path)
+        conn.prepare("DELETE FROM note_tags").use { it.step() }
+        conn.prepare("INSERT INTO rebuild_index (id) VALUES (1)").use { it.step() }
+        conn.close()
+
+        val reopened = Database(File(dir, "notes.db").path)
+        try {
+            assertEquals(listOf(TagCount("kept", "kept", 1)), NoteStore(reopened).tags())
+        } finally {
+            reopened.close()
+        }
+    }
 }

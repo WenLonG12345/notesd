@@ -77,6 +77,7 @@ import notes.app.editor.LinkTap
 import notes.app.editor.NoteEditText
 import notes.app.editor.SAMPLE_MARKDOWN
 import notes.app.editor.SAMPLE_TITLE
+import notes.app.editor.TagStrip
 import notes.app.ui.Banner
 import notes.app.ui.BannerKind
 import notes.app.ui.IconAction
@@ -110,6 +111,7 @@ fun EditorScreen(
     onBack: () -> Unit,
     onDelete: () -> Unit,
     onOpen: (String) -> Unit,
+    onOpenTag: (String) -> Unit = {},
     showBack: Boolean = true,
     connected: Boolean = true
 ) {
@@ -119,6 +121,7 @@ fun EditorScreen(
     val status by vm.status.collectAsStateWithLifecycle()
     val original by vm.original.collectAsStateWithLifecycle()
     val gone by vm.gone.collectAsStateWithLifecycle()
+    val tags by vm.tags.collectAsStateWithLifecycle()
     var editor by remember { mutableStateOf<NoteEditText?>(null) }
     var state by remember { mutableStateOf(FormatState()) }
     var edits by remember { mutableIntStateOf(0) }
@@ -236,7 +239,20 @@ fun EditorScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()
             )
             Reveal(typing) {
-                FormattingBar(state, { editor }, onLink = { linkDialog = editor?.linkContext() })
+                Column {
+                    state.tag?.let { tag ->
+                        TagStrip(
+                            tag,
+                            tags,
+                            onPick = { name -> editor?.insertTag(tag.start, tag.end, name) },
+                            onShow = {
+                                save()
+                                onOpenTag(it)
+                            }
+                        )
+                    }
+                    FormattingBar(state, { editor }, onLink = { linkDialog = editor?.linkContext() })
+                }
             }
             if (!typing) Spacer(Modifier.navigationBarsPadding())
         }

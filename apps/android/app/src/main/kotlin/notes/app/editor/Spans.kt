@@ -6,6 +6,7 @@ import android.graphics.Typeface
 import android.text.Layout
 import android.text.Spanned
 import android.text.TextPaint
+import android.text.style.CharacterStyle
 import android.text.style.LeadingMarginSpan
 import android.text.style.LineBackgroundSpan
 import android.text.style.LineHeightSpan
@@ -13,6 +14,7 @@ import android.text.style.MetricAffectingSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.text.style.URLSpan
+import android.text.style.UpdateAppearance
 import android.view.View
 import notes.core.doc.Container
 import notes.core.doc.Leaf
@@ -275,6 +277,19 @@ class LinkSpan(val href: String, val title: String?, private val style: EditorSt
     override fun updateDrawState(ds: TextPaint) {
         ds.color = style.link
         ds.isUnderlineText = true
+    }
+}
+
+/**
+ * A #tag (architecture §7.5): tinted, still plain editable text. Not an
+ * [EditorSpan]: the [Normalizer] re-derives it after every change and it never
+ * reaches the document.
+ */
+class TagSpan(val name: String, private val style: EditorStyle) :
+    CharacterStyle(),
+    UpdateAppearance {
+    override fun updateDrawState(tp: TextPaint) {
+        tp.bgColor = style.tagBg
     }
 }
 

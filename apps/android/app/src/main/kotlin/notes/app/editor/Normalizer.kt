@@ -7,6 +7,8 @@ import notes.core.doc.Container
 import notes.core.doc.Ids
 import notes.core.doc.Leaf
 import notes.core.doc.ListKind
+import notes.core.text.OBJECT
+import notes.core.text.scanTags
 
 /**
  * Re-derives the structure spans from the text after every change, so editing
@@ -46,6 +48,7 @@ class Normalizer(private val style: EditorStyle) {
         applyBlockSpans(text, ranges, infos, markers)
         applyLeafStyles(text, ranges, infos)
         clipMarks(text, ranges, infos)
+        applyTags(text)
     }
 
     // --- raw runs ------------------------------------------------------------
@@ -272,6 +275,37 @@ class Normalizer(private val style: EditorStyle) {
             }
         }
         for (span in existing) if (span !in keep) text.removeSpan(span)
+    }
+
+    // --- tags ----------------------------------------------------------------
+
+    /**
+     * Finds tags as the shared extractor finds them in Markdown: link text,
+     * raw runs and the end marker can't hold them (they read as [OBJECT]),
+     * and every "\n" ends a line. Unchanged tags keep their spans.
+     */
+    private fun applyTags(text: Editable) {
+        val visible = StringBuilder(text)
+        for (span in text.getSpans(0, text.length, EditorSpan::class.java)) {
+            if (span is LinkSpan || span is RawInlineSpan || span is RawBlockSpan || span is EndMarkerSpan) {
+                for (i in text.getSpanStart(span) until text.getSpanEnd(span)) {
+                    if (visible[i] != '\n') visible.setCharAt(i, OBJECT)
+                }
+            }
+        }
+        val found = HashMap<Pair<Int, Int>, String>()
+        var lineStart = 0
+        for (line in visible.split('\n')) {
+            for (m in scanTags(line)) found[lineStart + m.start to lineStart + m.end] = m.name
+            lineStart += line.length + 1
+        }
+        for (span in text.getSpans(0, text.length, TagSpan::class.java)) {
+            val at = text.getSpanStart(span) to text.getSpanEnd(span)
+            if (found[at] == span.name) found.remove(at) else text.removeSpan(span)
+        }
+        for ((at, name) in found) {
+            text.setSpan(TagSpan(name, style), at.first, at.second, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
     }
 
     // --- marks ---------------------------------------------------------------

@@ -119,6 +119,7 @@ import notes.app.ui.breathing
 import notes.app.ui.glass
 import notes.app.ui.hairline
 import notes.app.ui.pressScale
+import notes.core.db.NoteFilter
 import notes.core.db.Search
 import notes.core.db.SyncEvent
 import notes.core.sync.SyncStatus
@@ -135,6 +136,7 @@ fun NotesListScreen(
     account: String?,
     selected: String?,
     beside: Boolean,
+    tagTree: TagTreeState,
     onSignIn: () -> Unit,
     onOpen: (String) -> Unit,
     onNew: () -> Unit,
@@ -144,6 +146,10 @@ fun NotesListScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val pending by vm.deletions.pending.collectAsStateWithLifecycle()
     val sync by vm.sync.collectAsStateWithLifecycle()
+    val tags by vm.tags.collectAsStateWithLifecycle()
+    val tagsOpen by tagTree.open.collectAsStateWithLifecycle()
+    val expanded by tagTree.expanded.collectAsStateWithLifecycle()
+    val tree = remember(tags) { buildTagTree(tags) }
     var query by rememberSaveable { mutableStateOf("") }
     var sheetFor by remember { mutableStateOf<Pair<String, String>?>(null) }
     val toasts = remember { SnackbarHostState() }
@@ -192,6 +198,11 @@ fun NotesListScreen(
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val searching = state.query.isNotBlank()
+    val scope = when (val f = state.filter) {
+        null -> null
+        NoteFilter.Untagged -> "Untagged"
+        is NoteFilter.Tag -> "#${f.name}"
+    }
 
     CompositionLocalProvider(LocalHaze provides haze) {
         Box(
@@ -218,12 +229,12 @@ fun NotesListScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     item(key = "header", contentType = "header") {
-                        Header(sync.status, sync.pending)
+                        Header(sync.status, sync.pending, scope, onClear = { vm.filter(null) })
                     }
                     // Nothing to search before the first note.
-                    if (state.notes.isNotEmpty() || query.isNotEmpty()) {
+                    if (state.notes.isNotEmpty() || query.isNotEmpty() || scope != null) {
                         item(key = "search", contentType = "search") {
-                            SearchField(query, onChange = {
+                            SearchField(query, scope, onChange = {
                                 query = it
                                 vm.search(it)
                             })
@@ -240,8 +251,33 @@ fun NotesListScreen(
                             )
                         }
                     }
+                    if (!searching && (tags.isNotEmpty() || scope != null)) {
+                        tagSection(
+                            tree,
+                            state.filter,
+                            tagsOpen,
+                            expanded,
+                            onOpen = tagTree::setOpen,
+                            onExpand = tagTree::setExpanded,
+                            onFilter = vm::filter
+                        )
+                    }
                     when {
                         !state.loaded -> Unit
+
+                        !searching && state.notes.isEmpty() && scope != null -> item(key = "emptyScope") {
+                            Empty(
+                                kicker = scope,
+                                title = "Nothing here yet",
+                                text = if (state.filter == NoteFilter.Untagged) {
+                                    "Every note has a tag."
+                                } else {
+                                    "Notes you write while $scope is open start with the tag."
+                                },
+                                action = "Write a note",
+                                onAction = onNew
+                            )
+                        }
 
                         searching && state.hits.isEmpty() -> item(key = "noMatch") {
                             Empty(
@@ -303,7 +339,7 @@ fun NotesListScreen(
                 }
             }
 
-            TopBar(collapsed, account, onSettings, Modifier.align(Alignment.TopCenter))
+            TopBar(collapsed, scope ?: "Notes", account, onSettings, Modifier.align(Alignment.TopCenter))
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                 ToastHost(toasts, Modifier.align(Alignment.CenterHorizontally))
                 Footer(state.notes.size, searching, onNew)
@@ -329,7 +365,7 @@ private fun results(n: Int) = if (n == 1) "1 result" else "$n results"
 
 /** Transparent over the large title; once it scrolls away, a glass bar with the title small. */
 @Composable
-private fun TopBar(collapsed: Boolean, account: String?, onSettings: () -> Unit, modifier: Modifier) {
+private fun TopBar(collapsed: Boolean, title: String, account: String?, onSettings: () -> Unit, modifier: Modifier) {
     val t = LocalTokens.current
     val shown by animateFloatAsState(if (collapsed) 1f else 0f, tween(200), label = "bar")
     Box(modifier.fillMaxWidth()) {
@@ -342,9 +378,11 @@ private fun TopBar(collapsed: Boolean, account: String?, onSettings: () -> Unit,
         ) {
             Spacer(Modifier.width(48.dp))
             Text(
-                "Notes",
+                title,
                 style = Type.title.copy(fontSize = 20.sp),
                 color = t.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
                     .graphicsLayer { alpha = shown }
@@ -387,15 +425,36 @@ private fun AccountButton(account: String?, onClick: () -> Unit) {
     }
 }
 
-/** The large title, with the sync state beneath it. */
+/** The large title (the selected tag, if any, with a way back to all notes), with the sync state beneath it. */
 @Composable
-private fun Header(status: SyncStatus, pending: Int) {
+private fun Header(status: SyncStatus, pending: Int, scope: String?, onClear: () -> Unit) {
     val t = LocalTokens.current
-    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
+    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             BrandMark(26.dp)
             Spacer(Modifier.width(12.dp))
-            Text("Notes", style = Type.display, color = t.ink, modifier = Modifier.semantics { heading() })
+            Text(
+                scope ?: "Notes",
+                style = Type.display,
+                color = t.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false).semantics { heading() }
+            )
+            if (scope != null) {
+                Box(
+                    Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .clickable(role = Role.Button, onClick = onClear)
+                        .semantics { contentDescription = "Show all notes" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(Modifier.size(24.dp).clip(CircleShape).background(t.on), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Close, null, Modifier.size(13.dp), tint = t.ink2)
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(6.dp))
         SyncState(status, pending)
@@ -434,7 +493,7 @@ private fun SyncState(status: SyncStatus, pending: Int) {
 }
 
 @Composable
-private fun SearchField(query: String, onChange: (String) -> Unit) {
+private fun SearchField(query: String, scope: String?, onChange: (String) -> Unit) {
     val t = LocalTokens.current
     val focus = LocalFocusManager.current
     val requester = remember { FocusRequester() }
@@ -454,7 +513,15 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
         Icon(Icons.Search, null, Modifier.size(18.dp), tint = t.ink3)
         Spacer(Modifier.width(10.dp))
         Box(Modifier.weight(1f)) {
-            if (query.isEmpty()) Text("Search", style = Type.body.copy(fontSize = 16.sp), color = t.ink3)
+            if (query.isEmpty()) {
+                Text(
+                    if (scope == null) "Search" else "Search in $scope",
+                    style = Type.body.copy(fontSize = 16.sp),
+                    color = t.ink3,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             BasicTextField(
                 value = query,
                 onValueChange = onChange,

@@ -81,8 +81,8 @@ class AccessibilityTest {
         graph.sync.store.applyPage(
             SyncPage(
                 listOf(
-                    RemoteNote("a", "Groceries", "- Oat milk\n", 1, 1, now, now),
-                    RemoteNote("b", "Trip", "> Lisbon\n\n- [ ] Book\n", 2, 2, now, now)
+                    RemoteNote("a", "Groceries", "- Oat milk #errands\n", 1, 1, now, now),
+                    RemoteNote("b", "Trip", "> Lisbon #travel/portugal\n\n- [ ] Book\n", 2, 2, now, now)
                 ),
                 2,
                 false,
@@ -104,6 +104,18 @@ class AccessibilityTest {
         launch()
         compose.waitUntilExactlyOneExists(hasText("Groceries"))
         audit("list")
+    }
+
+    @Test
+    fun listByTag() {
+        graph.setOnboardingDismissed(true)
+        seed()
+        launch()
+        compose.waitUntilExactlyOneExists(hasContentDescription("Expand travel"))
+        compose.onNode(hasContentDescription("Expand travel")).performClick()
+        compose.onNode(hasContentDescription("#travel/portugal, 1 note")).performClick()
+        compose.waitUntilExactlyOneExists(hasContentDescription("Show all notes"))
+        audit("list by tag")
     }
 
     @Test

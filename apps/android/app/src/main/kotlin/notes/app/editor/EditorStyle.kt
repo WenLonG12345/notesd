@@ -33,6 +33,9 @@ class EditorStyle(
     val hover = tokens.hover.toArgb()
     val hairStrong = tokens.hairStrong.toArgb()
 
+    /** Behind #tags (web: .prose [data-tag]). */
+    val tagBg = tokens.accent.copy(alpha = 0.3f).toArgb()
+
     /** Width one list level adds; the marker is drawn inside it. */
     val itemIndent = dp(28f)
 

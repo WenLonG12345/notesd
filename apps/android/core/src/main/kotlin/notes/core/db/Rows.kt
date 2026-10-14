@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import notes.core.text.Uuid7
 import notes.core.text.plainText
+import notes.core.text.tags
 
 // Row access shared by NoteStore (local edits) and SyncStore (the sync engine). Callers hold a write transaction.
 
@@ -31,14 +32,39 @@ internal fun noteRow(st: SQLiteStatement) = Note(
 
 internal fun Sql.note(id: String): Note? = one("SELECT $NOTE_COLUMNS FROM notes WHERE id = ?", id, row = ::noteRow)
 
+/** Replaces the search entry and tags for a note. */
 internal fun Sql.index(id: String, title: String, content: String) {
     val seq = long("SELECT seq FROM notes WHERE id = ?", id)
-    exec("DELETE FROM notes_fts WHERE rowid = ?", seq)
-    exec("INSERT INTO notes_fts (rowid, title, body_text) VALUES (?, ?, ?)", seq, title, plainText(content))
+    unindexSeq(seq)
+    insertIndex(seq, title, content)
 }
 
 internal fun Sql.unindex(id: String) {
-    exec("DELETE FROM notes_fts WHERE rowid = (SELECT seq FROM notes WHERE id = ?)", id)
+    unindexSeq(long("SELECT seq FROM notes WHERE id = ?", id))
+}
+
+private fun Sql.unindexSeq(seq: Long) {
+    exec("DELETE FROM notes_fts WHERE rowid = ?", seq)
+    exec("DELETE FROM note_tags WHERE note_seq = ?", seq)
+}
+
+private fun Sql.insertIndex(seq: Long, title: String, content: String) {
+    exec("INSERT INTO notes_fts (rowid, title, body_text) VALUES (?, ?, ?)", seq, title, plainText(content))
+    for (tag in tags(title, content)) {
+        exec("INSERT INTO note_tags (note_seq, key, name) VALUES (?, ?, ?)", seq, tag.key, tag.name)
+    }
+}
+
+/** Rebuilds the search index and tags from the notes. Sync state is untouched. */
+internal fun Sql.rebuildIndex(): Int {
+    exec("DELETE FROM notes_fts")
+    exec("DELETE FROM note_tags")
+    exec("DELETE FROM rebuild_index")
+    val live = query("SELECT seq, title, content FROM notes WHERE deleted_at IS NULL") {
+        Triple(it.getLong(0), it.getText(1), it.getText(2))
+    }
+    for ((seq, title, content) in live) insertIndex(seq, title, content)
+    return live.size
 }
 
 /** The request body an operation will send, minus what is fixed at send time (operationId, baseRevision). */

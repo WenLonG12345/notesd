@@ -28,4 +28,15 @@ class TagsTest {
         val line = "🎉 #a and #b c# end"
         assertEquals(listOf("#a", "#b c#"), scanTags(line).map { line.substring(it.start, it.end) })
     }
+
+    @Test
+    fun `tag text is closed when it needs to be`() {
+        assertEquals("#home/repairs", tagText("home/repairs"))
+        assertEquals("#summer trip#", tagText("summer trip"))
+        assertEquals("#2024#", tagText("2024"))
+        assertEquals("#v1.2#", tagText("v1.2"))
+        for (name in listOf("home/repairs", "summer trip", "2024", "v1.2")) {
+            assertEquals(listOf(name), tags("", "${tagText(name)} after").map { it.name })
+        }
+    }
 }

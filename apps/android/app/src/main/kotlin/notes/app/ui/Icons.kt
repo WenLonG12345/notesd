@@ -38,6 +38,8 @@ object Icons {
     val Share = icon("M8 1.8v8.2M5 4.8l3-3 3 3", "M4.5 7.5H3.5v6h9v-6h-1")
     val OpenExternal = icon("M9.5 2.5h4v4M13.5 2.5L8 8", "M12 9.5v4H2.5V4h4")
     val Edit = icon("M11.5 1.8l2.7 2.7-8.6 8.6-3.3.6.6-3.3z")
+    val Chevron = icon("M6 3.5L10.5 8 6 12.5", stroke = 1.8f)
+    val Hash = icon("M6.5 2.5L5 13.5M11 2.5l-1.5 11M3 6h10.5M2.5 10H13", stroke = 1.5f)
     val Settings = icon(
         "M2.5 5h5.5M12 5h1.5M2.5 11h1.5M8 11h5.5",
         "M11.5 5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 1 1 3 0",

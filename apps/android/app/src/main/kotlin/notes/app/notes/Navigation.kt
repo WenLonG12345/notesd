@@ -40,14 +40,19 @@ import notes.app.ui.EaseOut
 import notes.app.ui.LocalReduceMotion
 import notes.app.ui.hideKeyboard
 import notes.core.api.ApiClient
+import notes.core.db.NoteFilter
 import notes.core.text.Uuid7
+import notes.core.text.tagKey
 
 @Serializable
 data object NotesKey : NavKey
 
-/** A note by id; a new note gets its id up front and exists once it has text. */
+/**
+ * A note by id; a new note gets its id up front and exists once it has text.
+ * [startTag]: a new note starts with this tag (the list's selected one).
+ */
 @Serializable
-data class EditorKey(val id: String) : NavKey
+data class EditorKey(val id: String, val startTag: String? = null) : NavKey
 
 @Serializable
 data object SettingsKey : NavKey
@@ -95,15 +100,18 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow()) {
     }
 
     /** From the list: beside it, the open note is swapped rather than stacked. */
-    fun open(id: String) {
+    fun open(id: String, startTag: String? = null) {
         if (backStack.lastOrNull() is EditorKey) {
             if ((backStack.last() as EditorKey).id == id) return
             view.hideKeyboard()
-            backStack[backStack.lastIndex] = EditorKey(id)
+            backStack[backStack.lastIndex] = EditorKey(id, startTag)
         } else {
-            backStack += EditorKey(id)
+            backStack += EditorKey(id, startTag)
         }
     }
+
+    /** A new note, starting with the list's selected tag. */
+    fun new() = open(Uuid7.generate(), (graph.listFilter.value as? NoteFilter.Tag)?.name)
 
     LaunchedEffect(newNote) {
         newNote.collect {
@@ -141,24 +149,25 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow()) {
         entryProvider = entryProvider {
             entry<NotesKey>(
                 metadata = ListDetailSceneStrategy.listPane(detailPlaceholder = {
-                    NothingOpen(hasNotes = true, onNew = { open(Uuid7.generate()) })
+                    NothingOpen(hasNotes = true, onNew = ::new)
                 })
             ) {
                 NotesListScreen(
-                    vm = viewModel { NotesListViewModel(graph.store, graph.deletions, graph.sync) },
+                    vm = viewModel { NotesListViewModel(graph.store, graph.deletions, graph.sync, graph.listFilter) },
                     signedOut = account is Account.SignedOut,
                     account = (account as? Account.SignedIn)?.username,
                     beside = twoPane,
+                    tagTree = graph.tagTree,
                     selected = if (twoPane) (backStack.lastOrNull() as? EditorKey)?.id else null,
                     onSignIn = { backStack += OnboardingKey(signInAgain = true) },
                     onOpen = ::open,
-                    onNew = { open(Uuid7.generate()) },
+                    onNew = ::new,
                     onSettings = { backStack += SettingsKey }
                 )
             }
             entry<EditorKey>(metadata = ListDetailSceneStrategy.detailPane()) { key ->
                 EditorScreen(
-                    vm = viewModel(key = key.id) { EditorViewModel(graph.store, key.id, graph.scope) },
+                    vm = viewModel(key = key.id) { EditorViewModel(graph.store, key.id, graph.scope, key.startTag) },
                     showBack = !twoPane,
                     connected = account != Account.None,
                     onBack = { pop() },
@@ -166,7 +175,12 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow()) {
                         graph.deletions.request(key.id)
                         pop()
                     },
-                    onOpen = { backStack += EditorKey(it) }
+                    onOpen = { backStack += EditorKey(it) },
+                    onOpenTag = { name ->
+                        graph.listFilter.value = NoteFilter.Tag(tagKey(name), name)
+                        // One pane: the list is a screen away.
+                        if (!twoPane) home()
+                    }
                 )
             }
             entry<SettingsKey> {

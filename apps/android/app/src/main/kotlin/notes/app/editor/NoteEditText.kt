@@ -32,6 +32,7 @@ import notes.core.doc.Document
 import notes.core.doc.Leaf
 import notes.core.doc.ListKind
 import notes.core.doc.Mark
+import notes.core.text.tagText
 
 /** What the formatting bar shows for the current selection. */
 data class FormatState(
@@ -46,8 +47,16 @@ data class FormatState(
     val canOutdent: Boolean = false,
     val inTitle: Boolean = true,
     val canUndo: Boolean = false,
-    val canRedo: Boolean = false
+    val canRedo: Boolean = false,
+    /** The tag the cursor is in, if any. */
+    val tag: TagAtCursor? = null
 )
+
+/**
+ * A tag around the cursor, from its # to its end. [query] is what's typed after
+ * the # when the cursor is at the end of an unclosed tag: what to complete.
+ */
+data class TagAtCursor(val name: String, val start: Int, val end: Int, val query: String?)
 
 /** A tap on a link: its target and where it sits in the text. */
 data class LinkTap(val href: String, val title: String?, val start: Int, val end: Int)
@@ -177,6 +186,23 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
         Marks.remove(text, Mark.Link("", null), start, end, editorStyle)
         Marks.add(text, Mark.Link(target, null), start, end, editorStyle)
         setSelection(end)
+    }
+
+    /** Replaces [start] until [end] (a tag being typed) with [name], closed if it needs it, and a space. */
+    fun insertTag(start: Int, end: Int, name: String) = command { text ->
+        val written = tagText(name)
+        val spaced = end < text.length && text[end] == ' '
+        text.replace(start, end, if (spaced) written else "$written ")
+        setSelection(start + written.length + 1)
+    }
+
+    private fun tagAt(t: Editable, cursor: Int): TagAtCursor? {
+        val span = t.getSpans(cursor, cursor, TagSpan::class.java)
+            .firstOrNull { t.getSpanStart(it) < cursor && cursor <= t.getSpanEnd(it) } ?: return null
+        val s = t.getSpanStart(span)
+        val e = t.getSpanEnd(span)
+        val query = if (cursor == e && t[e - 1] != '#') t.substring(s + 1, e) else null
+        return TagAtCursor(span.name, s, e, query)
     }
 
     fun removeLink(start: Int, end: Int) = command { text ->
@@ -312,7 +338,8 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
                 canOutdent = sel.any(edits::canOutdent),
                 inTitle = k == 0,
                 canUndo = undoStack.canUndo,
-                canRedo = undoStack.canRedo
+                canRedo = undoStack.canRedo,
+                tag = if (start == end) tagAt(t, start) else null
             )
         )
     }

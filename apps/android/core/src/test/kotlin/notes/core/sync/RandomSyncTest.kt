@@ -92,6 +92,9 @@ class RandomSyncTest {
         assertEquals(SyncOutcome.Done, fresh.sync())
         val truth = fresh.live()
         for ((i, d) in devices.withIndex()) assertEquals(truth, d.live(), "seed $seed, device $i")
+        // Tags are derived on each device from what sync stored, so they converge with the notes.
+        val tags = fresh.notes.tags()
+        for ((i, d) in devices.withIndex()) assertEquals(tags, d.notes.tags(), "seed $seed, device $i tags")
         val contents = truth.map { canonical(it.content) }.toSet()
         for (text in mustSurvive) assertTrue(text in contents, "seed $seed lost: $text")
         devices.forEach { assertEquals(0, it.notes.pendingNotes(), "seed $seed: nothing left to send") }
@@ -100,7 +103,7 @@ class RandomSyncTest {
     private fun text(r: Random, seed: Long, step: Int) = when (r.nextInt(3)) {
         0 -> "* item $seed-$step\n* more\n"
         1 -> "**bold** $seed-$step\n"
-        else -> "plain $seed-$step\n"
+        else -> "plain $seed-$step #area/t${r.nextInt(3)}\n"
     }
 
     private fun canonical(s: String) = Markdown.canonical(s)

@@ -8,6 +8,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import notes.core.db.NoteFilter
 import notes.core.db.SyncEvent
 
 /** §12.1 scenarios against a real notes-server, each device with its own database. */
@@ -46,6 +47,21 @@ class SyncTest {
         assertEquals(expected, b.live())
         assertEquals(expected, serverNotes())
         assertEquals(0, a.notes.pendingNotes())
+    }
+
+    @Test
+    fun `tags arrive with the text and leave with it`() = runBlocking<Unit> {
+        val a = client()
+        val b = client()
+        a.save("n", "Trip", "Book #travel/flights\n")
+        syncAll(a, b)
+        assertEquals(listOf("travel", "travel/flights"), b.notes.tags().map { it.key })
+        assertEquals(listOf("n"), b.notes.list(NoteFilter.Tag("travel", "travel")).map { it.id })
+
+        a.save("n", "Trip", "Booked\n")
+        syncAll(a, b)
+        assertEquals(emptyList(), b.notes.tags())
+        assertEquals(listOf("n"), b.notes.list(NoteFilter.Untagged).map { it.id })
     }
 
     @Test

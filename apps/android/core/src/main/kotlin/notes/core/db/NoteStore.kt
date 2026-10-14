@@ -23,6 +23,29 @@ data class Note(
 
 data class NoteSummary(val id: String, val title: String, val preview: String, val updatedAt: Long)
 
+/** Narrows the list and search; null shows every note. */
+sealed interface NoteFilter {
+    /** Notes with the tag [key] or one nested under it. [name] is how to show it. */
+    data class Tag(val key: String, val name: String) : NoteFilter
+
+    data object Untagged : NoteFilter
+}
+
+/** A tag in live notes, with the number of notes carrying it or one nested under it. */
+data class TagCount(val key: String, val name: String, val count: Int)
+
+/** A condition on the notes row aliased n, with its arguments. */
+private fun NoteFilter?.sql(): Pair<String, List<Any>> = when (this) {
+    null -> "1" to emptyList()
+
+    NoteFilter.Untagged -> "NOT EXISTS (SELECT 1 FROM note_tags t WHERE t.note_seq = n.seq)" to emptyList()
+
+    // '0' sorts right after '/', so the range holds exactly the nested keys.
+    is NoteFilter.Tag ->
+        "EXISTS (SELECT 1 FROM note_tags t WHERE t.note_seq = n.seq AND (t.key = ? OR (t.key > ? AND t.key < ?)))" to
+            listOf(key, "$key/", "${key}0")
+}
+
 /** A search result. [excerpt] marks matches with [Search.MARK_OPEN] / [Search.MARK_CLOSE]. */
 data class SearchHit(val id: String, val title: String, val excerpt: String, val updatedAt: Long)
 
@@ -45,39 +68,68 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
 
     suspend fun get(id: String): Note? = db.read { it.note(id) }
 
-    /** Live notes, most recently edited first. */
-    suspend fun list(): List<NoteSummary> = db.read { sql ->
+    /** Live notes matching [filter], most recently edited first. */
+    suspend fun list(filter: NoteFilter? = null): List<NoteSummary> = db.read { sql ->
+        val (cond, args) = filter.sql()
         sql.query(
             """
             SELECT n.id, n.title, n.updated_at, f.body_text
             FROM notes n LEFT JOIN notes_fts f ON f.rowid = n.seq
-            WHERE n.deleted_at IS NULL
+            WHERE n.deleted_at IS NULL AND $cond
             ORDER BY n.updated_at DESC, n.id DESC
-            """
+            """,
+            *args.toTypedArray()
         ) { NoteSummary(it.getText(0), it.getText(1), previewOf(it.textOrNull(3).orEmpty()), it.getLong(2)) }
     }
 
     /** Ranked as on the server: title matches weigh 10×, then the most recently edited. */
-    suspend fun search(input: String, limit: Int = 50): List<SearchHit> {
+    suspend fun search(input: String, filter: NoteFilter? = null, limit: Int = 50): List<SearchHit> {
         val match = Search.buildQuery(input)
         if (match.isEmpty()) return emptyList()
+        val (cond, args) = filter.sql()
         return db.read { sql ->
             sql.query(
                 """
                 SELECT n.id, n.title, n.updated_at, snippet(notes_fts, 1, ?, ?, '…', 20)
                 FROM notes_fts JOIN notes n ON n.seq = notes_fts.rowid
-                WHERE notes_fts MATCH ? AND n.deleted_at IS NULL
+                WHERE notes_fts MATCH ? AND n.deleted_at IS NULL AND $cond
                 ORDER BY bm25(notes_fts, ?, ?), n.updated_at DESC
                 LIMIT ?
                 """,
                 Search.MARK_OPEN,
                 Search.MARK_CLOSE,
                 match,
+                *args.toTypedArray(),
                 Search.TITLE_WEIGHT,
                 Search.CONTENT_WEIGHT,
                 limit
             ) { SearchHit(it.getText(0), it.getText(1), it.textOrNull(3).orEmpty(), it.getLong(2)) }
         }
+    }
+
+    /**
+     * Every tag in live notes, sorted by key, parents of nested tags included.
+     * A tag is named as in the most recently edited note using it (as on the server).
+     */
+    suspend fun tags(): List<TagCount> = db.read { sql ->
+        val names = HashMap<String, String>()
+        val notes = HashMap<String, HashSet<Long>>()
+        sql.query(
+            """
+            SELECT t.key, t.name, t.note_seq FROM note_tags t JOIN notes n ON n.seq = t.note_seq
+            WHERE n.deleted_at IS NULL ORDER BY n.updated_at DESC, n.id DESC
+            """
+        ) { Triple(it.getText(0), it.getText(1), it.getLong(2)) }
+            .forEach { (key, name, seq) ->
+                val keys = key.split('/')
+                val levels = name.split('/')
+                for (i in keys.indices) {
+                    val k = keys.subList(0, i + 1).joinToString("/")
+                    names.getOrPut(k) { levels.subList(0, i + 1).joinToString("/") }
+                    notes.getOrPut(k) { HashSet() } += seq
+                }
+            }
+        names.map { (k, name) -> TagCount(k, name, notes.getValue(k).size) }.sortedBy { it.key }
     }
 
     /**
@@ -210,20 +262,14 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
         _localEdits.tryEmit(Unit)
     }
 
-    /** Rebuilds the search index from the notes. Sync state is untouched. */
-    suspend fun reindex(): Int = db.write { sql ->
-        sql.exec("DELETE FROM notes_fts")
-        val live = sql.query("SELECT id, title, content FROM notes WHERE deleted_at IS NULL") {
-            Triple(it.getText(0), it.getText(1), it.getText(2))
-        }
-        for ((id, title, content) in live) sql.index(id, title, content)
-        live.size
-    }
+    /** Rebuilds the search index and tags from the notes. Sync state is untouched. */
+    suspend fun reindex(): Int = db.write { it.rebuildIndex() }
 
     /** Removes every note and all sync state from this device. */
     suspend fun wipe() {
         db.write { sql ->
             sql.exec("DELETE FROM notes_fts")
+            sql.exec("DELETE FROM note_tags")
             sql.exec("DELETE FROM notes")
             sql.exec("DELETE FROM sync_outbox")
             sql.exec(

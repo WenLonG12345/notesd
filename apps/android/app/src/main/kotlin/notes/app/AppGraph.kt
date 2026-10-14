@@ -15,10 +15,12 @@ import notes.app.account.AccountStore
 import notes.app.account.KeystoreSealer
 import notes.app.account.Sealer
 import notes.app.notes.Deletions
+import notes.app.notes.TagTreeState
 import notes.app.settings.Appearance
 import notes.app.sync.SyncScheduler
 import notes.core.api.ApiClient
 import notes.core.db.Database
+import notes.core.db.NoteFilter
 import notes.core.db.NoteStore
 import notes.core.sync.SyncEngine
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -39,6 +41,12 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
     val scheduler = SyncScheduler(context.applicationContext, sync, store, accounts, scope)
 
     private val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
+
+    /** What the list shows. Shared, so the editor can open a tag's notes; not kept across restarts. */
+    val listFilter = MutableStateFlow<NoteFilter?>(null)
+
+    /** Which parts of the list's tag tree are open, remembered across restarts. */
+    val tagTree = TagTreeState(prefs)
     private val _onboardingDismissed = MutableStateFlow(prefs.getBoolean(ONBOARDING_DISMISSED, false))
 
     /** "Use without a server" was chosen: start at the list instead of onboarding. */
