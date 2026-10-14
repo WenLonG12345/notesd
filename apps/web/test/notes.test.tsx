@@ -466,3 +466,25 @@ describe('on a phone', () => {
     expect(window.location.pathname).toBe('/')
   })
 })
+
+describe('window title', () => {
+  it('names the open note', async () => {
+    const { user } = await signedIn({
+      seed: async (s) => {
+        await createNote(s, 'Groceries')
+        await createNote(s, 'Trip')
+      },
+    })
+
+    await openNote(user, 'Groceries')
+    expect(document.title).toBe('Groceries — notesd')
+    await typeInTitle(user, ' list')
+    expect(document.title).toBe('Groceries list — notesd')
+
+    await openNote(user, 'Trip')
+    expect(document.title).toBe('Trip — notesd')
+
+    await user.click(newNoteButton())
+    await waitFor(() => expect(document.title).toBe('New note — notesd'))
+  })
+})

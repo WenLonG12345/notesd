@@ -28,6 +28,10 @@ func Handler() http.Handler {
 	if err != nil {
 		panic(err)
 	}
+	return handler(root)
+}
+
+func handler(root fs.FS) http.Handler {
 	files := http.FileServerFS(root)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +59,10 @@ func Handler() http.Handler {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
 			w.Header().Set("Cache-Control", "no-cache")
+		}
+		// Not in Go's built-in types; sniffed as text/plain, which nosniff then makes browsers reject.
+		if path.Ext(name) == ".webmanifest" {
+			w.Header().Set("Content-Type", "application/manifest+json")
 		}
 		files.ServeHTTP(w, r)
 	})

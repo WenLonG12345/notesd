@@ -3,7 +3,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalSto
 import { ApiError } from '../api/client'
 import { notes as api } from '../api/notes'
 import { ChecklistTool, LinkForm, LinkTool, MarkTools, NoteContent, TextStyles, Tool, replaceNote, useNoteEditor } from '../editor/editor'
-import { noteFields, noteSummary } from '../editor/note-doc'
+import { noteFields, noteSummary, titleOf } from '../editor/note-doc'
 import { Banner } from '../ui/banner'
 import { Button } from '../ui/button'
 import { ComposeIcon, TrashIcon } from '../ui/icons'
@@ -140,6 +140,8 @@ type EditorProps = {
   onOpenDraft: (saver: NoteSaver) => void
 }
 
+const APP_TITLE = 'notesd'
+
 /** How often the list row follows the typing. */
 const TOUCH_MS = 150
 
@@ -191,6 +193,20 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
   }, [saver, editor, touch])
 
   useEffect(() => () => clearTimeout(touchTimer.current), [])
+
+  // An installed web app shows this in its title bar and the Window menu. Transactions, not
+  // updates: remote changes replace the text without an update event.
+  useEffect(() => {
+    const show = () => {
+      document.title = `${titleOf(editor.state.doc).trim() || 'New note'} — ${APP_TITLE}`
+    }
+    show()
+    editor.on('transaction', show)
+    return () => {
+      editor.off('transaction', show)
+      document.title = APP_TITLE
+    }
+  }, [editor])
 
   useEffect(() => {
     if (isDraft) editor.commands.focus('start')

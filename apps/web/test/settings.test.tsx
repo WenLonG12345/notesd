@@ -11,6 +11,15 @@ async function openSettings() {
 
 describe('settings', () => {
   it('switches the theme and remembers it', async () => {
+    // index.html's; jsdom doesn't load it.
+    const metas = (['light', 'dark'] as const).map((scheme) => {
+      const meta = document.createElement('meta')
+      meta.name = 'theme-color'
+      meta.media = `(prefers-color-scheme: ${scheme})`
+      document.head.append(meta)
+      return meta
+    })
+    const colors = () => metas.map((m) => m.content)
     const { user } = await openSettings()
     const group = screen.getByRole('radiogroup', { name: 'Appearance' })
     expect(within(group).getByRole('radio', { name: 'System' }).getAttribute('aria-checked')).toBe('true')
@@ -18,10 +27,14 @@ describe('settings', () => {
     await user.click(within(group).getByRole('radio', { name: 'Dark' }))
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(localStorage.getItem('notes.theme')).toBe('dark')
+    // The title bar follows the picked theme, whatever the system's.
+    expect(colors()).toEqual(['#121416', '#121416'])
 
     await user.click(within(group).getByRole('radio', { name: 'System' }))
     expect(document.documentElement.dataset.theme).toBeUndefined()
     expect(localStorage.getItem('notes.theme')).toBeNull()
+    expect(colors()).toEqual(['#F6F3EE', '#121416'])
+    for (const m of metas) m.remove()
   })
 
   it('changes the password and signs out every other session', async () => {

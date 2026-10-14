@@ -27,3 +27,12 @@ func TestServeIndexServesBuild(t *testing.T) {
 		t.Fatalf("got %d %q", rec.Code, rec.Body.String())
 	}
 }
+
+func TestServesManifestAsManifest(t *testing.T) {
+	root := fstest.MapFS{"manifest.webmanifest": {Data: []byte(`{"name":"notesd"}`)}}
+	rec := httptest.NewRecorder()
+	handler(root).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/manifest.webmanifest", nil))
+	if got := rec.Header().Get("Content-Type"); rec.Code != http.StatusOK || got != "application/manifest+json" {
+		t.Fatalf("got %d %q", rec.Code, got)
+	}
+}

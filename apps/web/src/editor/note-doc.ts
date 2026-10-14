@@ -19,7 +19,7 @@ export function noteFields(doc: PMNode): Fields {
   return { title: titleOf(doc), content: serialize(doc) }
 }
 
-function titleOf(doc: PMNode): string {
+export function titleOf(doc: PMNode): string {
   const first = doc.firstChild
   return first?.type.name === 'title' ? first.textContent : ''
 }
