@@ -21,7 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -90,7 +92,7 @@ private const val SIDEBAR_DP = 1000
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
-fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow()) {
+fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNote: Flow<String> = emptyFlow()) {
     val wide = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() } >= SIDEBAR_DP.dp
     val start = remember {
         val firstRun = graph.accounts.account.value == Account.None && !graph.onboardingDismissed.value
@@ -172,6 +174,16 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow()) {
         }
     }
 
+    // A note whose share sheet "Email" was chosen; its editor opens the email dialog.
+    var emailFor by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(emailNote) {
+        emailNote.collect { id ->
+            open(id)
+            emailFor = id
+        }
+    }
+    val email by graph.email.settings.collectAsStateWithLifecycle()
+
     val ms = if (reduce) 0 else MOTION_MS
     val keyboardBar = remember { KeyboardBar() }
     CompositionLocalProvider(LocalKeyboardBar provides keyboardBar) {
@@ -243,12 +255,18 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow()) {
                                 )
                             }
                             entry<EditorKey>(metadata = ListDetailSceneStrategy.detailPane()) { key ->
+                                // Email can be set up from another device; check before the share sheet needs it.
+                                LaunchedEffect(key.id) { graph.email.refresh() }
                                 EditorScreen(
                                     vm = viewModel(key = key.id) {
                                         EditorViewModel(graph.store, key.id, graph.scope, key.startTag)
                                     },
                                     showBack = !twoPane,
                                     connected = account != Account.None,
+                                    emailFrom = email?.takeIf { it.configured && account is Account.SignedIn }?.from,
+                                    emailRequested = emailFor == key.id,
+                                    onEmailRequestHandled = { emailFor = null },
+                                    sendEmail = { to -> graph.mailer.send(key.id, to) },
                                     onBack = { pop() },
                                     onDelete = {
                                         graph.deletions.request(key.id)

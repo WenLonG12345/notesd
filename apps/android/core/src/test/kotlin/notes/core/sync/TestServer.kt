@@ -14,7 +14,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
  * port with an empty data dir, its owner account already created. Restarts
  * keep the port, so clients keep their URL.
  */
-class TestServer : AutoCloseable {
+class TestServer(private val resendUrl: String? = null) : AutoCloseable {
     val dataDir: File = Files.createTempDirectory("notesd").toFile()
     private var process: Process? = null
     private var listen = "127.0.0.1:0"
@@ -31,7 +31,9 @@ class TestServer : AutoCloseable {
     /** Starts the server; returns the setup token if it printed one. */
     private fun start(): String? {
         val bin = System.getProperty("notes.serverBin") ?: error("notes.serverBin not set: run through Gradle")
-        val p = ProcessBuilder(bin, "--data-dir", dataDir.path, "--listen", listen)
+        val args = listOf(bin, "--data-dir", dataDir.path, "--listen", listen) +
+            (resendUrl?.let { listOf("--resend-url", it) } ?: emptyList())
+        val p = ProcessBuilder(args)
             .redirectErrorStream(true)
             .start()
         process = p

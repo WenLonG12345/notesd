@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,6 +84,7 @@ class EditorViewModel(
         private set
 
     private val saveLock = Mutex()
+    private var lastSave: Job? = null
     private var edits = 0
     private var saved = 0
     private var saving = 0
@@ -120,13 +122,18 @@ class EditorViewModel(
         saved = edit
         saving++
         _document.value = doc
-        appScope.launch {
+        lastSave = appScope.launch {
             try {
                 saveLock.withLock { store(doc, edit) }
             } finally {
                 saving--
             }
         }
+    }
+
+    /** Waits for the saves started so far; they run in order, so the last one is enough. */
+    suspend fun saved() {
+        lastSave?.join()
     }
 
     private suspend fun store(doc: Document, edit: Int) {

@@ -62,6 +62,10 @@ internal data class ErrorBody(
     val current: JsonObject? = null
 )
 
+/** The server's Resend settings for emailing notes. The key never comes back; [keyHint] is its last 4 characters. */
+@Serializable
+data class EmailSettings(val configured: Boolean = false, val from: String = "", val keyHint: String = "")
+
 /** A note as the server has it. A tombstone has [deletedAt] set and empty title and content. */
 @Serializable
 data class RemoteNote(

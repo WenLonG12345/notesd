@@ -1,8 +1,13 @@
 package notes.app.notes
 
+import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.LabeledIntent
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.service.chooser.ChooserAction
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -68,15 +73,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
-import notes.app.BuildConfig
+import notes.app.MainActivity
+import notes.app.R
 import notes.app.editor.FormatState
 import notes.app.editor.FormattingBar
 import notes.app.editor.LinkDialog
 import notes.app.editor.LinkSheet
 import notes.app.editor.LinkTap
 import notes.app.editor.NoteEditText
-import notes.app.editor.SAMPLE_MARKDOWN
-import notes.app.editor.SAMPLE_TITLE
 import notes.app.editor.TagStrip
 import notes.app.ui.Banner
 import notes.app.ui.BannerKind
@@ -97,6 +101,7 @@ import notes.app.ui.pressScale
 import notes.app.ui.windowInsetsController
 import notes.core.doc.Document
 import notes.core.markdown.Markdown
+import notes.core.sync.EmailOutcome
 
 private const val SAVE_DELAY_MS = 700L
 
@@ -115,7 +120,13 @@ fun EditorScreen(
     onOpen: (String) -> Unit,
     onOpenTag: (String) -> Unit = {},
     showBack: Boolean = true,
-    connected: Boolean = true
+    connected: Boolean = true,
+    /** The sender's address when the server can email notes; null hides Email from the share sheet. */
+    emailFrom: String? = null,
+    /** "Email" was chosen in this note's share sheet. */
+    emailRequested: Boolean = false,
+    onEmailRequestHandled: () -> Unit = {},
+    sendEmail: suspend (List<String>) -> EmailOutcome = { EmailOutcome.NotSynced }
 ) {
     val context = LocalContext.current
     val t = LocalTokens.current
@@ -130,14 +141,19 @@ fun EditorScreen(
     var scrolled by remember { mutableStateOf(false) }
     var linkTap by remember { mutableStateOf<LinkTap?>(null) }
     var linkDialog by remember { mutableStateOf<Pair<String, String?>?>(null) }
-    var markdown by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
+    var emailing by remember { mutableStateOf(false) }
 
     fun save() {
         editor?.let { vm.save(it.document()) }
     }
 
     LaunchedEffect(gone) { if (gone) onBack() }
+    LaunchedEffect(emailRequested) {
+        if (!emailRequested) return@LaunchedEffect
+        emailing = true
+        onEmailRequestHandled()
+    }
     LaunchedEffect(vm) { vm.incoming.collect { editor?.setDocument(it, keepSelection = true) } }
     LaunchedEffect(edits) {
         if (edits == 0) return@LaunchedEffect
@@ -272,20 +288,9 @@ fun EditorScreen(
         Sheet(onDismiss = { menu = false }, title = editor?.document()?.title?.trim()?.ifEmpty { null } ?: "New note") {
             SheetItem(Icons.Share, "Share", {
                 menu = false
-                editor?.document()?.let { share(context, it) }
+                save()
+                editor?.document()?.let { share(context, it, emailNoteId = vm.id.takeIf { emailFrom != null }) }
             })
-            if (BuildConfig.DEBUG) {
-                SheetItem(Icons.Edit, "Show Markdown", {
-                    menu = false
-                    markdown = editor?.document()?.let(::exportMarkdown)
-                })
-                SheetItem(Icons.Edit, "Load sample note", {
-                    menu = false
-                    editor?.setDocument(Document.forNote(SAMPLE_TITLE, Markdown.parse(SAMPLE_MARKDOWN)))
-                    vm.edited()
-                    edits++
-                })
-            }
             // A blank new note has nothing to delete: leaving discards it.
             if (status != SaveStatus.Blank) {
                 SheetItem(Icons.Trash, "Delete note", {
@@ -322,16 +327,11 @@ fun EditorScreen(
             editor?.setLink(url, label)
         }
     }
-    markdown?.let { md ->
-        NotesDialog(onDismiss = { markdown = null }, title = "Markdown") {
-            Text(
-                md,
-                style = Type.mono.copy(fontSize = 12.sp, lineHeight = 18.sp),
-                color = t.ink2,
-                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())
-            )
-            Spacer(Modifier.height(16.dp))
-            NotesButton("Close", { markdown = null }, Modifier.fillMaxWidth())
+    if (emailing) {
+        EmailDialog(emailFrom, onDismiss = { emailing = false }) { to ->
+            save()
+            vm.saved()
+            sendEmail(to)
         }
     }
 }
@@ -366,12 +366,47 @@ private fun exportMarkdown(doc: Document): String {
     return if (title.isEmpty()) body else "# $title\n\n$body"
 }
 
-private fun share(context: Context, doc: Document) {
+/** The system share sheet, plus our own Email action when [emailNoteId] is set (the server can send it). */
+private fun share(context: Context, doc: Document, emailNoteId: String?) {
     val send = Intent(Intent.ACTION_SEND)
         .setType("text/plain")
         .putExtra(Intent.EXTRA_SUBJECT, doc.title.orEmpty())
         .putExtra(Intent.EXTRA_TEXT, exportMarkdown(doc))
-    context.startActivity(Intent.createChooser(send, null))
+    val chooser = Intent.createChooser(send, null)
+    if (emailNoteId != null) addEmailAction(context, chooser, emailNoteId)
+    context.startActivity(chooser)
+}
+
+/**
+ * Back into this app with the note's id; CLEAR_TOP + SINGLE_TOP reach the
+ * running activity under the share sheet instead of starting another.
+ */
+internal fun emailIntent(context: Context, noteId: String): Intent = Intent(context, MainActivity::class.java)
+    .setAction(MainActivity.ACTION_EMAIL_NOTE)
+    .putExtra(MainActivity.EXTRA_NOTE_ID, noteId)
+    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
+internal fun addEmailAction(context: Context, chooser: Intent, noteId: String) {
+    val intent = emailIntent(context, noteId)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        val pending = PendingIntent.getActivity(
+            context,
+            noteId.hashCode(),
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val action = ChooserAction.Builder(
+            Icon.createWithResource(context, R.drawable.ic_share_email),
+            "Email",
+            pending
+        )
+            .build()
+        chooser.putExtra(Intent.EXTRA_CHOOSER_CUSTOM_ACTIONS, arrayOf(action))
+    } else {
+        // Before custom actions, our own target among the apps.
+        val target = LabeledIntent(intent, context.packageName, "Email", R.drawable.ic_share_email)
+        chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf<Intent>(target))
+    }
 }
 
 private fun open(context: Context, href: String) {

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An envelope on an amber disc, like the launcher shortcut: the share sheet's "Email" action. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="@color/accent"
+        android:pathData="M24,0a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z" />
+    <group
+        android:scaleX="1.25"
+        android:scaleY="1.25"
+        android:translateX="14"
+        android:translateY="14">
+        <path
+            android:pathData="M2,3.5h12v9H2z"
+            android:strokeWidth="1.4"
+            android:strokeColor="#1F1915"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M2.5,4.2L8,8.5l5.5,-4.3"
+            android:strokeWidth="1.4"
+            android:strokeColor="#1F1915"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>

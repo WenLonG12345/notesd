@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -29,11 +30,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,11 +46,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -59,13 +65,17 @@ import notes.app.BuildConfig
 import notes.app.account.Account
 import notes.app.ui.BackLink
 import notes.app.ui.BrandMark
+import notes.app.ui.ButtonKind
 import notes.app.ui.ConfirmDialog
 import notes.app.ui.Icons
 import notes.app.ui.Kicker
 import notes.app.ui.LocalReduceMotion
 import notes.app.ui.LocalTokens
+import notes.app.ui.NotesButton
+import notes.app.ui.NotesField
 import notes.app.ui.Type
 import notes.app.ui.pressScale
+import notes.core.api.ApiResult
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private sealed interface Confirm {
@@ -150,6 +160,11 @@ fun SettingsScreen(
                     }
                 }
 
+                if (account is Account.SignedIn) {
+                    Section("Email")
+                    EmailCard(graph)
+                }
+
                 Section("Appearance")
                 Segmented(Theme.entries, theme, { it.label }) { graph.appearance.set(it) }
 
@@ -209,6 +224,121 @@ fun SettingsScreen(
         ) { act(graph::removeAllData) }
 
         null -> Unit
+    }
+}
+
+/** The server's Resend key and sender, for emailing notes from the share sheet. */
+@Composable
+private fun EmailCard(graph: AppGraph) {
+    val t = LocalTokens.current
+    val saved by graph.email.settings.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var apiKey by remember { mutableStateOf("") }
+    var from by remember { mutableStateOf<String?>(null) }
+    var errors by remember { mutableStateOf(mapOf<String, String>()) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val fromValue = from ?: saved?.from.orEmpty()
+    val configured = saved?.configured == true
+
+    LaunchedEffect(Unit) { graph.email.refresh() }
+
+    fun failed(r: ApiResult<*>) {
+        val field = (r as? ApiResult.Rejected)?.takeIf { it.status == 400 }?.field
+        if (r is ApiResult.Rejected && (field == "apiKey" || field == "from")) {
+            val text = r.message.replaceFirstChar { it.uppercase() }
+            errors = mapOf(field to if (text.endsWith('.')) text else "$text.")
+        } else {
+            message = if (r is ApiResult.Unreachable) "Can't reach the server." else "Something went wrong. Try again."
+        }
+    }
+
+    fun save() {
+        val found = buildMap {
+            if (!configured && apiKey.isBlank()) put("apiKey", "Paste your Resend API key.")
+            if (fromValue.isBlank()) put("from", "Enter the address emails come from.")
+        }
+        errors = found
+        message = null
+        if (found.isNotEmpty()) return
+        busy = true
+        scope.launch {
+            val r = graph.email.save(fromValue.trim(), apiKey.trim().ifEmpty { null })
+            busy = false
+            if (r is ApiResult.Ok) {
+                apiKey = ""
+                from = null
+                message = "Saved. Share a note and choose Email."
+            } else {
+                failed(r)
+            }
+        }
+    }
+
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(
+                "Email notes through Resend. Use an API key with sending access and an address on a verified domain.",
+                style = Type.small,
+                color = t.ink2
+            )
+            NotesField(
+                value = apiKey,
+                onValueChange = {
+                    apiKey = it
+                    errors = errors - "apiKey"
+                },
+                label = "Resend API key",
+                placeholder = saved?.takeIf { it.configured }?.let { "Saved · …${it.keyHint}" } ?: "re_…",
+                error = errors["apiKey"],
+                secret = true,
+                mono = true,
+                enabled = !busy
+            )
+            NotesField(
+                value = fromValue,
+                onValueChange = {
+                    from = it
+                    errors = errors - "from"
+                },
+                label = "From",
+                placeholder = "Your Name <notes@example.com>",
+                error = errors["from"],
+                enabled = !busy,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+            )
+            message?.let {
+                Text(
+                    it,
+                    style = Type.small,
+                    color = t.ink2,
+                    modifier = Modifier.semantics {
+                        liveRegion =
+                            LiveRegionMode.Polite
+                    }
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                NotesButton(if (busy) "Saving…" else "Save", ::save, busy = busy, small = true)
+                if (configured) {
+                    NotesButton("Remove", {
+                        busy = true
+                        message = null
+                        scope.launch {
+                            val r = graph.email.remove()
+                            busy = false
+                            if (r is ApiResult.Ok) {
+                                apiKey = ""
+                                from = null
+                                errors = emptyMap()
+                            } else {
+                                failed(r)
+                            }
+                        }
+                    }, kind = ButtonKind.DangerText, enabled = !busy, small = true)
+                }
+            }
+        }
     }
 }
 

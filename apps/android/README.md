@@ -58,6 +58,13 @@ Tags are text in the note (`#tag`, `#multi word#`, `#parent/child`; architecture
 - **Tags:** All notes, Untagged and the tree with counts, on their own screen under the list ("‹ Tags"), or in a sidebar from 1000dp wide. Settings open from there. Choosing one filters the list and search, and the app reopens on the list last shown; a new note starts with the selected tag and is still discarded if nothing else is typed.
 - **Editor:** the `Normalizer` tints tags with a `TagSpan` that never reaches the document. With the cursor in a tag, a strip above the formatting bar suggests existing tags while you type, or offers the notes with that tag.
 
+## Email
+
+A note can be emailed through notesd, which sends it with Resend (`server/README.md`). The Resend key and sender are set under Settings → Email while signed in; they live on the server, so web and phone share them.
+
+- **Share sheet:** with email set up, sharing a note adds an "Email" action: a custom chooser action on Android 14+, our own target before that. It comes back to `MainActivity` (`ACTION_EMAIL_NOTE`), which opens the note and asks for addresses.
+- **Sending:** `core/sync/NoteMailer.kt` syncs first and passes the revision the note is at here; the server sends its own copy, so the email is what's on screen. Offline, or with changes the server doesn't have yet, nothing is sent.
+
 ## Design
 
 The app follows the web app's design system, not Material defaults:

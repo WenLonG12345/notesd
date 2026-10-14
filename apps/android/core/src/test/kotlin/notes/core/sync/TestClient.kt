@@ -93,7 +93,9 @@ class TestClient(private val server: TestServer, private val pageSize: Int = 100
         }
     }
 
-    private val api get() = ApiClient(server.url, credentials, http)
+    val api get() = ApiClient(server.url, credentials, http)
+
+    fun mailer() = NoteMailer(notes, engine) { api }
 
     private fun newEngine() = SyncEngine(db, { api }, pageSize)
 

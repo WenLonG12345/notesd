@@ -9,7 +9,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
@@ -84,6 +86,38 @@ class ApiClient(
             .build()
         Request.Builder().url(url).header("Authorization", "Bearer $access").build()
     }) { json.decodeFromString(it) }
+
+    suspend fun emailSettings(): ApiResult<EmailSettings> =
+        authed({ request("GET", url("api/v1/settings/email"), null, it) }) { json.decodeFromString(it) }
+
+    /** A null [apiKey] keeps the saved one. */
+    suspend fun saveEmailSettings(from: String, apiKey: String?): ApiResult<EmailSettings> = authed({
+        request(
+            "PUT",
+            url("api/v1/settings/email"),
+            buildJsonObject {
+                put("from", from)
+                if (apiKey != null) put("apiKey", apiKey)
+            },
+            it
+        )
+    }) { json.decodeFromString(it) }
+
+    suspend fun deleteEmailSettings(): ApiResult<Unit> =
+        authed({ request("DELETE", url("api/v1/settings/email"), null, it) }) { }
+
+    /** Emails the server's copy, which must be at [revision] (409 stale_revision otherwise). */
+    suspend fun emailNote(id: String, to: List<String>, revision: Long): ApiResult<Unit> = authed({
+        request(
+            "POST",
+            noteUrl(id).newBuilder().addPathSegment("email").build(),
+            buildJsonObject {
+                put("to", JsonArray(to.map(::JsonPrimitive)))
+                put("revision", revision)
+            },
+            it
+        )
+    }) { }
 
     // --- plumbing ------------------------------------------------------------
 
@@ -173,9 +207,9 @@ class ApiClient(
 
     private fun post(path: String, body: JsonObject, access: String? = null) = request("POST", url(path), body, access)
 
-    private fun request(method: String, url: HttpUrl, body: JsonObject, access: String?) = Request.Builder()
+    private fun request(method: String, url: HttpUrl, body: JsonObject?, access: String?) = Request.Builder()
         .url(url)
-        .method(method, body.toString().toRequestBody(JSON))
+        .method(method, body?.toString()?.toRequestBody(JSON))
         .apply { if (access != null) header("Authorization", "Bearer $access") }
         .build()
 

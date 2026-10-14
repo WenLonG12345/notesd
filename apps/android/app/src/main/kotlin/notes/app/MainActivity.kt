@@ -15,6 +15,9 @@ class MainActivity : AppCompatActivity() {
     /** "New note" from the launcher shortcut, delivered once to whichever screen is showing. */
     private val newNote = Channel<Unit>(Channel.CONFLATED)
 
+    /** "Email" chosen in a note's share sheet: the note's id. */
+    private val emailNote = Channel<String>(Channel.CONFLATED)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         enableEdgeToEdge()
@@ -24,7 +27,7 @@ class MainActivity : AppCompatActivity() {
         val graph = (application as NotesApp).graph
         setContent {
             NotesTheme {
-                NotesNavigation(graph, newNote.receiveAsFlow())
+                NotesNavigation(graph, newNote.receiveAsFlow(), emailNote.receiveAsFlow())
             }
         }
     }
@@ -35,10 +38,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handle(intent: Intent?) {
-        if (intent?.action == ACTION_NEW_NOTE) newNote.trySend(Unit)
+        when (intent?.action) {
+            ACTION_NEW_NOTE -> newNote.trySend(Unit)
+            ACTION_EMAIL_NOTE -> intent.getStringExtra(EXTRA_NOTE_ID)?.let { emailNote.trySend(it) }
+        }
     }
 
     companion object {
         const val ACTION_NEW_NOTE = "notes.app.action.NEW_NOTE"
+        const val ACTION_EMAIL_NOTE = "notes.app.action.EMAIL_NOTE"
+        const val EXTRA_NOTE_ID = "notes.app.extra.NOTE_ID"
     }
 }

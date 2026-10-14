@@ -24,6 +24,7 @@ import notes.core.api.ApiClient
 import notes.core.db.Database
 import notes.core.db.NoteFilter
 import notes.core.db.NoteStore
+import notes.core.sync.NoteMailer
 import notes.core.sync.SyncEngine
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
@@ -41,6 +42,10 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
     /** Null server while never connected; signed out, its requests come back Unauthenticated. */
     val sync = SyncEngine(database, { api() })
     val scheduler = SyncScheduler(context.applicationContext, sync, store, accounts, scope)
+
+    /** Emails notes through the server; it syncs a note before sending it. */
+    val mailer = NoteMailer(store, sync) { api() }
+    val email = EmailSetup { api() }
 
     private val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
 
@@ -97,6 +102,8 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
 
     init {
         scope.launch { listFilter.drop(1).collect { f -> prefs.edit { putString(LIST_FILTER, encodeFilter(f)) } } }
+        // Fetched when a note or Settings opens; another account's settings must not linger.
+        scope.launch { accounts.account.collect { if (it !is Account.SignedIn) email.forget() } }
     }
 
     private companion object {
