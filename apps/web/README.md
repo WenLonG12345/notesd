@@ -20,7 +20,7 @@ Set `NOTESD_SERVER` to point it elsewhere. The proxy keeps the browser's
 A fresh dev database gets the owner `dev` / `devpassword`. To test the real
 first-run onboarding, run the server by hand on an empty data dir
 (`go run ./cmd/notesd --data-dir /tmp/empty` in `server/`); it logs a
-setup token.
+setup link.
 
 ## Checks
 

@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { AuthProvider, useAuth } from './auth/auth-context'
 import { AuthLayout } from './auth/auth-layout'
 import { Login, LoginForm } from './auth/login'
 import { Onboarding } from './auth/onboarding'
+import { takeSetupLink } from './auth/setup-link'
 import { Shell } from './notes/shell'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
@@ -9,14 +11,15 @@ import { Kicker } from './ui/kicker'
 import styles from './auth/auth.module.css'
 
 export function App() {
+  const [setupToken] = useState(takeSetupLink)
   return (
     <AuthProvider>
-      <AuthGate />
+      <AuthGate setupToken={setupToken} />
     </AuthProvider>
   )
 }
 
-function AuthGate() {
+function AuthGate({ setupToken }: { setupToken?: string }) {
   const { state, retry } = useAuth()
   switch (state.status) {
     case 'loading':
@@ -35,7 +38,7 @@ function AuthGate() {
         </AuthLayout>
       )
     case 'setup':
-      return <Onboarding />
+      return <Onboarding linkToken={setupToken} />
     case 'signed-out':
       return <Login />
     case 'signed-in':

@@ -34,9 +34,12 @@ root README.
     --public-url https://notes.example.com
 ```
 
-On first start with no account, the server logs a **setup token**. Open the
-web app (or `POST /api/v1/auth/setup`) with that token to create the owner
-account. Alternatively create it from the shell, which needs access to the
+On first start with no account, the server logs a **setup link**
+(`setup_url`) and the **setup token** in it. Open the link to create the
+owner account in the web app, or paste the token into its onboarding (or
+`POST /api/v1/auth/setup`). The token changes on every start unless
+`--setup-token` sets it, e.g. so Docker users never need the log. The link
+uses `--public-url` when set, otherwise the listen address. Alternatively create it from the shell, which needs access to the
 data directory and so is trusted:
 
 ```bash

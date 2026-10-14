@@ -33,6 +33,41 @@ describe('first run', () => {
     expect((await server.api('GET', '/auth/status')).body).toEqual({ setupRequired: false })
   })
 
+  it('skips the token step when opened from the setup link, and clears it from the address bar', async () => {
+    const server = await startServer()
+    const user = userEvent.setup()
+    window.history.replaceState(null, '', `/setup#${server.setupToken}`)
+    render(<App />)
+
+    expect(window.location.pathname + window.location.hash).toBe('/')
+    expect(await screen.findByText(/^Step 1 of 2/)).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Get started' }))
+
+    expect(screen.getByText(/^Step 2 of 2/)).toBeTruthy()
+    await user.type(screen.getByLabelText('Username'), 'cassio')
+    await user.type(screen.getByLabelText('Password'), 'correct horse')
+    await user.type(screen.getByLabelText('Confirm password'), 'correct horse{Enter}')
+    await signedInAs('cassio')
+  })
+
+  it('falls back to pasting the token when the setup link is stale', async () => {
+    const server = await startServer()
+    const user = userEvent.setup()
+    window.history.replaceState(null, '', '/setup#from-an-earlier-start')
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Get started' }))
+    await user.type(screen.getByLabelText('Username'), 'cassio')
+    await user.type(screen.getByLabelText('Password'), 'correct horse')
+    await user.type(screen.getByLabelText('Confirm password'), 'correct horse{Enter}')
+
+    expect(await screen.findByText(/^That setup link is out of date/)).toBeTruthy()
+    expect(screen.getByText(/^Step 2 of 3/)).toBeTruthy()
+    await user.type(screen.getByLabelText('Setup token'), `${server.setupToken}{Enter}`)
+    await user.click(screen.getByRole('button', { name: 'Create account' }))
+    await signedInAs('cassio')
+  })
+
   it('checks the form before calling the server', async () => {
     await startServer()
     const user = userEvent.setup()

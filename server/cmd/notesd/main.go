@@ -180,12 +180,6 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 	if err != nil {
 		return err
 	}
-	if token != "" {
-		log.Warn("no owner account yet: open the web app and enter this setup token, "+
-			"or run `notesd create-owner --username NAME`",
-			"setup_token", token)
-	}
-
 	srv := &http.Server{
 		Handler:           api.New(db, notes.NewStore(db), authSvc, log, api.Config{PublicURL: public}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -201,6 +195,11 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 	}
 	log.Info("notesd started", "version", version, "listen", ln.Addr().String(),
 		"database", db.Path, "schema_version", database.LatestVersion())
+	if token != "" {
+		log.Warn("no owner account yet: open setup_url to create it, "+
+			"or run `notesd create-owner --username NAME`",
+			"setup_url", setupURL(public, ln.Addr(), token), "setup_token", token)
+	}
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
@@ -219,6 +218,20 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 		log.Warn("forced shutdown", "error", err)
 	}
 	return nil
+}
+
+// setupURL is the web app's setup link. The token rides in the fragment,
+// which browsers never send, so it stays out of proxy and access logs.
+func setupURL(public *url.URL, addr net.Addr, token string) string {
+	base := url.URL{Scheme: "http", Host: addr.String()}
+	if public != nil {
+		base = url.URL{Scheme: public.Scheme, Host: public.Host, Path: strings.TrimSuffix(public.Path, "/")}
+	} else if tcp, ok := addr.(*net.TCPAddr); ok && tcp.IP.IsUnspecified() {
+		base.Host = net.JoinHostPort("localhost", fmt.Sprint(tcp.Port))
+	}
+	base.Path += "/setup"
+	base.Fragment = token
+	return base.String()
 }
 
 func newLogger(level, format string) (*slog.Logger, error) {

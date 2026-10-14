@@ -14,15 +14,16 @@ import { genericMessage } from './errors'
 import styles from './auth.module.css'
 
 type Step = 'welcome' | 'token' | 'account'
-const order: Step[] = ['welcome', 'token', 'account']
 const stepName: Record<Step, string> = { welcome: 'Welcome', token: 'Connect', account: 'Account' }
 
 type FieldErrors = Partial<Record<'username' | 'password' | 'confirm', string>>
 
-export function Onboarding() {
+/** linkToken: from the server's setup link, which makes pasting the token unnecessary. */
+export function Onboarding({ linkToken }: { linkToken?: string }) {
   const { signedIn, retry } = useAuth()
   const [step, setStep] = useState<Step>('welcome')
-  const [token, setToken] = useState('')
+  const [viaLink, setViaLink] = useState(Boolean(linkToken))
+  const [token, setToken] = useState(linkToken ?? '')
   const [tokenError, setTokenError] = useState<string>()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -76,7 +77,13 @@ export function Onboarding() {
       setBusy(false)
       if (err instanceof ApiError) {
         if (err.code === 'invalid_setup_token') {
-          setTokenError("That token didn't match. Copy it from the server log again.")
+          setTokenError(
+            viaLink
+              ? 'That setup link is out of date: the server prints a new one each time it starts. Paste the latest token from its log.'
+              : "That token didn't match. Copy it from the server log again.",
+          )
+          if (viaLink) setToken('')
+          setViaLink(false)
           go('token')
           return
         }
@@ -103,15 +110,15 @@ export function Onboarding() {
     }
   }
 
+  const order: Step[] = viaLink ? ['welcome', 'account'] : ['welcome', 'token', 'account']
   const index = order.indexOf(step)
+  const kicker = (s: Step) => `Step ${order.indexOf(s) + 1} of ${order.length} · ${stepName[s]}`
 
   return (
     <AuthLayout aside={<Steps current={index} total={order.length} />}>
       {step === 'welcome' && (
         <div className={styles.stack}>
-          <Kicker>
-            Step 1 of 3 · {stepName.welcome}
-          </Kicker>
+          <Kicker>{kicker('welcome')}</Kicker>
           <h1 ref={heading} tabIndex={-1} className={styles.hero}>
             A quiet place for everything you write.
           </h1>
@@ -119,7 +126,7 @@ export function Onboarding() {
             notesd runs on your own server. What you write stays there, and every device you sign in on stays in
             sync. This server has no account yet, so let’s create yours.
           </p>
-          <Button variant="solid" onClick={() => go('token')}>
+          <Button variant="solid" onClick={() => go(viaLink ? 'account' : 'token')}>
             Get started
           </Button>
         </div>
@@ -127,18 +134,17 @@ export function Onboarding() {
 
       {step === 'token' && (
         <form className={styles.stack} onSubmit={submitToken} noValidate>
-          <Kicker>
-            Step 2 of 3 · {stepName.token}
-          </Kicker>
+          <Kicker>{kicker('token')}</Kicker>
           <h1 ref={heading} tabIndex={-1}>
             Paste your setup token
           </h1>
           <p className={styles.lede}>
-            When the server starts without an account, it prints a one‑time token to its log. It proves you’re
-            the person who installed it.
+            When the server starts without an account, it prints a setup link and a one‑time token to its log.
+            They prove you’re the person who installed it. Opening the link skips this step.
           </p>
           <Terminal label="Example server log">
             <Dim>level=WARN </Dim>msg="no owner account yet…"{'\n'}
+            <Dim>{'           '}</Dim>setup_url=https://…/setup#THQvj2U_aMzG…{'\n'}
             <Dim>{'           '}</Dim>setup_token=<Hi>THQvj2U_aMzG…</Hi>
           </Terminal>
           <div ref={tokenRef}>
@@ -174,9 +180,7 @@ export function Onboarding() {
 
       {step === 'account' && (
         <form className={styles.stack} onSubmit={(e) => void submitAccount(e)} noValidate>
-          <Kicker>
-            Step 3 of 3 · {stepName.account}
-          </Kicker>
+          <Kicker>{kicker('account')}</Kicker>
           <h1 ref={heading} tabIndex={-1}>
             Choose how you’ll sign in
           </h1>
@@ -220,7 +224,7 @@ export function Onboarding() {
             )}
           </div>
           <div className={styles.actions}>
-            <Button onClick={() => go('token')} disabled={busy}>
+            <Button onClick={() => go(viaLink ? 'welcome' : 'token')} disabled={busy}>
               Back
             </Button>
             <Button variant="accent" type="submit" grow busy={busy}>
