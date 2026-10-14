@@ -58,6 +58,8 @@ export class NoteSaver {
   private conflictOf: string | undefined
   private revision: number
   private created: boolean
+  /** A new note with these values (e.g. just the selected tag) is still blank. */
+  private blank: Fields
   /** Last values the server acknowledged: the base for §6.1 merges. */
   private base: Fields
   /** The editor's current values; read lazily so serialization happens per save, not per keystroke. */
@@ -79,7 +81,7 @@ export class NoteSaver {
   private snapshot: Snapshot
 
   constructor(
-    init: { id: string; fields: Fields; revision?: number; updatedAt?: number; conflictOf?: string },
+    init: { id: string; fields: Fields; revision?: number; updatedAt?: number; conflictOf?: string; blank?: Fields },
     private hooks: Hooks = {},
   ) {
     this.id = init.id
@@ -90,6 +92,7 @@ export class NoteSaver {
     // A note the server doesn't have yet has nothing acknowledged: empty base.
     this.base = this.created ? canonicalFields(init.fields) : { title: '', content: '' }
     const fields = { ...init.fields }
+    this.blank = init.blank ?? { title: '', content: '' }
     this.read = () => fields
     this.snapshot = this.makeSnapshot()
   }
@@ -155,8 +158,11 @@ export class NoteSaver {
 
   /** True for a new note nobody typed into: it can be dropped without a trace. */
   isBlankDraft(): boolean {
-    const f = this.read()
-    return !this.created && !f.title.trim() && !f.content.trim()
+    return this.isBlank(this.read())
+  }
+
+  private isBlank(f: Fields): boolean {
+    return !this.created && f.title.trim() === this.blank.title.trim() && f.content.trim() === this.blank.content.trim()
   }
 
   // --- saving ---------------------------------------------------------------
@@ -211,7 +217,7 @@ export class NoteSaver {
     const fields = this.read()
     this.dirty = false
     if (this.created && fields.title === this.base.title && fields.content === this.base.content) return null
-    if (!this.created && !fields.title.trim() && !fields.content.trim()) return null
+    if (this.isBlank(fields)) return null
     return { operationId: crypto.randomUUID(), fields, create: !this.created, baseRevision: this.revision }
   }
 

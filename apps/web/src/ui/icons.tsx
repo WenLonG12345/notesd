@@ -54,3 +54,19 @@ export function ComposeIcon({ size = 20 }: Props) {
     </svg>
   )
 }
+
+export function ChevronIcon({ size = 12 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 3.5L10.5 8 6 12.5" />
+    </svg>
+  )
+}
+
+export function HashIcon({ size = 14 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+      <path d="M6.5 2.5L5 13.5M11 2.5l-1.5 11M3 6h10.5M2.5 10H13" />
+    </svg>
+  )
+}

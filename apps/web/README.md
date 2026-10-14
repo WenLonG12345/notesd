@@ -66,8 +66,8 @@ matters.
 src/
   api/        fetch wrapper (CSRF token, typed errors, offline detection), endpoints
   auth/       auth gate state, onboarding, sign in
-  notes/      split view: list, editor pane, store, saver, search
-  editor/     Tiptap setup, Markdown ⇄ document, toolbar and text styles
+  notes/      split view: list, tag tree, editor pane, store, saver, search, tag extractor
+  editor/     Tiptap setup, Markdown ⇄ document, toolbar and text styles, tag styling and suggestions
   settings/   appearance, password, signed-in devices, sign out
   ui/         design-system primitives
   styles/     tokens (light and dark), base styles, fonts
@@ -90,6 +90,22 @@ tables and images, is shown read-only and written back byte for byte, so
 opening and saving a note never changes text written on another device.
 Output is canonical (`**bold**`, `-` bullets, one task syntax), and the
 round trip is pinned by `shared/markdown-fixtures/roundtrip.json`.
+
+## Tags
+
+Tags are text in the note (`#tag`, `#multi word#`, `#parent/child`; spec
+§7.5), so they need nothing from the editor but styling. `src/editor/tags.ts`
+finds them in each line with the shared extractor (`src/notes/tags.ts`,
+pinned by `shared/markdown-fixtures/tags.json`), skipping link text and code,
+and marks them with a decoration: they stay plain, editable text.
+⌘-click (Ctrl+click elsewhere) shows the notes with that tag. Typing `#`
+and a letter suggests existing tags; a name with spaces is inserted closed.
+
+The tag tree at the top of the list comes from `GET /tags` and is refetched
+after saves. Choosing a tag (or Untagged) reloads the list and scopes search
+through the server's `tag` and `untagged` filters. A new note made while a
+tag is selected starts with that tag, and is still dropped if nobody types.
+Renaming and deleting tags aren't built yet.
 
 ## Saving and conflicts
 

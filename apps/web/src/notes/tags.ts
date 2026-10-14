@@ -111,3 +111,15 @@ function normalize(s: string): string {
 function numeric(name: string): boolean {
   return /^[0-9\-_/]*$/.test(name)
 }
+
+/** How to write a tag in a note: closed with # when it needs it (spaces, digits only, punctuation). */
+export function tagText(name: string): string {
+  const open = `#${name}`
+  const [m, ...rest] = scanTags(open)
+  return m && rest.length === 0 && m.name === name && m.to === open.length ? open : `${open}#`
+}
+
+/** Whether a note with these tags is under key: the tag itself or one nested in it. */
+export function hasTag(noteTags: Tag[], key: string): boolean {
+  return noteTags.some((t) => t.key === key || t.key.startsWith(`${key}/`))
+}

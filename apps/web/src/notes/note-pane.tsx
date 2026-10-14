@@ -10,6 +10,7 @@ import { ComposeIcon, TrashIcon } from '../ui/icons'
 import { StatusPill } from '../ui/status-pill'
 import type { NoteSaver } from './saver'
 import { useNotes } from './store'
+import { tagKey } from './tags'
 import styles from './note-pane.module.css'
 
 type Props = {
@@ -143,7 +144,7 @@ const TOUCH_MS = 150
 
 function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete, onGone, onOpenDraft }: EditorProps) {
   const snap = useSyncExternalStore(saver.subscribe, saver.getSnapshot)
-  const { touch } = useNotes()
+  const { touch, tags, setFilter } = useNotes()
   const [initial] = useState(() => saver.fields())
   const [openedAt] = useState(() => Date.now())
   const [linkOpen, setLinkOpen] = useState(false)
@@ -164,6 +165,13 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
     onLinkShortcut: () => {
       setStylesOpen(false)
       setLinkOpen(true)
+    },
+    tags,
+    onOpenTag: (name) => {
+      const key = tagKey(name)
+      setFilter({ tag: key, name: tags.find((t) => t.key === key)?.name ?? name })
+      // On a phone the list is a separate screen.
+      if (mobile) onBack()
     },
   })
 

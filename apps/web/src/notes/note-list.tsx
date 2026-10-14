@@ -5,6 +5,7 @@ import { ConnectionBanner } from './connection'
 import { groupByDate, listTime } from './list-time'
 import { useSearch } from './search'
 import { useNotes } from './store'
+import { TagsSection } from './tags-section'
 import styles from './note-list.module.css'
 
 type Props = {
@@ -19,8 +20,9 @@ type Props = {
 }
 
 export function NoteList({ username, selectedId, query, onQuery, onSelect, onNew, onSettings, mobile }: Props) {
-  const { items, status, hasMore, total, loadMore, refresh, version } = useNotes()
-  const search = useSearch(query, version)
+  const { items, status, hasMore, total, loadMore, refresh, version, tags, filter, setFilter } = useNotes()
+  const search = useSearch(query, filter, version)
+  const scope = !filter ? null : 'tag' in filter ? `#${filter.name}` : 'Untagged'
   const searching = query.trim() !== ''
   const n = search.results.length
 
@@ -37,7 +39,16 @@ export function NoteList({ username, selectedId, query, onQuery, onSelect, onNew
       <div className={styles.header}>
         <div className={styles.titleRow}>
           <span className={styles.mark} aria-hidden="true" />
-          <h1 className={styles.heading}>Notes</h1>
+          {scope ? (
+            <h1 className={[styles.heading, styles.scoped].join(' ')}>
+              <span className={styles.scope}>{scope}</span>
+              <button type="button" className={styles.clearScope} onClick={() => setFilter(null)} aria-label="Show all notes">
+                ×
+              </button>
+            </h1>
+          ) : (
+            <h1 className={styles.heading}>Notes</h1>
+          )}
           <button
             type="button"
             className={styles.account}
@@ -65,7 +76,7 @@ export function NoteList({ username, selectedId, query, onQuery, onSelect, onNew
             id="search"
             type="search"
             className={styles.searchInput}
-            placeholder="Search all notes"
+            placeholder={scope ? `Search in ${scope}` : 'Search all notes'}
             spellCheck={false}
             autoComplete="off"
             value={query}
@@ -122,7 +133,8 @@ export function NoteList({ username, selectedId, query, onQuery, onSelect, onNew
                 </Button>
               </Message>
             )}
-            {status === 'ready' && items.length === 0 && <Message>No notes yet.</Message>}
+            <TagsSection tags={tags} filter={filter} onFilter={setFilter} />
+            {status === 'ready' && items.length === 0 && <Message>{scope ? `No notes in ${scope}.` : 'No notes yet.'}</Message>}
             {groupByDate(items).map((g) => (
               <Section key={g.label} label={g.label}>
                 {g.items.map((note) => (

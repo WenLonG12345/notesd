@@ -369,3 +369,49 @@
     height: 18px;
   }
 }
+
+/* #tags: a tinted pill, still plain editable text. */
+.prose [data-tag] {
+  padding: 0.05em 0.3em;
+  margin: 0 -0.1em;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Suggestions while typing a tag; mounted on <body> by the suggestion plugin. */
+:global([data-tag-suggestions]) {
+  position: absolute;
+  z-index: 50;
+  min-width: 160px;
+  max-width: 280px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: 12px;
+  border: 1px solid var(--edge);
+  background: var(--glass-hi);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--inset), var(--shadow-lg);
+  font-size: 13.5px;
+}
+
+:global([data-tag-suggestions][hidden]) {
+  display: none;
+}
+
+:global([data-tag-option]) {
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+:global([data-tag-option][aria-selected='true']) {
+  background: var(--accent);
+  color: var(--on-accent);
+}

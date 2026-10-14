@@ -19,9 +19,20 @@ export type NoteList = {
   notes: ListItem[]
   nextCursor: string
   hasMore: boolean
-  /** Every live note, not just this page. */
+  /** Every live note matching the filter, not just this page. */
   total: number
 }
+
+/** A tag in live notes (architecture §7.5); parents of nested tags included. */
+export type TagCount = {
+  key: string
+  name: string
+  /** Notes with this tag or one nested under it. */
+  count: number
+}
+
+/** Narrows listing and search to a tag key (with its nested tags) or to untagged notes. */
+export type NoteFilter = { tag: string } | { untagged: true } | null
 
 export type SearchResult = {
   id: string

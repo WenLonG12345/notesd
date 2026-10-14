@@ -1,9 +1,19 @@
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { notes as api } from '../api/notes'
-import type { ListItem } from '../api/types'
+import type { ListItem, TagCount } from '../api/types'
 import { useAuth } from '../auth/auth-context'
 import { preview as previewOf } from './plaintext'
 import { NoteSaver, timing, type Fields } from './saver'
+import { hasTag, tags, tagText } from './tags'
+
+/** What the list shows: every note, one tag (by key, with its nested tags), or notes without tags. */
+export type ListFilter = { tag: string; name: string } | { untagged: true } | null
+
+function matches(filter: ListFilter, fields: Fields): boolean {
+  if (!filter) return true
+  const noteTags = tags(fields.title, fields.content)
+  return 'tag' in filter ? hasTag(noteTags, filter.tag) : noteTags.length === 0
+}
 
 type ListState = {
   items: ListItem[]
@@ -20,12 +30,17 @@ type ListState = {
 export type DeleteOutcome = 'deleted' | 'undone' | 'changed' | 'failed'
 
 type NotesContextValue = Omit<ListState, 'hidden'> & {
+  /** Every tag in live notes, refreshed after saves. */
+  tags: TagCount[]
+  filter: ListFilter
+  /** Shows another slice of the notes, loading it from the start. */
+  setFilter: (filter: ListFilter) => void
   loadMore: () => void
   refresh: () => void
   /** The saver for a note, creating one from server data if needed. */
   saverFor: (init: ConstructorParameters<typeof NoteSaver>[0]) => NoteSaver
   existingSaver: (id: string) => NoteSaver | undefined
-  /** A new note, listed right away but sent to the server only once it has text. */
+  /** A new note, listed right away but sent to the server only once it has text (more than the selected tag). */
   newDraft: () => NoteSaver
   /** Drop a saver that has nothing left to do (closed editor). */
   release: (id: string) => void
@@ -42,6 +57,9 @@ const NotesContext = createContext<NotesContextValue | null>(null)
 /** Other devices may have changed things; refetch on focus after this long. */
 const STALE_MS = 30_000
 
+/** Saves come in bursts while typing; refetch tags once they settle. */
+const TAGS_DEBOUNCE_MS = 500
+
 type PendingDelete = { timer: ReturnType<typeof setTimeout>; resolve: (outcome: DeleteOutcome) => void }
 
 const counted = (item: ListItem | undefined) => (item && item.revision > 0 ? 1 : 0)
@@ -55,18 +73,26 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     hidden: [],
     version: 0,
   })
+  const [filter, setFilterState] = useState<ListFilter>(null)
+  const [tagList, setTagList] = useState<TagCount[]>([])
+  const filterRef = useRef<ListFilter>(null)
+  /** Bumped per filter change: pages for an earlier filter are dropped. */
+  const generation = useRef(0)
   const cursor = useRef('')
   const loadedAt = useRef(0)
-  const loading = useRef(false)
+  /** The generation being loaded, if any. */
+  const loading = useRef<number | null>(null)
   const savers = useRef(new Map<string, NoteSaver>())
   const deletes = useRef(new Map<string, PendingDelete>())
   const { state: auth } = useAuth()
 
   const fetchPage = useCallback(async (reset: boolean) => {
-    if (loading.current) return
-    loading.current = true
+    const gen = generation.current
+    if (loading.current === gen) return
+    loading.current = gen
     try {
-      const page = await api.list(reset ? undefined : cursor.current)
+      const page = await api.list(filterRef.current, reset ? undefined : cursor.current)
+      if (gen !== generation.current) return
       cursor.current = page.nextCursor
       loadedAt.current = Date.now()
       setList((prev) => {
@@ -79,21 +105,48 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         return { ...prev, items, status: 'ready', hasMore: page.hasMore, total: page.total - hiddenOnServer }
       })
     } catch {
+      if (gen !== generation.current) return
       setList((prev) => (prev.status === 'loading' ? { ...prev, status: 'error' } : prev))
     } finally {
-      loading.current = false
+      if (loading.current === gen) loading.current = null
     }
   }, [])
+
+  const setFilter = useCallback(
+    (next: ListFilter) => {
+      filterRef.current = next
+      generation.current++
+      cursor.current = ''
+      setFilterState(next)
+      setList((prev) => ({ ...prev, items: [], status: 'loading', hasMore: false, total: 0 }))
+      void fetchPage(true)
+    },
+    [fetchPage],
+  )
 
   useEffect(() => {
     void fetchPage(true)
   }, [fetchPage])
+
+  const fetchTags = useCallback((signal?: AbortSignal) => {
+    api.tags(signal).then(
+      ({ tags: all }) => setTagList(all),
+      () => undefined, // the list shows connection problems
+    )
+  }, [])
 
   const hooks = useMemo(
     () => ({
       saved: (id: string, fields: Fields, r: { updatedAt: number; revision: number; status: string }) =>
         setList((prev) => {
           const old = prev.items.find((n) => n.id === id)
+          const hidden = prev.hidden.includes(id)
+          const slice = filterRef.current
+          if (!matches(slice, fields)) {
+            // No longer in this slice (a tag removed): it leaves the list.
+            const items = prev.items.filter((n) => n.id !== id)
+            return { ...prev, items, total: prev.total - (hidden ? 0 : counted(old)), version: prev.version + 1 }
+          }
           // Typing since this save went out: the row already shows newer text.
           const live = old && savers.current.get(id)?.hasUnsentEdits()
           const item: ListItem = {
@@ -104,11 +157,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
             updatedAt: r.updatedAt,
             createdAt: old?.createdAt ?? r.updatedAt,
           }
-          const hidden = prev.hidden.includes(id)
+          // Filtered, a note can join the slice by gaining the tag, not just by being created.
+          const joined = slice ? !counted(old) : r.status === 'created'
           return {
             ...prev,
             items: [item, ...prev.items.filter((n) => n.id !== id)],
-            total: prev.total + (r.status === 'created' && !hidden ? 1 : 0),
+            total: prev.total + (joined && !hidden ? 1 : 0),
             version: prev.version + 1,
           }
         }),
@@ -132,7 +186,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const existingSaver = useCallback((id: string) => savers.current.get(id), [])
 
   const newDraft = useCallback(() => {
-    const s = new NoteSaver({ id: crypto.randomUUID(), fields: { title: '', content: '' } }, hooks)
+    const f = filterRef.current
+    const fields = { title: '', content: f && 'tag' in f ? tagText(f.name) : '' }
+    const s = new NoteSaver({ id: crypto.randomUUID(), fields, blank: fields }, hooks)
     savers.current.set(s.id, s)
     const now = Date.now()
     const row: ListItem = { id: s.id, title: '', preview: '', revision: 0, createdAt: now, updatedAt: now }
@@ -243,6 +299,16 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     [setHidden],
   )
 
+  const { version: savedVersion } = list
+  useEffect(() => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => fetchTags(controller.signal), savedVersion === 0 ? 0 : TAGS_DEBOUNCE_MS)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [savedVersion, fetchTags])
+
   // Signed in again after the session ended: send what was waiting.
   const authStatus = auth.status
   useEffect(() => {
@@ -254,12 +320,16 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     const all = () => [...savers.current.values()]
     const onFocus = () => {
       for (const s of all()) s.resume()
-      if (Date.now() - loadedAt.current > STALE_MS) void fetchPage(true)
+      if (Date.now() - loadedAt.current > STALE_MS) {
+        void fetchPage(true)
+        fetchTags()
+      }
     }
     const onOnline = () => {
       for (const s of all()) s.resume()
       // Also confirms the server is reachable, which clears the offline banner.
       void fetchPage(true)
+      fetchTags()
     }
     const onHidden = () => {
       if (document.visibilityState === 'hidden') for (const s of all()) void s.flush()
@@ -280,7 +350,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onHidden)
       window.removeEventListener('beforeunload', onUnload)
     }
-  }, [fetchPage, commit])
+  }, [fetchPage, fetchTags, commit])
 
   // Signing out unmounts the notes: deletes waiting on undo go through.
   useEffect(
@@ -296,12 +366,18 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const value = useMemo<NotesContextValue>(
     () => ({
       items: visible,
+      tags: tagList,
+      filter,
+      setFilter,
       status,
       hasMore,
       total,
       version,
       loadMore: () => void fetchPage(false),
-      refresh: () => void fetchPage(true),
+      refresh: () => {
+        void fetchPage(true)
+        fetchTags()
+      },
       saverFor,
       existingSaver,
       newDraft,
@@ -311,7 +387,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       remove,
       undoRemove,
     }),
-    [visible, status, hasMore, total, version, fetchPage, saverFor, existingSaver, newDraft, release, removed, touch, remove, undoRemove],
+    [visible, tagList, filter, setFilter, status, hasMore, total, version, fetchPage, fetchTags, saverFor, existingSaver, newDraft, release, removed, touch, remove, undoRemove],
   )
   return <NotesContext value={value}>{children}</NotesContext>
 }

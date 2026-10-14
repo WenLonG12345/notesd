@@ -1,10 +1,12 @@
 import type { Editor } from '@tiptap/core'
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { TagCount } from '../api/types'
 import type { Fields } from '../notes/saver'
 import { ChecklistIcon, LinkIcon } from '../ui/icons'
 import { editorExtensions, isAllowedLink } from './extensions'
 import { noteContent } from './note-doc'
+import { Tags } from './tags'
 import styles from './editor.module.css'
 
 type Options = {
@@ -13,18 +15,23 @@ type Options = {
   onChange: (editor: Editor) => void
   /** ⌘K. */
   onLinkShortcut: () => void
+  /** Existing tags, suggested while typing one. */
+  tags: TagCount[]
+  /** ⌘/Ctrl-click on a tag. */
+  onOpenTag: (name: string) => void
 }
 
 /** One editor for the whole note: the first line is the title, the rest the body. */
-export function useNoteEditor({ initial, onChange, onLinkShortcut }: Options): Editor {
+export function useNoteEditor(options: Options): Editor {
+  const { initial } = options
   // Latest callbacks for the editor's handlers, which are bound once.
-  const handlers = useRef({ onChange, onLinkShortcut })
+  const handlers = useRef(options)
   useEffect(() => {
-    handlers.current = { onChange, onLinkShortcut }
+    handlers.current = options
   })
 
-  return useEditor({
-    extensions: editorExtensions,
+  const editor = useEditor({
+    extensions: [...editorExtensions, Tags],
     content: noteContent(initial),
     // Toolbars subscribe to what they need (useEditorState).
     shouldRerenderOnTransaction: false,
@@ -44,10 +51,17 @@ export function useNoteEditor({ initial, onChange, onLinkShortcut }: Options): E
         return false
       },
     },
-    onUpdate: ({ editor, transaction }) => {
-      if (transaction.docChanged) handlers.current.onChange(editor)
+    onUpdate: ({ editor: e, transaction }) => {
+      if (transaction.docChanged) handlers.current.onChange(e)
     },
   })
+
+  const { tags, onOpenTag } = options
+  useEffect(() => {
+    editor.storage.tags.set({ tags, onOpen: onOpenTag })
+  }, [editor, tags, onOpenTag])
+
+  return editor
 }
 
 /** Replaces the whole note, e.g. with the server's version after a conflict. */
