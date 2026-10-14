@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { auth } from '../api/auth'
+import { settings } from '../api/settings'
 import { ApiError } from '../api/client'
 import type { Session } from '../api/types'
 import { platformBadge, sessionName } from '../api/user-agent'
 import { useAuth } from '../auth/auth-context'
 import { genericMessage } from '../auth/errors'
+import { setEmailSettings, useEmailSettings } from '../notes/email-settings'
 import { relativeTime } from '../notes/relative-time'
 import { applyTheme, readTheme, type ThemeChoice } from '../theme'
 import { Button } from '../ui/button'
@@ -49,6 +51,8 @@ export function SettingsSheet({ username, onClose }: { username: string; onClose
           </Button>
         </Surface>
       </div>
+
+      <EmailCard />
 
       {/* Remounted (and refetched) after a password change signs other sessions out. */}
       <Devices key={sessionsVersion} />
@@ -184,6 +188,130 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
       </div>
     </Surface>
   )
+}
+
+type EmailErrors = Partial<Record<'apiKey' | 'from', string>>
+
+function EmailCard() {
+  const saved = useEmailSettings()
+  const [apiKey, setApiKey] = useState('')
+  const [from, setFrom] = useState<string>()
+  const [errors, setErrors] = useState<EmailErrors>({})
+  const [formError, setFormError] = useState<string>()
+  const [done, setDone] = useState<string>()
+  const [busy, setBusy] = useState(false)
+  const fromValue = from ?? saved?.from ?? ''
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    const found: EmailErrors = {}
+    if (!saved?.configured && !apiKey.trim()) found.apiKey = 'Paste your Resend API key.'
+    if (!fromValue.trim()) found.from = 'Enter the address emails come from.'
+    setErrors(found)
+    setFormError(undefined)
+    setDone(undefined)
+    if (Object.keys(found).length > 0) return
+
+    setBusy(true)
+    try {
+      setEmailSettings(await settings.saveEmail(fromValue.trim(), apiKey.trim() || undefined))
+      setApiKey('')
+      setFrom(undefined)
+      setDone('Saved. Notes can be emailed from the Share menu.')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400 && (err.field === 'apiKey' || err.field === 'from')) {
+        setErrors({ [err.field]: sentence(err.message) })
+      } else {
+        setFormError(genericMessage(err))
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    setBusy(true)
+    setFormError(undefined)
+    setDone(undefined)
+    try {
+      await settings.removeEmail()
+      setEmailSettings({ configured: false, from: '', keyHint: '' })
+      setApiKey('')
+      setFrom(undefined)
+      setErrors({})
+    } catch (err) {
+      setFormError(genericMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Surface as="section" className={[styles.card, styles.email].join(' ')} aria-labelledby="email-kicker">
+      <Kicker id="email-kicker">Email</Kicker>
+      <span className={styles.text}>
+        Send notes by email through{' '}
+        <a href="https://resend.com" target="_blank" rel="noreferrer">
+          Resend
+        </a>
+        . Use an API key with sending access and an address on a{' '}
+        <a href="https://resend.com/domains" target="_blank" rel="noreferrer">
+          verified domain
+        </a>
+        .
+      </span>
+      <form className={styles.form} onSubmit={(e) => void submit(e)} noValidate>
+        <div className={styles.pair}>
+          <Field
+            label="Resend API key"
+            type="password"
+            mono
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={saved?.configured ? `Saved · …${saved.keyHint}` : 're_…'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            error={errors.apiKey}
+          />
+          <Field
+            label="From"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Your Name <notes@example.com>"
+            value={fromValue}
+            onChange={(e) => setFrom(e.target.value)}
+            error={errors.from}
+          />
+        </div>
+        {formError && (
+          <p role="alert" className={styles.error}>
+            {formError}
+          </p>
+        )}
+        {done && (
+          <p role="status" className={styles.success}>
+            {done}
+          </p>
+        )}
+        <div className={styles.buttons}>
+          <Button variant="solid" size="md" type="submit" busy={busy}>
+            Save
+          </Button>
+          {saved?.configured && (
+            <Button variant="danger-text" size="md" onClick={() => void remove()} disabled={busy}>
+              Remove
+            </Button>
+          )}
+        </div>
+      </form>
+    </Surface>
+  )
+}
+
+function sentence(message: string): string {
+  const s = message.charAt(0).toUpperCase() + message.slice(1)
+  return s.endsWith('.') ? s : `${s}.`
 }
 
 type DevicesState = { status: 'loading' | 'ready' | 'error'; sessions: Session[]; currentId: string }

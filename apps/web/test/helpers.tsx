@@ -22,8 +22,12 @@ export function mediumLayout() {
  * before the app loads, so the list starts with those notes (and, side by
  * side, the newest one is open).
  */
-export async function signedIn({ path = '/', seed }: { path?: string; seed?: (server: TestServer) => Promise<void> } = {}) {
-  const server = await startServer()
+export async function signedIn({
+  path = '/',
+  seed,
+  resendUrl,
+}: { path?: string; seed?: (server: TestServer) => Promise<void>; resendUrl?: string } = {}) {
+  const server = await startServer({ ...(resendUrl && { resendUrl }) })
   const { username, password } = await createOwner(server)
   // The other client (curl, a phone) signs in too, for edits from "another device".
   await server.api('POST', '/auth/login', { username, password, client: 'web' })

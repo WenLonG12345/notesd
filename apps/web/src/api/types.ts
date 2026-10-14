@@ -67,3 +67,6 @@ export type ErrorBody = {
   field?: string
   current?: Note
 }
+
+/** The server's Resend settings for emailing notes; the key itself is never sent back. */
+export type EmailSettings = { configured: boolean; from: string; keyHint: string }

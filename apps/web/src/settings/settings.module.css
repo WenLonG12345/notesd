@@ -206,3 +206,18 @@
     grid-template-columns: 1fr;
   }
 }
+
+.email {
+  justify-content: flex-start;
+  gap: 14px;
+}
+
+.email a {
+  color: var(--link);
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

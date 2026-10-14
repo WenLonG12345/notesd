@@ -1,5 +1,6 @@
 import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
+import { resetEmailSettings } from '../src/notes/email-settings'
 import { timing } from '../src/notes/saver'
 import { PHONE, WIDE } from '../src/ui/media'
 
@@ -66,6 +67,7 @@ document.addEventListener('keydown', (e) => {
 
 afterEach(() => {
   cleanup()
+  resetEmailSettings()
   globalThis.layout = 'wide'
   localStorage.clear()
   window.history.replaceState(null, '', '/')

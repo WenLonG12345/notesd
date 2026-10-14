@@ -183,6 +183,17 @@ export class NoteSaver {
     await this.inflight
   }
 
+  /**
+   * Saves now; then the server's revision of exactly what the editor shows,
+   * or null if the server doesn't have it (offline, a conflict, a new note
+   * nobody typed into).
+   */
+  async savedRevision(): Promise<number | null> {
+    await this.flush()
+    if (!this.created || this.dirty || this.pending || this.problem || this.waitingForAuth) return null
+    return this.revision
+  }
+
   /** Retry after a failure, now. */
   retryNow() {
     clearTimeout(this.retryTimer)

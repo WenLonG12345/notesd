@@ -9,6 +9,7 @@ import { Button } from '../ui/button'
 import { ComposeIcon, TrashIcon } from '../ui/icons'
 import { StatusPill } from '../ui/status-pill'
 import type { NoteSaver } from './saver'
+import { ShareButton } from './share'
 import { useNotes } from './store'
 import { tagKey } from './tags'
 import styles from './note-pane.module.css'
@@ -240,6 +241,7 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
         ) : (
           <div className={styles.tools} role="toolbar" aria-label="Formatting">
             <DeleteButton onClick={onDelete} />
+            <ShareButton saver={saver} mobile={false} />
             <span className={styles.sep} aria-hidden="true" />
             <StylesButton editor={editor} id={stylesId} open={stylesOpen} onToggle={toggleStyles} />
             <MarkTools editor={editor} />
@@ -250,6 +252,7 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
         )}
         <span className={styles.spacer} />
         <StatusPill state={snap.state} />
+        {mobile && <ShareButton saver={saver} mobile />}
         {mobile && <DeleteButton onClick={onDelete} mobile />}
       </div>
 

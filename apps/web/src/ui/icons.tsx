@@ -89,3 +89,12 @@ export function HashIcon({ size = 14 }: Props) {
     </svg>
   )
 }
+
+export function ShareIcon({ size = 16 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 1.8v8.2M5 4.8l3-3 3 3" />
+      <path d="M4.5 7.5H3.5v6h9v-6h-1" />
+    </svg>
+  )
+}

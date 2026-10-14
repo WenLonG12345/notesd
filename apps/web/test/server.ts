@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inject, onTestFinished } from 'vitest'
@@ -24,9 +26,10 @@ const nodeFetch = globalThis.fetch
  * Starts a real notesd on a free port with an empty data dir and points
  * the app's fetch at it, with a cookie jar standing in for the browser's.
  */
-export async function startServer(): Promise<TestServer> {
+export async function startServer({ resendUrl }: { resendUrl?: string } = {}): Promise<TestServer> {
   const dataDir = mkdtempSync(join(tmpdir(), 'notes-data-'))
-  const proc = spawn(inject('serverBin'), ['--data-dir', dataDir, '--listen', '127.0.0.1:0'])
+  const args = ['--data-dir', dataDir, '--listen', '127.0.0.1:0', ...(resendUrl ? ['--resend-url', resendUrl] : [])]
+  const proc = spawn(inject('serverBin'), args)
   const { url, setupToken } = await readStartup(proc)
 
   const browser = cookieFetch(url)
@@ -72,6 +75,37 @@ export async function startServer(): Promise<TestServer> {
     await server.stop()
   })
   return server
+}
+
+export type FakeResend = {
+  url: string
+  /** Bodies of accepted sends. */
+  sent: { from: string; to: string[]; subject: string; html: string; text: string }[]
+  /** When set, sends fail with this status and message, as Resend's would. */
+  refuse: { status: number; message: string } | null
+}
+
+/** Stands in for Resend's API: POST /emails. */
+export async function startFakeResend(): Promise<FakeResend> {
+  const fake: FakeResend = { url: '', sent: [], refuse: null }
+  const srv = createServer((req, res) => {
+    let raw = ''
+    req.on('data', (c: Buffer) => (raw += c.toString()))
+    req.on('end', () => {
+      res.setHeader('Content-Type', 'application/json')
+      if (fake.refuse) {
+        res.statusCode = fake.refuse.status
+        res.end(JSON.stringify({ statusCode: fake.refuse.status, name: 'validation_error', message: fake.refuse.message }))
+        return
+      }
+      fake.sent.push(JSON.parse(raw) as FakeResend['sent'][number])
+      res.end(JSON.stringify({ id: `email-${fake.sent.length}` }))
+    })
+  })
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r))
+  fake.url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`
+  onTestFinished(() => new Promise<void>((r) => srv.close(() => r())))
+  return fake
 }
 
 /** Creates the owner account through the API, as another device would. */

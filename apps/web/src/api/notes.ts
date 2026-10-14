@@ -32,5 +32,8 @@ export const notes = {
       undefined,
       { signal },
     ),
+  /** Emails the server's copy, which must be at revision (409 stale_revision otherwise). */
+  email: (id: string, to: string[], revision: number) =>
+    request<{ id: string }>('POST', `${path(id)}/email`, { to, revision }),
   tags: (signal?: AbortSignal) => request<{ tags: TagCount[] }>('GET', '/tags', undefined, { ...(signal && { signal }) }),
 }
