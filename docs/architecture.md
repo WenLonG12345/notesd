@@ -1,4 +1,4 @@
-# Notes — Architecture Specification
+# notesd — Architecture Specification
 
 ## 1. Overview
 
@@ -424,7 +424,7 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 V1 is a single-user installation: one owner account, signed in from multiple devices, with no sharing, authorization rules or multi-tenant isolation.
 
 - **Credentials:** username and password, hashed with Argon2id (parameters encoded in the hash so they can be raised later); never stored in plaintext. Password changes are supported and sign out every other session. Failed logins are rate-limited (10 per 15 minutes per client address).
-- **First run:** while no owner exists, the server logs a one-time setup token at startup; creating the account through the web onboarding requires it. The alternative, `notes-server create-owner`, needs shell access to the data directory. Either way an unauthenticated stranger cannot claim a fresh instance.
+- **First run:** while no owner exists, the server logs a one-time setup token at startup; creating the account through the web onboarding requires it. The alternative, `notesd create-owner`, needs shell access to the data directory. Either way an unauthenticated stranger cannot claim a fresh instance.
 - **Web sessions:** an HttpOnly, SameSite=Lax cookie (`Secure` and `__Host-` prefixed when `--public-url` is https) with a 30-day sliding expiry, plus a CSRF token the web app keeps only in memory and sends as `X-CSRF-Token` on every mutation; cross-origin `Origin` headers are rejected.
 - **Mobile sessions:** a one-hour access token and a 180-day sliding refresh token, sent as bearer tokens and kept in the iOS Keychain or Android Keystore-backed storage. Refresh tokens are not rotated, so a refresh whose response is lost can be retried; revocation deletes the session. Only token hashes are stored server-side. Session expiry affects sync only, never access to local notes.
 - **Transport:** HTTPS for any remote access; TLS may terminate at any common reverse proxy. Private-network and VPN-only installations are supported.
@@ -437,7 +437,7 @@ Production needs one executable, a writable data directory and an open HTTP port
 ### 11.1 Running the server
 
 ```text
-notes-server
+notesd
 data/
     notes.db
     notes.db-wal   # runtime file, may not exist
@@ -445,10 +445,10 @@ data/
 ```
 
 ```bash
-./notes-server --data-dir /var/lib/notes --listen 127.0.0.1:8080
+./notesd --data-dir /var/lib/notesd --listen 127.0.0.1:8080
 ```
 
-Configuration is flags and environment variables (`NOTES_DATA_DIR`, `NOTES_LISTEN`, `NOTES_PUBLIC_URL`, `NOTES_LOG_LEVEL`, `NOTES_LOG_FORMAT`, `NOTES_SETUP_TOKEN`); a config file is not planned unless the option count grows. Subcommands: `create-owner`, `reset-password`, `reindex` (rebuild the search index), `check` (integrity check), `version`; `backup` is still to be built (§11.4). Targets: Linux x86-64 and ARM64 (including Raspberry Pi 5), small VPS installs and home servers. Docker images are optional.
+Configuration is flags and environment variables (`NOTESD_DATA_DIR`, `NOTESD_LISTEN`, `NOTESD_PUBLIC_URL`, `NOTESD_LOG_LEVEL`, `NOTESD_LOG_FORMAT`, `NOTESD_SETUP_TOKEN`); a config file is not planned unless the option count grows. Subcommands: `create-owner`, `reset-password`, `reindex` (rebuild the search index), `check` (integrity check), `version`; `backup` is still to be built (§11.4). Targets: Linux x86-64 and ARM64 (including Raspberry Pi 5), small VPS installs and home servers. Docker images are optional.
 
 WAL mode is enabled with a busy timeout for brief write contention. The development toolchain and build tasks are defined in the root `mise.toml` (`mise run build` produces the binary with the web app embedded).
 
@@ -458,17 +458,17 @@ systemd is recommended. The server shuts down gracefully on termination signals 
 
 ```ini
 [Unit]
-Description=Notes Server
+Description=notesd
 After=network.target
 
 [Service]
 Type=simple
-User=notes
-Group=notes
-ExecStart=/usr/local/bin/notes-server --data-dir /var/lib/notes
+User=notesd
+Group=notesd
+ExecStart=/usr/local/bin/notesd --data-dir /var/lib/notesd
 Restart=on-failure
 RestartSec=5
-StateDirectory=notes
+StateDirectory=notesd
 
 [Install]
 WantedBy=multi-user.target
@@ -485,7 +485,7 @@ WantedBy=multi-user.target
 
 ### 11.4 Backups and disaster recovery
 
-Client replicas are not a backup. `notes-server backup /path/to/backup.db` uses SQLite's online backup API or an equivalent consistent snapshot; copying the live file under WAL is not safe. Backups plug into restic, Borg, systemd timers, NAS jobs or object storage, and off-device copies are strongly recommended.
+Client replicas are not a backup. `notesd backup /path/to/backup.db` uses SQLite's online backup API or an equivalent consistent snapshot; copying the live file under WAL is not safe. Backups plug into restic, Borg, systemd timers, NAS jobs or object storage, and off-device copies are strongly recommended.
 
 Restoring an older backup leaves clients with newer revisions and cursors than the server. The server therefore keeps a persistent **sync generation ID**, which clients store with their cursor. When it changes, clients run a full reconciliation instead of incremental sync, preserving unsynced edits and never treating missing notes as deleted. Status: the generation exists in `sync_state`, is returned on every sync page and is checked when sent back; changing it on restore (and the `backup` command itself) is still to be built and tested before backup restoration is called reliable.
 
@@ -541,7 +541,7 @@ A monorepo, because server and clients share protocol definitions, test fixtures
 
 ```text
 notes/
-├── server/           cmd/notes-server, internal/{api,auth,database,notes,sync,search,web}, migrations, go.mod
+├── server/           cmd/notesd, internal/{api,auth,database,notes,sync,search,web}, migrations, go.mod
 ├── apps/
 │   ├── ios/          App, Editor, Database, Search, Sync
 │   ├── android/      core/ (document model, Markdown codec, database, search, API client, sync; plain Kotlin), app/ (Compose UI, editor, accounts, WorkManager)

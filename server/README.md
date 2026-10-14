@@ -1,4 +1,4 @@
-# notes-server
+# notesd
 
 The backend from [docs/architecture.md](../docs/architecture.md): one Go binary
 serving the JSON API, the sync feed, full-text search and the embedded web
@@ -14,7 +14,7 @@ cross-compiling for a Raspberry Pi is a plain `GOARCH` switch.
 | Task (`mise run …`) | What it does |
 | --- | --- |
 | `build:web` | `pnpm build` in `apps/web`, writing `internal/web/dist` |
-| `build` | `build:web`, then `./bin/notes-server` |
+| `build` | `build:web`, then `./bin/notesd` |
 | `release` | `build:web`, then linux/amd64 and linux/arm64 binaries in `./bin` |
 | `test:go` | the Go tests with the race detector |
 | `lint:go` | golangci-lint (`.golangci.yml`) |
@@ -30,7 +30,7 @@ root README.
 ## Run
 
 ```bash
-./bin/notes-server --data-dir /var/lib/notes --listen 127.0.0.1:8080 \
+./bin/notesd --data-dir /var/lib/notesd --listen 127.0.0.1:8080 \
     --public-url https://notes.example.com
 ```
 
@@ -40,7 +40,7 @@ account. Alternatively create it from the shell, which needs access to the
 data directory and so is trusted:
 
 ```bash
-NOTES_PASSWORD='…' notes-server create-owner --username me --data-dir /var/lib/notes
+NOTESD_PASSWORD='…' notesd create-owner --username me --data-dir /var/lib/notesd
 ```
 
 | Command | Purpose |
@@ -54,14 +54,14 @@ NOTES_PASSWORD='…' notes-server create-owner --username me --data-dir /var/lib
 
 | Flag | Env | Default |
 | --- | --- | --- |
-| `--data-dir` | `NOTES_DATA_DIR` | `./data` |
-| `--listen` | `NOTES_LISTEN` | `127.0.0.1:8080` |
-| `--public-url` | `NOTES_PUBLIC_URL` | unset; an `https://` URL makes cookies `Secure` |
-| `--log-level` | `NOTES_LOG_LEVEL` | `info` |
-| `--log-format` | `NOTES_LOG_FORMAT` | `text` (`json` also available) |
-| `--setup-token` | `NOTES_SETUP_TOKEN` | generated and logged |
+| `--data-dir` | `NOTESD_DATA_DIR` | `./data` |
+| `--listen` | `NOTESD_LISTEN` | `127.0.0.1:8080` |
+| `--public-url` | `NOTESD_PUBLIC_URL` | unset; an `https://` URL makes cookies `Secure` |
+| `--log-level` | `NOTESD_LOG_LEVEL` | `info` |
+| `--log-format` | `NOTESD_LOG_FORMAT` | `text` (`json` also available) |
+| `--setup-token` | `NOTESD_SETUP_TOKEN` | generated and logged |
 
-Passwords for CLI commands come from `NOTES_PASSWORD` or the first line of
+Passwords for CLI commands come from `NOTESD_PASSWORD` or the first line of
 stdin. On memory-constrained hosts, set `GOMEMLIMIT` (e.g. `GOMEMLIMIT=64MiB`).
 
 ## API
@@ -129,7 +129,7 @@ note text with matches wrapped in `<mark>`.
 ## Layout
 
 ```text
-cmd/notes-server   CLI, configuration, graceful shutdown
+cmd/notesd   CLI, configuration, graceful shutdown
 internal/database  connection pools, pragmas, migration runner, integrity check
 internal/notes     create/update/delete, revisions, tombstones, idempotency, listing
 internal/sync      change feed

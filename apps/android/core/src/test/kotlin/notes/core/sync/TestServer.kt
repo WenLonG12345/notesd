@@ -10,12 +10,12 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /**
- * A real notes-server (built by the buildNotesServer Gradle task) on a free
+ * A real notesd (built by the buildNotesd Gradle task) on a free
  * port with an empty data dir, its owner account already created. Restarts
  * keep the port, so clients keep their URL.
  */
 class TestServer : AutoCloseable {
-    val dataDir: File = Files.createTempDirectory("notes-server").toFile()
+    val dataDir: File = Files.createTempDirectory("notesd").toFile()
     private var process: Process? = null
     private var listen = "127.0.0.1:0"
     lateinit var url: HttpUrl
@@ -39,7 +39,7 @@ class TestServer : AutoCloseable {
         var token: String? = null
         val log = StringBuilder()
         while (true) {
-            val line = reader.readLine() ?: error("notes-server exited:\n$log")
+            val line = reader.readLine() ?: error("notesd exited:\n$log")
             log.appendLine(line)
             Regex("setup_token=(\\S+)").find(line)?.let { token = it.groupValues[1] }
             val addr = Regex("listen=(\\S+)").find(line)?.groupValues?.get(1) ?: continue

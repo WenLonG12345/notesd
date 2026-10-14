@@ -90,7 +90,7 @@ class ApiClientTest {
     }
 
     @Test
-    fun `something that isn't notes-server`() = runBlocking<Unit> {
+    fun `something that isn't notesd`() = runBlocking<Unit> {
         server.enqueue(MockResponse.Builder().code(200).body("<html>router</html>").build())
         assertEquals(ApiClient.UNEXPECTED_RESPONSE, assertIs<ApiResult.Rejected>(api.status()).error)
     }

@@ -13,8 +13,10 @@
   box-shadow: inset 0 -5px 0 var(--accent-deep);
 }
 
+/* Lowercase and monospaced, like the daemon it's named after. */
 .word {
-  font: 400 22px/1 var(--font-serif);
+  font: 500 20px/1 var(--font-mono);
+  letter-spacing: -0.02em;
 }
 
 .lg .mark {
@@ -25,5 +27,5 @@
 }
 
 .lg .word {
-  font-size: 24px;
+  font-size: 22px;
 }

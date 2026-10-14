@@ -57,6 +57,15 @@ object Type {
         letterSpacing = 0.05.em
     )
     val mono = TextStyle(fontFamily = Mono, fontSize = 14.sp, lineHeight = 20.sp)
+
+    /** The wordmark: lowercase and monospaced, like the daemon it's named after. */
+    val brand = TextStyle(
+        fontFamily = Mono,
+        fontSize = 20.sp,
+        lineHeight = 24.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = (-0.02).em
+    )
 }
 
 /** Material's slots, for the few Material components kept (dialogs, menus, text fields). */

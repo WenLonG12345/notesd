@@ -187,7 +187,7 @@ private fun StepContent(step: Step, vm: OnboardingViewModel, onSkip: (() -> Unit
         Step.Server -> {
             Kicker("Welcome")
             Heading("Connect to your server", style = Type.display.copy(fontSize = 32.sp, lineHeight = 34.sp))
-            Lede("Notes keeps your writing on a server you run yourself, and in sync on every device you sign in on.")
+            Lede("notesd keeps your writing on a server you run yourself, and in sync on every device you sign in on.")
             Input(
                 vm,
                 Field.Server,

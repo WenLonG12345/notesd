@@ -21,7 +21,7 @@ export type TestServer = {
 const nodeFetch = globalThis.fetch
 
 /**
- * Starts a real notes-server on a free port with an empty data dir and points
+ * Starts a real notesd on a free port with an empty data dir and points
  * the app's fetch at it, with a cookie jar standing in for the browser's.
  */
 export async function startServer(): Promise<TestServer> {
@@ -97,7 +97,7 @@ function readStartup(proc: ChildProcess): Promise<{ url: string; setupToken: str
     }
     proc.stdout?.on('data', onData)
     proc.stderr?.on('data', onData)
-    proc.once('exit', (code) => reject(new Error(`notes-server exited (${code}):\n${log}`)))
+    proc.once('exit', (code) => reject(new Error(`notesd exited (${code}):\n${log}`)))
   })
 }
 

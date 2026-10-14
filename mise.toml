@@ -34,7 +34,7 @@ run = "pnpm dev"
 [tasks."dev:reset"]
 description = "Delete the dev database; the next dev:server run seeds it again"
 dir = "server"
-run = "rm -rf ${NOTES_DATA_DIR:-data}"
+run = "rm -rf ${NOTESD_DATA_DIR:-data}"
 
 [tasks.check]
 description = "Lint, typecheck and test everything"
@@ -96,10 +96,10 @@ depends = ["install"]
 run = "pnpm build"
 
 [tasks.build]
-description = "server/bin/notes-server with the web app embedded"
+description = "server/bin/notesd with the web app embedded"
 dir = "server"
 depends = ["build:web"]
-run = "go build -trimpath -ldflags \"-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o bin/notes-server ./cmd/notes-server"
+run = "go build -trimpath -ldflags \"-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o bin/notesd ./cmd/notesd"
 
 [tasks.release]
 description = "linux/amd64 and linux/arm64 binaries in server/bin"
@@ -108,7 +108,7 @@ depends = ["build:web"]
 run = """
 ldflags="-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
 for arch in amd64 arm64; do
-  GOOS=linux GOARCH=$arch go build -trimpath -ldflags "$ldflags" -o bin/notes-server-linux-$arch ./cmd/notes-server
+  GOOS=linux GOARCH=$arch go build -trimpath -ldflags "$ldflags" -o bin/notesd-linux-$arch ./cmd/notesd
 done
 """
 

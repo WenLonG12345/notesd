@@ -99,7 +99,7 @@ fun BrandMark(size: Dp = 22.dp) {
 fun Brand(large: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         BrandMark(if (large) 26.dp else 22.dp)
-        Text("Notes", style = Type.title.copy(fontSize = if (large) 26.sp else 22.sp), color = LocalTokens.current.ink)
+        Text("notesd", style = Type.brand.copy(fontSize = if (large) 24.sp else 20.sp), color = LocalTokens.current.ink)
     }
 }
 

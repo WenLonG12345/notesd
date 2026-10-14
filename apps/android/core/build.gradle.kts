@@ -24,12 +24,12 @@ dependencies {
     testImplementation(libs.mockwebserver)
 }
 
-// The real notes-server, built once per change to its sources; sync tests start a fresh instance per test.
+// The real notesd, built once per change to its sources; sync tests start a fresh instance per test.
 val serverDir = rootProject.file("../../server")
-val serverBin = layout.buildDirectory.file("notes-server/notes-server")
-val buildNotesServer = tasks.register<Exec>("buildNotesServer") {
+val serverBin = layout.buildDirectory.file("notesd/notesd")
+val buildNotesd = tasks.register<Exec>("buildNotesd") {
     workingDir = serverDir
-    commandLine("go", "build", "-o", serverBin.get().asFile.absolutePath, "./cmd/notes-server")
+    commandLine("go", "build", "-o", serverBin.get().asFile.absolutePath, "./cmd/notesd")
     inputs.files(fileTree(serverDir) { include("**/*.go", "**/*.sql", "go.mod", "go.sum") })
         .withPropertyName("serverSources")
         .withPathSensitivity(PathSensitivity.RELATIVE)
@@ -39,7 +39,7 @@ val buildNotesServer = tasks.register<Exec>("buildNotesServer") {
 tasks.test {
     // A hung server or sync loop fails the run instead of stalling it.
     timeout.set(Duration.ofMinutes(5))
-    dependsOn(buildNotesServer)
+    dependsOn(buildNotesd)
     systemProperty("notes.serverBin", serverBin.get().asFile.absolutePath)
     // More seeds for RandomSyncTest: ./gradlew :core:test -Pnotes.seeds=1,2,3
     providers.gradleProperty("notes.seeds").orNull?.let { systemProperty("notes.seeds", it) }

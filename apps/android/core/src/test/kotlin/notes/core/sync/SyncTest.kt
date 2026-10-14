@@ -11,7 +11,7 @@ import kotlinx.coroutines.runBlocking
 import notes.core.db.NoteFilter
 import notes.core.db.SyncEvent
 
-/** §12.1 scenarios against a real notes-server, each device with its own database. */
+/** §12.1 scenarios against a real notesd, each device with its own database. */
 class SyncTest {
     private val server = TestServer()
     private val clients = ArrayList<TestClient>()

@@ -1,20 +1,20 @@
-// Command notes-server is the self-hosted notes backend: the JSON API, the
+// Command notesd is the self-hosted notes backend: the JSON API, the
 // sync endpoint, full-text search and the embedded web app, in one process
 // backed by one SQLite database.
 //
 // Usage:
 //
-//	notes-server [serve] [flags]          run the server (default)
-//	notes-server create-owner --username NAME
-//	notes-server reset-password
-//	notes-server reindex                  rebuild the search index
-//	notes-server check                    run an integrity check
-//	notes-server version
+//	notesd [serve] [flags]          run the server (default)
+//	notesd create-owner --username NAME
+//	notesd reset-password
+//	notesd reindex                  rebuild the search index
+//	notesd check                    run an integrity check
+//	notesd version
 //
-// Flags may also be set through environment variables: NOTES_DATA_DIR,
-// NOTES_LISTEN, NOTES_PUBLIC_URL, NOTES_LOG_LEVEL, NOTES_LOG_FORMAT,
-// NOTES_SETUP_TOKEN. Commands that take a password read it from
-// NOTES_PASSWORD or, failing that, from the first line of standard input.
+// Flags may also be set through environment variables: NOTESD_DATA_DIR,
+// NOTESD_LISTEN, NOTESD_PUBLIC_URL, NOTESD_LOG_LEVEL, NOTESD_LOG_FORMAT,
+// NOTESD_SETUP_TOKEN. Commands that take a password read it from
+// NOTESD_PASSWORD or, failing that, from the first line of standard input.
 package main
 
 import (
@@ -47,7 +47,7 @@ var version = "dev"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "notes-server:", err)
+		fmt.Fprintln(os.Stderr, "notesd:", err)
 		os.Exit(1)
 	}
 }
@@ -69,20 +69,20 @@ func run(args []string) error {
 	}
 
 	var o options
-	fs := flag.NewFlagSet("notes-server "+cmd, flag.ContinueOnError)
-	fs.StringVar(&o.dataDir, "data-dir", env("NOTES_DATA_DIR", "./data"), "directory holding notes.db")
+	fs := flag.NewFlagSet("notesd "+cmd, flag.ContinueOnError)
+	fs.StringVar(&o.dataDir, "data-dir", env("NOTESD_DATA_DIR", "./data"), "directory holding notes.db")
 	switch cmd {
 	case "serve":
-		fs.StringVar(&o.listen, "listen", env("NOTES_LISTEN", "127.0.0.1:8080"), "address to listen on")
-		fs.StringVar(&o.publicURL, "public-url", env("NOTES_PUBLIC_URL", ""), "externally visible URL, e.g. https://notes.example.com (enables Secure cookies when https)")
-		fs.StringVar(&o.logLevel, "log-level", env("NOTES_LOG_LEVEL", "info"), "debug, info, warn or error")
-		fs.StringVar(&o.logFormat, "log-format", env("NOTES_LOG_FORMAT", "text"), "text or json")
-		fs.StringVar(&o.setupToken, "setup-token", env("NOTES_SETUP_TOKEN", ""), "first-run setup token (generated and logged if empty)")
+		fs.StringVar(&o.listen, "listen", env("NOTESD_LISTEN", "127.0.0.1:8080"), "address to listen on")
+		fs.StringVar(&o.publicURL, "public-url", env("NOTESD_PUBLIC_URL", ""), "externally visible URL, e.g. https://notes.example.com (enables Secure cookies when https)")
+		fs.StringVar(&o.logLevel, "log-level", env("NOTESD_LOG_LEVEL", "info"), "debug, info, warn or error")
+		fs.StringVar(&o.logFormat, "log-format", env("NOTESD_LOG_FORMAT", "text"), "text or json")
+		fs.StringVar(&o.setupToken, "setup-token", env("NOTESD_SETUP_TOKEN", ""), "first-run setup token (generated and logged if empty)")
 	case "create-owner":
 		fs.StringVar(&o.username, "username", "", "owner username")
 	case "reset-password", "reindex", "check":
 	case "version":
-		fmt.Println("notes-server", version)
+		fmt.Println("notesd", version)
 		return nil
 	case "help", "-h", "--help":
 		fmt.Fprintln(os.Stderr, "commands: serve, create-owner, reset-password, reindex, check, version")
@@ -182,7 +182,7 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 	}
 	if token != "" {
 		log.Warn("no owner account yet: open the web app and enter this setup token, "+
-			"or run `notes-server create-owner --username NAME`",
+			"or run `notesd create-owner --username NAME`",
 			"setup_token", token)
 	}
 
@@ -199,7 +199,7 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 	if err != nil {
 		return err
 	}
-	log.Info("notes-server started", "version", version, "listen", ln.Addr().String(),
+	log.Info("notesd started", "version", version, "listen", ln.Addr().String(),
 		"database", db.Path, "schema_version", database.LatestVersion())
 
 	errc := make(chan error, 1)
@@ -237,10 +237,10 @@ func newLogger(level, format string) (*slog.Logger, error) {
 }
 
 func readPassword() (string, error) {
-	if pw, ok := os.LookupEnv("NOTES_PASSWORD"); ok {
+	if pw, ok := os.LookupEnv("NOTESD_PASSWORD"); ok {
 		return pw, nil
 	}
-	fmt.Fprint(os.Stderr, "password (input is not hidden; prefer NOTES_PASSWORD or piping): ")
+	fmt.Fprint(os.Stderr, "password (input is not hidden; prefer NOTESD_PASSWORD or piping): ")
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil && !(errors.Is(err, io.EOF) && line != "") {
 		return "", fmt.Errorf("read password: %w", err)

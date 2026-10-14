@@ -14,8 +14,8 @@ declare module 'vitest' {
 // instance of it per test.
 export default function setup(project: TestProject) {
   const dir = mkdtempSync(join(tmpdir(), 'notes-web-test-'))
-  const bin = join(dir, 'notes-server')
-  execFileSync('go', ['build', '-o', bin, './cmd/notes-server'], {
+  const bin = join(dir, 'notesd')
+  execFileSync('go', ['build', '-o', bin, './cmd/notesd'], {
     cwd: resolve(import.meta.dirname, '../../../server'),
     stdio: 'inherit',
   })

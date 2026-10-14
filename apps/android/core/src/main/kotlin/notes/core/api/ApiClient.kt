@@ -19,7 +19,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
- * notes-server's JSON API (server/README.md) for one server. Authenticated
+ * notesd's JSON API (server/README.md) for one server. Authenticated
  * calls send the device's bearer token, refresh it shortly before it expires,
  * and on a 401 refresh once and resend the identical request, so an
  * operationId inside it stays the same. Only one refresh runs at a time.
@@ -182,7 +182,7 @@ class ApiClient(
     private fun noteUrl(id: String) = url("api/v1/notes").newBuilder().addPathSegment(id).build()
 
     companion object {
-        /** A 2xx answer that isn't the expected JSON: something other than notes-server is at this address. */
+        /** A 2xx answer that isn't the expected JSON: something other than notesd is at this address. */
         const val UNEXPECTED_RESPONSE = "unexpected_response"
 
         private const val REFRESH_EARLY_MS = 60_000L

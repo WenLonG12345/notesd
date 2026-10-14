@@ -167,7 +167,7 @@ fun SettingsScreen(graph: AppGraph, onBack: () -> Unit, onConnect: () -> Unit, o
                     ) {
                         BrandMark(24.dp)
                         Spacer(Modifier.width(12.dp))
-                        Text("Notes", style = Type.title, color = t.ink, modifier = Modifier.weight(1f))
+                        Text("notesd", style = Type.brand, color = t.ink, modifier = Modifier.weight(1f))
                         Text(
                             "Version ${BuildConfig.VERSION_NAME}",
                             style = Type.mono.copy(fontSize = 12.sp),

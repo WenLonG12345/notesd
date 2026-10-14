@@ -185,7 +185,7 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
       </form>
       <div className={styles.forgot}>
         <span className={styles.muted}>Forgot it? Reset it on the server:</span>
-        <Command command="notes-server reset-password" tone="dark" />
+        <Command command="notesd reset-password" tone="dark" />
       </div>
     </Surface>
   )

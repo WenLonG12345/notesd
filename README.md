@@ -1,4 +1,4 @@
-# Notes
+# notesd
 
 A self-hosted, offline-first notes app: one Go binary with SQLite on the
 server, native iOS and Android apps that work fully offline, and a web app
@@ -22,14 +22,14 @@ mise`): Go, Node, pnpm, watchexec and golangci-lint, all from `mise.toml`.
 mise install        # toolchain
 mise run dev        # Go server (rebuilt on change) + Vite: http://localhost:5173
 mise run check      # lint, typecheck and test, Go and web
-mise run build      # server/bin/notes-server with the web app embedded
+mise run build      # server/bin/notesd with the web app embedded
 mise tasks          # everything else
 ```
 
 `mise run dev` keeps its database in `server/data`. On a fresh data dir it
 creates the owner `dev` / `devpassword`, so there's no onboarding;
-`mise run dev:reset` deletes it. `NOTES_DATA_DIR`, `NOTES_LISTEN` and
-`NOTES_SERVER` (Vite's proxy target) override the defaults, e.g. to run a
+`mise run dev:reset` deletes it. `NOTESD_DATA_DIR`, `NOTESD_LISTEN` and
+`NOTESD_SERVER` (Vite's proxy target) override the defaults, e.g. to run a
 second copy next to the first.
 
 The repo root is a pnpm workspace (`apps/web` for now), with one lockfile.

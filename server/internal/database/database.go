@@ -221,7 +221,7 @@ func migrate(ctx context.Context, w *sql.DB) error {
 		return fmt.Errorf("read schema version: %w", err)
 	}
 	if latest := len(ms); current > latest {
-		return fmt.Errorf("database schema version %d is newer than this binary supports (%d); upgrade notes-server", current, latest)
+		return fmt.Errorf("database schema version %d is newer than this binary supports (%d); upgrade notesd", current, latest)
 	}
 	for _, m := range ms[current:] {
 		err := runTx(ctx, w, nil, func(tx *sql.Tx) error {

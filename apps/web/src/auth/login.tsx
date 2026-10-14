@@ -89,7 +89,7 @@ export function LoginForm({ heading = 'Welcome back.', notice, username: fixedUs
       </Button>
       <div className={styles.help}>
         <span>Forgot your password? Reset it on the server:</span>
-        <Command command="notes-server reset-password" />
+        <Command command="notesd reset-password" />
       </div>
     </form>
   )

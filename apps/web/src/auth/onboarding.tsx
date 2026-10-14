@@ -116,7 +116,7 @@ export function Onboarding() {
             A quiet place for everything you write.
           </h1>
           <p className={styles.lede}>
-            Notes runs on your own server. What you write stays there, and every device you sign in on stays in
+            notesd runs on your own server. What you write stays there, and every device you sign in on stays in
             sync. This server has no account yet, so let’s create yours.
           </p>
           <Button variant="solid" onClick={() => go('token')}>
@@ -158,7 +158,7 @@ export function Onboarding() {
               error={tokenError}
               hint={
                 <>
-                  No access to the log? Run <code>notes-server create-owner --username NAME</code> on the server instead.
+                  No access to the log? Run <code>notesd create-owner --username NAME</code> on the server instead.
                 </>
               }
             />

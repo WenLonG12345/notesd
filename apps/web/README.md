@@ -1,6 +1,6 @@
-# Notes web app
+# notesd web app
 
-The browser client for [notes-server](../../server/README.md): React 19,
+The browser client for [notesd](../../server/README.md): React 19,
 TypeScript, Vite 8 and Tiptap 3. It builds into the server's
 `internal/web/dist` and is embedded in the Go binary, so a deployment is just
 that one binary; there is no separate frontend process. The plan it follows
@@ -13,13 +13,13 @@ From the repo root, `mise run dev` starts the API server (rebuilt on Go
 changes) and Vite at http://localhost:5173. See the root README.
 
 Vite proxies `/api`, `/healthz` and `/readyz` to `http://127.0.0.1:8080`.
-Set `NOTES_SERVER` to point it elsewhere. The proxy keeps the browser's
+Set `NOTESD_SERVER` to point it elsewhere. The proxy keeps the browser's
 `Host` (`changeOrigin: false`). If you change that, every save fails with
 403: the server rejects a mutation whose `Origin` host doesn't match `Host`.
 
 A fresh dev database gets the owner `dev` / `devpassword`. To test the real
 first-run onboarding, run the server by hand on an empty data dir
-(`go run ./cmd/notes-server --data-dir /tmp/empty` in `server/`); it logs a
+(`go run ./cmd/notesd --data-dir /tmp/empty` in `server/`); it logs a
 setup token.
 
 ## Checks
@@ -33,7 +33,7 @@ pnpm test         # Vitest
 ```
 
 Most tests are integration tests: they render the whole `<App/>` in jsdom
-against a real notes-server. The suite builds the server once per run
+against a real notesd. The suite builds the server once per run
 (`go build`, so Go must be on `PATH`), and each test starts its own instance
 with an empty data directory. Conflicts are tested the real way, by editing
 the same note through the API as a second client. A few things jsdom can't
