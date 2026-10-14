@@ -15,7 +15,7 @@ cross-compiling for a Raspberry Pi is a plain `GOARCH` switch.
 | --- | --- |
 | `build:web` | `pnpm build` in `apps/web`, writing `internal/web/dist` |
 | `build` | `build:web`, then `./bin/notesd` |
-| `release` | `build:web`, then linux/amd64 and linux/arm64 binaries in `./bin` |
+| `release` | `build:web`, then linux/amd64, linux/arm64 and darwin/arm64 binaries in `./bin` |
 | `test:go` | the Go tests with the race detector |
 | `lint:go` | golangci-lint (`.golangci.yml`) |
 | `clean` | removes `./bin` |

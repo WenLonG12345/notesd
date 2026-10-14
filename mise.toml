@@ -102,13 +102,14 @@ depends = ["build:web"]
 run = "go build -trimpath -ldflags \"-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)\" -o bin/notesd ./cmd/notesd"
 
 [tasks.release]
-description = "linux/amd64 and linux/arm64 binaries in server/bin"
+description = "linux/amd64, linux/arm64 and darwin/arm64 binaries in server/bin"
 dir = "server"
 depends = ["build:web"]
 run = """
 ldflags="-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
-for arch in amd64 arm64; do
-  GOOS=linux GOARCH=$arch go build -trimpath -ldflags "$ldflags" -o bin/notesd-linux-$arch ./cmd/notesd
+for target in linux/amd64 linux/arm64 darwin/arm64; do
+  os=${target%/*} arch=${target#*/}
+  GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$ldflags" -o bin/notesd-$os-$arch ./cmd/notesd
 done
 """
 
