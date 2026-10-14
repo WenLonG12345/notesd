@@ -48,6 +48,8 @@ data class FormatState(
     val inTitle: Boolean = true,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
+    /** Text is selected: the bar shows marks only. */
+    val selecting: Boolean = false,
     /** The tag the cursor is in, if any. */
     val tag: TagAtCursor? = null
 )
@@ -339,6 +341,7 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
                 inTitle = k == 0,
                 canUndo = undoStack.canUndo,
                 canRedo = undoStack.canRedo,
+                selecting = start != end,
                 tag = if (start == end) tagAt(t, start) else null
             )
         )

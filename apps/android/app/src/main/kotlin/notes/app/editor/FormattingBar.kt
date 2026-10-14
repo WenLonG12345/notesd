@@ -1,6 +1,9 @@
 package notes.app.editor
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -37,6 +40,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import notes.app.ui.Icons
+import notes.app.ui.LocalReduceMotion
 import notes.app.ui.LocalTokens
 import notes.app.ui.Sans
 import notes.app.ui.Serif
@@ -46,74 +50,92 @@ import notes.app.ui.pressScale
 import notes.core.doc.ListKind
 
 /**
- * The formatting bar on top of the keyboard. Every button reflects the state at
- * the selection and is announced as on or off. Glyphs follow the web toolbar:
- * a bold B, a serif italic I, serif heading sizes.
+ * The formatting bar on top of the keyboard. While writing it offers blocks
+ * (indent only where it applies); with text selected, marks and link, so the
+ * row stays short. Every button reflects the state at the selection and is
+ * announced as on or off. Glyphs follow the web toolbar: a bold B, a serif
+ * italic I, serif heading sizes.
  */
 @Composable
 fun FormattingBar(state: FormatState, editor: () -> NoteEditText?, onLink: () -> Unit, modifier: Modifier = Modifier) {
     val t = LocalTokens.current
-    val body = !state.inTitle
-    Row(
-        modifier
+    val reduce = LocalReduceMotion.current
+    Crossfade(
+        targetState = state.selecting,
+        modifier = modifier
             .fillMaxWidth()
             .glass()
-            .hairline(t.hair, top = true)
-            .horizontalScroll(rememberScrollState())
-            .height(56.dp)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        Glyph(
-            "Bold",
-            "B",
-            TextStyle(fontFamily = Sans, fontWeight = FontWeight.Bold, fontSize = 17.sp),
-            state.bold,
-            body
+            .hairline(t.hair, top = true),
+        animationSpec = if (reduce) snap() else tween(150),
+        label = "bar"
+    ) { selecting ->
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .height(56.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            editor()?.toggleBold()
+            if (selecting) SelectionTools(state, editor, onLink) else WritingTools(state, editor)
         }
-        Glyph(
-            "Italic",
-            "I",
-            TextStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 21.sp),
-            state.italic,
-            body
-        ) {
-            editor()?.toggleItalic()
+    }
+}
+
+@Composable
+private fun WritingTools(state: FormatState, editor: () -> NoteEditText?) {
+    val body = !state.inTitle
+    for (level in 1..3) {
+        val style = when (level) {
+            1 -> TextStyle(fontFamily = Serif, fontSize = 21.sp)
+            2 -> TextStyle(fontFamily = Serif, fontSize = 18.sp)
+            else -> TextStyle(fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
         }
-        Glyph(
-            "Strikethrough",
-            "S",
-            TextStyle(fontFamily = Sans, fontSize = 17.sp, textDecoration = TextDecoration.LineThrough),
-            state.strike,
-            body
-        ) { editor()?.toggleStrike() }
-        Separator()
-        for (level in 1..3) {
-            val style = when (level) {
-                1 -> TextStyle(fontFamily = Serif, fontSize = 21.sp)
-                2 -> TextStyle(fontFamily = Serif, fontSize = 18.sp)
-                else -> TextStyle(fontFamily = Sans, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-            }
-            Glyph("Heading $level", "H$level", style, state.heading == level, body) { editor()?.toggleHeading(level) }
-        }
-        Separator()
-        Toggle("Bulleted list", Icons.Bullets, state.list == ListKind.Bullet, body) {
-            editor()?.toggleList(ListKind.Bullet)
-        }
-        Toggle("Numbered list", Icons.Numbers, state.list == ListKind.Ordered, body) {
-            editor()?.toggleList(ListKind.Ordered)
-        }
-        Toggle("Checklist", Icons.Checklist, state.list == ListKind.Task, body) { editor()?.toggleList(ListKind.Task) }
-        Toggle("Quote", Icons.Quote, state.quote, body) { editor()?.toggleQuote() }
+        Glyph("Heading $level", "H$level", style, state.heading == level, body) { editor()?.toggleHeading(level) }
+    }
+    Separator()
+    Toggle("Bulleted list", Icons.Bullets, state.list == ListKind.Bullet, body) {
+        editor()?.toggleList(ListKind.Bullet)
+    }
+    Toggle("Numbered list", Icons.Numbers, state.list == ListKind.Ordered, body) {
+        editor()?.toggleList(ListKind.Ordered)
+    }
+    Toggle("Checklist", Icons.Checklist, state.list == ListKind.Task, body) { editor()?.toggleList(ListKind.Task) }
+    Toggle("Quote", Icons.Quote, state.quote, body) { editor()?.toggleQuote() }
+    if (state.canIndent || state.canOutdent) {
         Separator()
         Action("Outdent", Icons.Outdent, state.canOutdent) { editor()?.outdent() }
         Action("Indent", Icons.Indent, state.canIndent) { editor()?.indent() }
-        Separator()
-        Toggle("Link", Icons.Link, state.link, body) { onLink() }
     }
+}
+
+@Composable
+private fun SelectionTools(state: FormatState, editor: () -> NoteEditText?, onLink: () -> Unit) {
+    val body = !state.inTitle
+    Glyph(
+        "Bold",
+        "B",
+        TextStyle(fontFamily = Sans, fontWeight = FontWeight.Bold, fontSize = 17.sp),
+        state.bold,
+        body
+    ) { editor()?.toggleBold() }
+    Glyph(
+        "Italic",
+        "I",
+        TextStyle(fontFamily = Serif, fontStyle = FontStyle.Italic, fontSize = 21.sp),
+        state.italic,
+        body
+    ) { editor()?.toggleItalic() }
+    Glyph(
+        "Strikethrough",
+        "S",
+        TextStyle(fontFamily = Sans, fontSize = 17.sp, textDecoration = TextDecoration.LineThrough),
+        state.strike,
+        body
+    ) { editor()?.toggleStrike() }
+    Separator()
+    Toggle("Link", Icons.Link, state.link, body) { onLink() }
 }
 
 @Composable
