@@ -139,8 +139,8 @@ class ScreenshotTest {
         graph.setOnboardingDismissed(true)
         seed()
         launch()
-        compose.waitUntilExactlyOneExists(hasContentDescription("Back"))
-        compose.onNode(hasContentDescription("Back")).performClick()
+        compose.waitUntilExactlyOneExists(hasContentDescription("Sidebar"))
+        compose.onNode(hasContentDescription("Sidebar")).performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription("Expand travel"))
         compose.onNode(hasContentDescription("Expand travel")).performClick()
         shoot("tags")
@@ -224,7 +224,7 @@ class ScreenshotTest {
     fun settings() {
         graph.setOnboardingDismissed(true)
         launch()
-        compose.onNode(hasContentDescription("Back")).performClick()
+        compose.onNode(hasContentDescription("Sidebar")).performClick()
         compose.onNode(hasContentDescription("Settings")).performClick()
         compose.waitUntilExactlyOneExists(hasText("Appearance", ignoreCase = true))
         shoot("settings")
@@ -239,7 +239,7 @@ class ScreenshotTest {
             )
         }
         launch()
-        compose.onNode(hasContentDescription("Back")).performClick()
+        compose.onNode(hasContentDescription("Sidebar")).performClick()
         compose.onNode(hasContentDescription("Settings")).performClick()
         compose.waitUntilExactlyOneExists(hasText("Appearance", ignoreCase = true))
         shoot("settings-signed-in")

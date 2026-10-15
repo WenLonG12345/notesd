@@ -154,15 +154,18 @@ class AppGraph(
     }
 }
 
-/** The list's filter in prefs: "untagged", or "tag:" + key + newline + name. */
+/** The list's filter in prefs: "untagged", "locked", or "tag:" + key + newline + name. */
 internal fun encodeFilter(f: NoteFilter?): String? = when (f) {
     null -> null
     NoteFilter.Untagged -> "untagged"
+    NoteFilter.Locked -> "locked"
     is NoteFilter.Tag -> "tag:${f.key}\n${f.name}"
 }
 
 internal fun decodeFilter(s: String?): NoteFilter? = when {
     s == "untagged" -> NoteFilter.Untagged
+
+    s == "locked" -> NoteFilter.Locked
 
     s != null && s.startsWith("tag:") && '\n' in s ->
         NoteFilter.Tag(s.substring(4).substringBefore('\n'), s.substringAfter('\n'))

@@ -7,7 +7,13 @@ import org.junit.Test
 class ListFilterPrefTest {
     @Test
     fun `round-trips every filter`() {
-        for (f in listOf(null, NoteFilter.Untagged, NoteFilter.Tag("travel/portugal", "Travel/Portugal"))) {
+        val filters = listOf(
+            null,
+            NoteFilter.Untagged,
+            NoteFilter.Locked,
+            NoteFilter.Tag("travel/portugal", "Travel/Portugal")
+        )
+        for (f in filters) {
             assertEquals(f, decodeFilter(encodeFilter(f)))
         }
     }

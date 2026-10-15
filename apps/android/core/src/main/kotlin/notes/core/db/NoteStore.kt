@@ -37,6 +37,8 @@ sealed interface NoteFilter {
     data class Tag(val key: String, val name: String) : NoteFilter
 
     data object Untagged : NoteFilter
+
+    data object Locked : NoteFilter
 }
 
 /** A tag in live notes, with the number of notes carrying it or one nested under it. */
@@ -47,6 +49,8 @@ private fun NoteFilter?.sql(): Pair<String, List<Any>> = when (this) {
     null -> "1" to emptyList()
 
     NoteFilter.Untagged -> "NOT EXISTS (SELECT 1 FROM note_tags t WHERE t.note_seq = n.seq)" to emptyList()
+
+    NoteFilter.Locked -> "substr(n.content, 1, ?) = ?" to listOf(LockedNotes.PREFIX.length, LockedNotes.PREFIX)
 
     // '0' sorts right after '/', so the range holds exactly the nested keys.
     is NoteFilter.Tag ->
@@ -104,6 +108,14 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
                 it.getLong(4) == 1L
             )
         }
+    }
+
+    /** Live locked notes. */
+    suspend fun lockedCount(): Int = db.read { sql ->
+        val (cond, args) = NoteFilter.Locked.sql()
+        sql.query("SELECT count(*) FROM notes n WHERE n.deleted_at IS NULL AND $cond", *args.toTypedArray()) {
+            it.getLong(0).toInt()
+        }.single()
     }
 
     /** Ranked as on the server: title matches weigh 10×, then the most recently edited. */

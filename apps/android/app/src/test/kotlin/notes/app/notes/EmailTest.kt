@@ -123,7 +123,7 @@ class EmailTest {
             )
         }
         scenario = ActivityScenario.launch(MainActivity::class.java)
-        compose.onNode(hasContentDescription("Back")).performClick()
+        compose.onNode(hasContentDescription("Sidebar")).performClick()
         compose.onNode(hasContentDescription("Settings")).performClick()
         compose.waitUntilExactlyOneExists(hasText("Resend API key"))
 

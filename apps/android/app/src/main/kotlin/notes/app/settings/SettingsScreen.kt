@@ -95,7 +95,7 @@ private sealed interface Confirm {
 @Composable
 fun SettingsScreen(
     graph: AppGraph,
-    backLabel: String,
+    backLabel: String?,
     onBack: () -> Unit,
     onConnect: () -> Unit,
     onSignIn: () -> Unit
