@@ -55,7 +55,7 @@ class AppGraph(
     val locks = LockSession(sync.lockKeys, { api() }, scope)
 
     /** Opens locked notes with the fingerprint instead of the lock password, once turned on here. */
-    val fingerprint = FingerprintUnlock(context, locks, biometrics)
+    val fingerprint = FingerprintUnlock(context, locks, biometrics, scope)
 
     /** Emails notes through the server; it syncs a note before sending it. */
     val mailer = NoteMailer(store, sync) { api() }

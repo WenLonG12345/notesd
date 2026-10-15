@@ -383,7 +383,7 @@ fun EditorScreen(
         }
     }
     when (locking) {
-        LockSession.State.None -> LockSetupDialog(locks, onDismiss = { locking = null }) {
+        LockSession.State.None -> LockSetupDialog(locks, onDismiss = { locking = null }, fingerprint = fingerprint) {
             locking = null
             setLocked(true)
         }

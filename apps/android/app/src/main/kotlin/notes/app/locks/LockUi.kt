@@ -114,7 +114,12 @@ fun UnlockFields(
         scope.launch {
             val ok = locks.unlock(password)
             busy = false
-            if (ok) onUnlocked() else error = "Wrong password."
+            if (ok) {
+                if (activity != null) fingerprint?.offer(activity)
+                onUnlocked()
+            } else {
+                error = "Wrong password."
+            }
         }
     }
 
@@ -232,11 +237,17 @@ fun UnlockDialog(locks: LockSession, title: String, onDismiss: () -> Unit, onUnl
     }
 }
 
-/** First lock: choose the password every locked note will share. */
+/** First lock: choose the password every locked note will share; fingerprint unlock is offered right after. */
 @Composable
-fun LockSetupDialog(locks: LockSession, onDismiss: () -> Unit, onDone: () -> Unit) {
+fun LockSetupDialog(
+    locks: LockSession,
+    onDismiss: () -> Unit,
+    fingerprint: FingerprintUnlock? = null,
+    onDone: () -> Unit
+) {
     val t = LocalTokens.current
     val scope = rememberCoroutineScope()
+    val activity = LocalActivity.current as? FragmentActivity
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     var errors by remember { mutableStateOf(mapOf<String, String>()) }
@@ -257,7 +268,12 @@ fun LockSetupDialog(locks: LockSession, onDismiss: () -> Unit, onDone: () -> Uni
         scope.launch {
             val outcome = locks.setup(password)
             busy = false
-            if (outcome == LockSession.Outcome.Done) onDone() else message = outcome.message()
+            if (outcome == LockSession.Outcome.Done) {
+                if (activity != null) fingerprint?.offer(activity)
+                onDone()
+            } else {
+                message = outcome.message()
+            }
         }
     }
 

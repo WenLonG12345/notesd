@@ -529,7 +529,7 @@ private fun LockedNotesCard(locks: LockSession, state: LockSession.State, finger
             if (canFingerprint) {
                 Divider()
                 if (fingerprintOn) {
-                    Action("Turn off fingerprint unlock", t.link, enabled = !busy) { fingerprint.disable() }
+                    Action("Turn off fingerprint unlock", t.link, enabled = !busy) { fingerprint.turnOff() }
                 } else {
                     Action("Unlock with fingerprint", t.link, enabled = !busy, onClick = ::turnOnFingerprint)
                 }
@@ -542,6 +542,7 @@ private fun LockedNotesCard(locks: LockSession, state: LockSession.State, finger
         }
     }
     if (askingPassword) {
+        // Fingerprint unlock is turned on right after, so the dialog doesn't offer it too.
         UnlockDialog(locks, "Unlock locked notes", onDismiss = { askingPassword = false }) {
             askingPassword = false
             turnOnFingerprint()

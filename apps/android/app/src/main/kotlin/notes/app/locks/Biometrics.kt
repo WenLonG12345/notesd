@@ -59,7 +59,13 @@ class KeystoreBiometrics(private val context: Context) : Biometrics {
         } catch (_: GeneralSecurityException) {
             return BiometricResult.Failed
         }
-        val ready = prompt(activity, cipher, "Turn on fingerprint unlock") ?: return BiometricResult.Cancelled
+        val ready = prompt(
+            activity,
+            cipher,
+            "Unlock with fingerprint?",
+            subtitle = "Open locked notes with your fingerprint instead of the lock password.",
+            negative = "Not now"
+        ) ?: return BiometricResult.Cancelled
         return try {
             BiometricResult.Ok(ready.iv + ready.doFinal(data))
         } catch (_: GeneralSecurityException) {
@@ -114,29 +120,35 @@ class KeystoreBiometrics(private val context: Context) : Biometrics {
     }
 
     /** The cipher, unlocked by a biometric; null when dismissed or failed for good. */
-    private suspend fun prompt(activity: FragmentActivity, cipher: Cipher, title: String): Cipher? =
-        suspendCancellableCoroutine { cont ->
-            val prompt = BiometricPrompt(
-                activity,
-                ContextCompat.getMainExecutor(activity),
-                object : BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                        if (cont.isActive) cont.resume(result.cryptoObject?.cipher)
-                    }
-
-                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                        if (cont.isActive) cont.resume(null)
-                    }
+    private suspend fun prompt(
+        activity: FragmentActivity,
+        cipher: Cipher,
+        title: String,
+        subtitle: String? = null,
+        negative: String = "Use password"
+    ): Cipher? = suspendCancellableCoroutine { cont ->
+        val prompt = BiometricPrompt(
+            activity,
+            ContextCompat.getMainExecutor(activity),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    if (cont.isActive) cont.resume(result.cryptoObject?.cipher)
                 }
-            )
-            val info = BiometricPrompt.PromptInfo.Builder()
-                .setTitle(title)
-                .setNegativeButtonText("Use password")
-                .setAllowedAuthenticators(BIOMETRIC_STRONG)
-                .build()
-            prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
-            cont.invokeOnCancellation { prompt.cancelAuthentication() }
-        }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    if (cont.isActive) cont.resume(null)
+                }
+            }
+        )
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(title)
+            .setSubtitle(subtitle)
+            .setNegativeButtonText(negative)
+            .setAllowedAuthenticators(BIOMETRIC_STRONG)
+            .build()
+        prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
+        cont.invokeOnCancellation { prompt.cancelAuthentication() }
+    }
 
     private companion object {
         const val KEYSTORE = "AndroidKeyStore"

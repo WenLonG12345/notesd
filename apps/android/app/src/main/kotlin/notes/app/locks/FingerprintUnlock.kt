@@ -4,8 +4,10 @@ import android.content.Context
 import android.util.Base64
 import androidx.core.content.edit
 import androidx.fragment.app.FragmentActivity
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import notes.core.crypto.LockSession
 
 /**
@@ -15,7 +17,13 @@ import notes.core.crypto.LockSession
  * reset elsewhere) it stops working and the password is asked for, so a
  * stale key never encrypts new notes.
  */
-class FingerprintUnlock(context: Context, private val locks: LockSession, private val biometrics: Biometrics) {
+class FingerprintUnlock(
+    context: Context,
+    private val locks: LockSession,
+    private val biometrics: Biometrics,
+    /** Outlives the screen the password was typed on, which goes as soon as notes unlock. */
+    private val scope: CoroutineScope
+) {
     enum class Outcome {
         Done,
 
@@ -38,6 +46,18 @@ class FingerprintUnlock(context: Context, private val locks: LockSession, privat
 
     fun available() = biometrics.available()
 
+    /**
+     * The lock password was just typed: unless fingerprint unlock is on, turned
+     * off in Settings or "Not now" was chosen before, ask for the fingerprint
+     * straight away, so it's the last time the password is needed here.
+     */
+    fun offer(activity: FragmentActivity) {
+        if (_enabled.value || prefs.getBoolean(DECLINED, false) || !available()) return
+        scope.launch {
+            if (enable(activity) == Outcome.Cancelled) prefs.edit { putBoolean(DECLINED, true) }
+        }
+    }
+
     suspend fun enable(activity: FragmentActivity): Outcome {
         val key = locks.key() ?: return Outcome.NeedsUnlock
         val bound = locks.passwordEntry() ?: return Outcome.NeedsUnlock
@@ -46,6 +66,7 @@ class FingerprintUnlock(context: Context, private val locks: LockSession, privat
                 prefs.edit {
                     putString(SEALED, Base64.encodeToString(r.data, Base64.NO_WRAP))
                     putString(BOUND, bound)
+                    remove(DECLINED)
                 }
                 _enabled.value = true
                 Outcome.Done
@@ -92,10 +113,18 @@ class FingerprintUnlock(context: Context, private val locks: LockSession, privat
         }
     }
 
+    /** Turned off in Settings: not offered again after the password, only turned on from there. */
+    fun turnOff() {
+        disable()
+        prefs.edit { putBoolean(DECLINED, true) }
+    }
+
+    /** Off, and offered again: it went stale, or the account signed out. */
     fun disable() {
         prefs.edit {
             remove(SEALED)
             remove(BOUND)
+            remove(DECLINED)
         }
         biometrics.forget()
         _enabled.value = false
@@ -109,5 +138,6 @@ class FingerprintUnlock(context: Context, private val locks: LockSession, privat
     private companion object {
         const val SEALED = "fingerprint_sealed"
         const val BOUND = "fingerprint_bound_to"
+        const val DECLINED = "fingerprint_declined"
     }
 }

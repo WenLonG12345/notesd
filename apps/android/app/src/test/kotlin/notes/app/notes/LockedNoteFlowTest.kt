@@ -172,6 +172,38 @@ class LockedNoteFlowTest {
     }
 
     @Test
+    fun `the first lock password typed offers fingerprint unlock, which opens the note next time`() {
+        openBank()
+        unlock(PASSWORD)
+        // The fake fingerprint matches as soon as it's asked for.
+        compose.waitUntil(5_000) { graph.fingerprint.enabled.value }
+
+        onMain { graph.locks.lock() }
+        assertEquals(LockSession.State.Locked, graph.locks.state.value)
+        // Not locked from this screen: the placeholder asks for the fingerprint at once.
+        compose.waitUntil(5_000) { graph.locks.state.value == LockSession.State.Unlocked }
+        compose.waitUntilExactlyOneExists(hasContentDescription("Lock now"))
+    }
+
+    @Test
+    fun `Not now is remembered: the password alone next time`() {
+        FakeBiometrics.cancelNext = true
+        openBank()
+        unlock(PASSWORD)
+        compose.waitUntil(5_000) { graph.locks.state.value == LockSession.State.Unlocked && !FakeBiometrics.cancelNext }
+        compose.waitForIdle()
+        assertEquals(false, graph.fingerprint.enabled.value)
+
+        onMain { graph.locks.lock() }
+        compose.waitUntilExactlyOneExists(hasText("This note is locked."))
+        unlock(PASSWORD)
+        compose.waitUntil(5_000) { graph.locks.state.value == LockSession.State.Unlocked }
+        compose.waitForIdle()
+        // Asked again, the fake would have matched.
+        assertEquals(false, graph.fingerprint.enabled.value)
+    }
+
+    @Test
     fun `fingerprint unlock, once turned on in Settings, opens locked notes`() {
         scenario = ActivityScenario.launch(MainActivity::class.java)
         compose.waitUntilExactlyOneExists(hasText("Locked"))
