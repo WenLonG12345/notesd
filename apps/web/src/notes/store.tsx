@@ -2,6 +2,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, 
 import { notes as api } from '../api/notes'
 import type { ListItem, TagCount } from '../api/types'
 import { useAuth } from '../auth/auth-context'
+import { lockSession, useLockStatus } from '../locks/session'
 import { preview as previewOf } from './plaintext'
 import { NoteSaver, timing, type Fields } from './saver'
 import { hasTag, tags, tagText } from './tags'
@@ -31,9 +32,10 @@ function saveFilter(filter: ListFilter) {
   }
 }
 
-function matches(filter: ListFilter, fields: Fields): boolean {
+function matches(filter: ListFilter, fields: Fields, locked: boolean): boolean {
   if (!filter) return true
-  const noteTags = tags(fields.title, fields.content)
+  // A locked body is ciphertext on the server: only the title's tags count (§10.1).
+  const noteTags = tags(fields.title, locked ? '' : fields.content)
   return 'tag' in filter ? hasTag(noteTags, filter.tag) : noteTags.length === 0
 }
 
@@ -160,12 +162,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
   const hooks = useMemo(
     () => ({
-      saved: (id: string, fields: Fields, r: { updatedAt: number; revision: number; status: string }) =>
+      saved: (id: string, fields: Fields, r: { updatedAt: number; revision: number; status: string }, locked: boolean) =>
         setList((prev) => {
           const old = prev.items.find((n) => n.id === id)
           const hidden = prev.hidden.includes(id)
           const slice = filterRef.current
-          if (!matches(slice, fields)) {
+          if (!matches(slice, fields, locked)) {
             // No longer in this slice (a tag removed): it leaves the list.
             const items = prev.items.filter((n) => n.id !== id)
             return { ...prev, items, total: prev.total - (hidden ? 0 : counted(old)), version: prev.version + 1 }
@@ -175,7 +177,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
           const item: ListItem = {
             id,
             title: live ? old.title : fields.title,
-            preview: live ? old.preview : previewOf(fields.content),
+            preview: locked ? '' : live ? old.preview : previewOf(fields.content),
+            locked,
             revision: r.revision,
             updatedAt: r.updatedAt,
             createdAt: old?.createdAt ?? r.updatedAt,
@@ -214,7 +217,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     const s = new NoteSaver({ id: crypto.randomUUID(), fields, blank: fields }, hooks)
     savers.current.set(s.id, s)
     const now = Date.now()
-    const row: ListItem = { id: s.id, title: '', preview: '', revision: 0, createdAt: now, updatedAt: now }
+    const row: ListItem = { id: s.id, title: '', preview: '', locked: false, revision: 0, createdAt: now, updatedAt: now }
     setList((prev) => ({ ...prev, items: [row, ...prev.items] }))
     return s
   }, [hooks])
@@ -332,6 +335,32 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }
   }, [savedVersion, fetchTags])
 
+  // Locked notes (§10.1): the keyring is fetched up front, edits to locked
+  // notes are saved before the key goes, unlocking sends what waited, and
+  // signing out forgets the key.
+  const lockStatus = useLockStatus()
+  useEffect(() => {
+    void lockSession.load().catch(() => undefined)
+    const off = lockSession.onBeforeLock(async () => {
+      await Promise.all([...savers.current.values()].filter((s) => s.isLocked()).map((s) => s.flush()))
+    })
+    return () => {
+      off()
+      lockSession.forget()
+    }
+  }, [])
+  useEffect(() => {
+    if (lockStatus === 'unlocked') for (const s of savers.current.values()) s.resume()
+    if (lockStatus !== 'locked') return
+    // Plain text of locked notes leaves memory once nothing needs it; open editors close themselves.
+    for (const [id, s] of savers.current) {
+      if (s.isLocked() && !s.isAttached() && !s.hasUnsavedWork()) {
+        s.dispose()
+        savers.current.delete(id)
+      }
+    }
+  }, [lockStatus])
+
   // Signed in again after the session ended: send what was waiting.
   const authStatus = auth.status
   useEffect(() => {
@@ -347,11 +376,15 @@ export function NotesProvider({ children }: { children: ReactNode }) {
         void fetchPage(true)
         fetchTags()
       }
+      // Every time, not only when the list is stale: a reset elsewhere must lock this
+      // tab before anything new is locked with the forgotten key. It's one small request.
+      void lockSession.load(true).catch(() => undefined)
     }
     const onOnline = () => {
       for (const s of all()) s.resume()
       void fetchPage(true)
       fetchTags()
+      void lockSession.load(true).catch(() => undefined)
     }
     const onHidden = () => {
       if (document.visibilityState === 'hidden') for (const s of all()) void s.flush()

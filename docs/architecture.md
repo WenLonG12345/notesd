@@ -61,7 +61,7 @@ The web app offers full note management, editing and search, but needs a live se
 | Web offline mode | Would add a browser replica and a second sync engine |
 | Full version history, automatic Markdown merge | Not needed to preserve conflicts; formatting-aware merging is complex |
 | Images and attachments | Need their own binary storage and sync design |
-| Multi-user collaboration, end-to-end encryption | Add authorization complexity; E2EE breaks server-side search |
+| Multi-user collaboration, end-to-end encryption of every note | Add authorization complexity; E2EE breaks server-side search. Notes the user locks are the exception (§10.1) |
 | PostgreSQL, Redis, external search, job workers, Kubernetes | Unnecessary at this scale |
 
 ## 3. Architecture
@@ -124,6 +124,11 @@ CREATE TABLE note_tags (note_seq INTEGER REFERENCES notes(seq), key TEXT, name T
 
 -- Server-wide settings from the apps: the Resend key and sender for emailing notes.
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+-- Locked notes' keyring (§10.1): the key wrapped under each secret, and the verifier's hash.
+CREATE TABLE lock_keys (id TEXT PRIMARY KEY, kind TEXT, credential_id TEXT, salt TEXT, iterations INTEGER,
+                        wrapped TEXT, created_at INTEGER);
+CREATE TABLE lock_state (id INTEGER PRIMARY KEY CHECK (id = 1), verifier_hash TEXT NOT NULL);
 
 CREATE TABLE applied_operations (
     operation_id  TEXT PRIMARY KEY,
@@ -191,6 +196,8 @@ CREATE TABLE sync_state (               -- one row
     last_sync_at INTEGER,
     last_error   TEXT
 );
+
+CREATE TABLE lock_keys (...);          -- the server's keyring, replaced on every sync (§10.1)
 ```
 
 Outbox rules:
@@ -360,6 +367,8 @@ Every platform uses SQLite FTS5: mobile searches its local database with no netw
 
 ### 8.1 Indexed content
 
+A locked note (§10.1) contributes its title only: its body is ciphertext, so it has no excerpt, preview or body tags on any platform.
+
 The index holds titles and plain text extracted from Markdown, so formatting never affects results (`This is **important**.` is indexed as `This is important.`). Extraction preserves word boundaries and follows the same rules on server and mobile, checked with shared fixtures. Each note mutation updates the index in the same transaction, and the index can be rebuilt from the notes table without touching sync state. Tags (§7.5) are indexed alongside, in `note_tags`. A migration that changes derived data asks for a rebuild, which the server runs at startup.
 
 ### 8.2 Ranking
@@ -412,6 +421,9 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 | `GET` | `/api/v1/sync` | Download changes |
 | `GET` | `/api/v1/search` | Search notes; same filters as listing |
 | `GET` | `/api/v1/tags` | Tags in live notes, with counts |
+| `GET` | `/api/v1/locks` | The locked-notes keyring (§10.1) |
+| `PUT` `DELETE` | `/api/v1/locks/keys/:id` | Add, replace or remove a keyring entry; needs the verifier |
+| `DELETE` | `/api/v1/locks` | Forget the keyring after a forgotten lock password; needs the account password |
 | `GET` | `/healthz` | Process health |
 | `GET` | `/readyz` | Database readiness |
 
@@ -434,7 +446,42 @@ V1 is a single-user installation: one owner account, signed in from multiple dev
 - **Web sessions:** an HttpOnly, SameSite=Lax cookie (`Secure` and `__Host-` prefixed when `--public-url` is https) with a 30-day sliding expiry, plus a CSRF token the web app keeps only in memory and sends as `X-CSRF-Token` on every mutation; cross-origin `Origin` headers are rejected.
 - **Mobile sessions:** a one-hour access token and a 180-day sliding refresh token, sent as bearer tokens and kept in the iOS Keychain or Android Keystore-backed storage. Refresh tokens are not rotated, so a refresh whose response is lost can be retried; revocation deletes the session. Only token hashes are stored server-side. Session expiry affects sync only, never access to local notes.
 - **Transport:** HTTPS for any remote access; TLS may terminate at any common reverse proxy. Private-network and VPN-only installations are supported.
-- **Encryption:** no at-rest or end-to-end encryption in V1; users may rely on disk encryption. Documentation must state that the server can read note content. End-to-end encryption affects search, authentication and the data model, so it is a separate future decision.
+- **Encryption:** no at-rest encryption; users may rely on disk encryption. Documentation must state that the server can read note content, except for locked notes (§10.1), which are end-to-end encrypted. Encrypting every note would affect search, authentication and the data model, so it remains a separate decision.
+
+### 10.1 Locked notes
+
+Like Apple Notes' locked notes: the user locks chosen notes, and their bodies are encrypted on the device with a key the server never has. Titles stay readable, so the list, title search, title tags and the title merge are unchanged.
+
+**What protects what.** The server, its database, its backups and anyone reading them see only a locked body's ciphertext; its title, dates, size and title tags stay readable. A device that is unlocked (key in memory) and the person holding it see everything. The web app is served by the server it distrusts, so a tampered server could serve code that captures the lock password; the native apps don't share that weakness. Text a note held before it was locked was stored in plain text and survives in backups made before then. In the live database the server scrubs it: SQLite runs with `secure_delete`, the FTS5 index with its own `secure-delete` option (otherwise deleted terms stay in its segments until a merge), and the save that locks a note is followed by a `wal_checkpoint(TRUNCATE)`, so the WAL's older page images go too. That checkpoint gives up while a long read still holds old pages, which later checkpoints then overwrite. Free disk blocks, file-system snapshots and SSD wear-levelling are outside SQLite's reach.
+
+**Envelope.** A locked note's `content` is one line, `notesd:locked:v1:` + unpadded base64url of a 12-byte nonce, then AES-256-GCM ciphertext and tag of the UTF-8 Markdown body, with additional data `notesd:locked:v1`. The note ID is not bound in, so conflicted and recovered copies (new IDs) stay readable. Being locked is a property of the content, like tags (§7.5): no new note field, and the sync protocol, revisions, outbox and tombstones are unchanged. Locking and removing the lock are ordinary updates.
+
+- Clients never re-encrypt unchanged text: an open note keeps the envelope it was stored as and replaces it only when the decrypted text changes, so the server's `unchanged` status and byte comparisons stay meaningful. A retried operation resends the same envelope (an operation ID's payload is fixed, §4.2).
+- The server checks only shape (prefix, one line of strict base64url, length), which is enough to refuse an edit made on the ciphertext as if it were text. The 1 MiB content cap applies to the plain body: an envelope may be as long as that of a 1 MiB body.
+- Merging (§6.1) compares envelopes as stored, never in canonical Markdown form, so sync merges without the key: a body changed on one side takes that side; changed on both, the local version becomes a conflicted copy, still locked. The web app, which merges interactively, decrypts first and merges text.
+- Locked notes are excluded from search text, previews, excerpts and body tags (§8.1), and the server refuses to email them (`409 note_locked`).
+
+**Keys.** Each account has one 32-byte locked-notes key, created by the first device to lock a note. The server keeps a keyring of wrapped copies, each AES-256-GCM of the key under a key-encryption key, with additional data `notesd:lnk:v1:<kind>`:
+
+| Kind | Key-encryption key |
+| --- | --- |
+| `password` (exactly one) | PBKDF2-HMAC-SHA256 of the NFC-normalized lock password, 600,000 iterations, 16-byte salt |
+| `recovery` (optional) | PBKDF2 of a random 120-bit code shown once, 10,000 iterations |
+| `passkey` (any number) | HKDF-SHA256 of the WebAuthn PRF output, info `notesd:passkey:v1`; the entry's 32-byte salt is both the PRF input and the HKDF salt |
+
+The GCM tag doubles as the wrong-password check. Changing the lock password re-wraps the key; no note is re-encrypted. PBKDF2 rather than Argon2 because WebCrypto and the JVM both have it built in.
+
+**Passkeys** (web). Adding one asks for the lock password, since the browser's copy of the key can't be read back out to wrap it again. The server never verifies an assertion: a passkey that can't produce the PRF secret simply can't unwrap anything. Authenticators without PRF support are refused when added. A passkey belongs to the server's domain, so moving the server to another address leaves its passkeys unusable (the password still works).
+
+**Fingerprint** (Android). The key is sealed with a Keystore key that needs a strong biometric for every use and is destroyed when enrolled biometrics change; the sealed copy stays on the device. It is kept against the password entry it was made with: when that entry changes (a new password from another device, or a reset) fingerprint unlock turns itself off and the password is asked for, so a stale key never encrypts new notes. A password change on the same device keeps it on, since the key is unchanged. The first time the lock password is typed on a phone (creating it or unlocking), the fingerprint prompt follows straight away to turn it on; "Not now" or turning it off in Settings stops that offer, and it comes back once fingerprint unlock goes stale or the account signs out. It can't be on by default: the Keystore key only takes the locked-notes key after a fingerprint check.
+
+The keyring syncs to the native apps on every cycle and is kept locally, so locked notes open offline. Changing it needs a **verifier**, HMAC-SHA256 of the key with `notesd:verifier:v1`, whose SHA-256 the server stores with the first entry: a stolen session alone can't replace or delete the wraps and strand the notes. Forgetting the keyring after a forgotten lock password needs the account password instead; notes locked under it can then never be opened.
+
+**Unlock session.** The key lives only in memory, as a non-extractable `CryptoKey` on the web. It is dropped after five minutes idle, when the web tab has been hidden for five minutes, when the Android app leaves the screen, on sign-out, and on request; edits to open locked notes are saved (encrypted) first. Android keeps locked notes out of screenshots and the recent-apps thumbnail while one is open.
+
+Shared vectors in `shared/crypto-fixtures/locked.json` (generated by `scripts/crypto-fixtures.mjs`) pin key derivation, wrapping, envelopes and the verifier on every platform.
+
+Status: built are the envelope, the keyring and its endpoints, the lock password on the web and Android, passkeys on the web and fingerprint unlock on Android. The recovery code is still to be built (the server and both clients' crypto already accept `recovery` entries).
 
 ## 11. Deployment and Operations
 

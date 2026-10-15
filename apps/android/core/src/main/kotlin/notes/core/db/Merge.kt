@@ -1,5 +1,6 @@
 package notes.core.db
 
+import notes.core.crypto.LockedNotes
 import notes.core.markdown.Markdown
 
 /**
@@ -15,6 +16,13 @@ internal object Merge {
 
     val sameText = { a: String, b: String -> a == b }
 
-    /** Another client's Markdown style ("* a", "__b__") isn't an edit: compare the canonical form. */
-    val sameMarkdown = { a: String, b: String -> a == b || Markdown.canonical(a) == Markdown.canonical(b) }
+    /**
+     * Another client's Markdown style ("* a", "__b__") isn't an edit: compare the canonical form.
+     * A locked body (§10.1) is compared as stored: its envelope only changes when its text does, and
+     * sync merges without the key, so changed on both sides means a conflicted copy (still locked).
+     */
+    val sameMarkdown = { a: String, b: String ->
+        a == b ||
+            (!LockedNotes.isLocked(a) && !LockedNotes.isLocked(b) && Markdown.canonical(a) == Markdown.canonical(b))
+    }
 }

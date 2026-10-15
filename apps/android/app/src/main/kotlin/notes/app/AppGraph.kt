@@ -16,11 +16,15 @@ import notes.app.account.Account
 import notes.app.account.AccountStore
 import notes.app.account.KeystoreSealer
 import notes.app.account.Sealer
+import notes.app.locks.Biometrics
+import notes.app.locks.FingerprintUnlock
+import notes.app.locks.KeystoreBiometrics
 import notes.app.notes.Deletions
 import notes.app.notes.TagTreeState
 import notes.app.settings.Appearance
 import notes.app.sync.SyncScheduler
 import notes.core.api.ApiClient
+import notes.core.crypto.LockSession
 import notes.core.db.Database
 import notes.core.db.NoteFilter
 import notes.core.db.NoteStore
@@ -29,7 +33,11 @@ import notes.core.sync.SyncEngine
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /** The app's long-lived objects, wired by hand. One per process, owned by [NotesApp]. */
-class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
+class AppGraph(
+    context: Context,
+    sealer: Sealer = KeystoreSealer(),
+    biometrics: Biometrics = KeystoreBiometrics(context)
+) {
     /** Outlives screens: saves and deletes started here finish after the screen that asked is gone. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -42,6 +50,12 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
     /** Null server while never connected; signed out, its requests come back Unauthenticated. */
     val sync = SyncEngine(database, { api() })
     val scheduler = SyncScheduler(context.applicationContext, sync, store, accounts, scope)
+
+    /** The locked-notes key (§10.1), unlocked against the keyring sync keeps. */
+    val locks = LockSession(sync.lockKeys, { api() }, scope)
+
+    /** Opens locked notes with the fingerprint instead of the lock password, once turned on here. */
+    val fingerprint = FingerprintUnlock(context, locks, biometrics, scope)
 
     /** Emails notes through the server; it syncs a note before sending it. */
     val mailer = NoteMailer(store, sync) { api() }
@@ -84,12 +98,16 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
     suspend fun signOut() {
         withTimeoutOrNull(LOGOUT_WAIT_MS) { api()?.logout() }
         accounts.signOut()
+        locks.lock(force = true)
+        fingerprint.disable()
     }
 
     /** Back to a fresh install: no notes, no account, onboarding on next launch. */
     suspend fun removeAllData() {
         if (accounts.account.value is Account.SignedIn) withTimeoutOrNull(LOGOUT_WAIT_MS) { api()?.logout() }
         store.wipe()
+        locks.forget()
+        fingerprint.disable()
         accounts.clear()
         setOnboardingDismissed(false)
     }
@@ -104,6 +122,14 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
         scope.launch { listFilter.drop(1).collect { f -> prefs.edit { putString(LIST_FILTER, encodeFilter(f)) } } }
         // Fetched when a note or Settings opens; another account's settings must not linger.
         scope.launch { accounts.account.collect { if (it !is Account.SignedIn) email.forget() } }
+    }
+
+    /** Each sync may bring the first lock password, a changed one, or a reset. Started with sync. */
+    fun watchKeyring() {
+        scope.launch {
+            locks.refresh()
+            sync.status.collect { locks.refresh() }
+        }
     }
 
     private companion object {

@@ -15,6 +15,7 @@ import { Field } from '../ui/field'
 import { Kicker } from '../ui/kicker'
 import { Sheet } from '../ui/sheet'
 import { Surface } from '../ui/surface'
+import { LockedNotesCard } from './locked-notes'
 import styles from './settings.module.css'
 
 export function SettingsSheet({ username, onClose }: { username: string; onClose: () => void }) {
@@ -51,6 +52,8 @@ export function SettingsSheet({ username, onClose }: { username: string; onClose
           </Button>
         </Surface>
       </div>
+
+      <LockedNotesCard username={username} />
 
       <EmailCard />
 

@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"notes/server/internal/database"
+	"notes/server/internal/locks"
 )
 
 // Per-column BM25 weights (§8.2).
@@ -33,6 +34,8 @@ type Result struct {
 	Title     string `json:"title"`
 	Excerpt   string `json:"excerpt"`
 	UpdatedAt int64  `json:"updatedAt"`
+	// Locked notes match on their title only (§10.1).
+	Locked bool `json:"locked"`
 }
 
 // BuildQuery turns free-form user input into an FTS5 MATCH expression. Each
@@ -72,7 +75,7 @@ func Search(ctx context.Context, db *database.DB, input string, filter Filter, l
 	cond, args := filter.SQL()
 	rows, err := db.R.QueryContext(ctx, `
 		SELECT n.id, n.title, n.updated_at,
-		       snippet(notes_fts, 1, ?, ?, '…', 20)
+		       snippet(notes_fts, 1, ?, ?, '…', 20), substr(n.content, 1, ?) = ?
 		FROM notes_fts
 		JOIN notes n ON n.seq = notes_fts.rowid
 		WHERE notes_fts MATCH ?
@@ -80,7 +83,7 @@ func Search(ctx context.Context, db *database.DB, input string, filter Filter, l
 		  AND `+cond+`
 		ORDER BY bm25(notes_fts, ?, ?), n.updated_at DESC
 		LIMIT ? OFFSET ?`,
-		append(append([]any{markOpen, markClose, match}, args...), titleWeight, contentWeight, limit, offset)...)
+		append(append([]any{markOpen, markClose, len(locks.Prefix), locks.Prefix, match}, args...), titleWeight, contentWeight, limit, offset)...)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +93,7 @@ func Search(ctx context.Context, db *database.DB, input string, filter Filter, l
 	for rows.Next() {
 		var r Result
 		var excerpt sql.NullString
-		if err := rows.Scan(&r.ID, &r.Title, &r.UpdatedAt, &excerpt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Title, &r.UpdatedAt, &excerpt, &r.Locked); err != nil {
 			return nil, err
 		}
 		r.Excerpt = renderExcerpt(excerpt.String)
@@ -124,6 +127,10 @@ func UnindexNote(ctx context.Context, tx *sql.Tx, rowid int64) error {
 }
 
 func insert(ctx context.Context, tx *sql.Tx, rowid int64, title, markdown string) error {
+	if locks.IsLocked(markdown) {
+		// The body is ciphertext: only the title is searchable and tagged (§10.1).
+		markdown = ""
+	}
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO notes_fts (rowid, title, body_text) VALUES (?, ?, ?)`,
 		rowid, title, PlainText(markdown)); err != nil {

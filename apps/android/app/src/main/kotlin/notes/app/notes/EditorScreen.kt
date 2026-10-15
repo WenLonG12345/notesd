@@ -11,6 +11,9 @@ import android.service.chooser.ChooserAction
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.Window
+import android.view.WindowManager
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -51,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,7 +77,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.util.WeakHashMap
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import notes.app.MainActivity
 import notes.app.R
 import notes.app.editor.FormatState
@@ -84,6 +90,10 @@ import notes.app.editor.LinkTap
 import notes.app.editor.NoteEditText
 import notes.app.editor.TagStrip
 import notes.app.editor.keepCursorInView
+import notes.app.locks.FingerprintUnlock
+import notes.app.locks.LockNoteDialog
+import notes.app.locks.LockSetupDialog
+import notes.app.locks.LockedNote
 import notes.app.ui.Banner
 import notes.app.ui.BannerKind
 import notes.app.ui.IconAction
@@ -100,6 +110,7 @@ import notes.app.ui.Type
 import notes.app.ui.hairline
 import notes.app.ui.pressScale
 import notes.app.ui.windowInsetsController
+import notes.core.crypto.LockSession
 import notes.core.doc.Document
 import notes.core.markdown.Markdown
 import notes.core.sync.EmailOutcome
@@ -115,6 +126,7 @@ private const val SAVE_DELAY_MS = 700L
 @Composable
 fun EditorScreen(
     vm: EditorViewModel,
+    locks: LockSession,
     onBack: () -> Unit,
     onDelete: () -> Unit,
     onOpen: (String) -> Unit,
@@ -125,7 +137,8 @@ fun EditorScreen(
     /** "Email" was chosen in this note's share sheet. */
     emailRequested: Boolean = false,
     onEmailRequestHandled: () -> Unit = {},
-    sendEmail: suspend (List<String>) -> EmailOutcome = { EmailOutcome.NotSynced }
+    sendEmail: suspend (List<String>) -> EmailOutcome = { EmailOutcome.NotSynced },
+    fingerprint: FingerprintUnlock? = null
 ) {
     val context = LocalContext.current
     val t = LocalTokens.current
@@ -134,6 +147,20 @@ fun EditorScreen(
     val original by vm.original.collectAsStateWithLifecycle()
     val gone by vm.gone.collectAsStateWithLifecycle()
     val tags by vm.tags.collectAsStateWithLifecycle()
+    val locked by vm.locked.collectAsStateWithLifecycle()
+    val needsUnlock by vm.needsUnlock.collectAsStateWithLifecycle()
+    val unreadable by vm.unreadable.collectAsStateWithLifecycle()
+    val storedTitle by vm.title.collectAsStateWithLifecycle()
+
+    /** Lock note was chosen, and the session needs a password created or entered first. */
+    var locking by remember { mutableStateOf<LockSession.State?>(null) }
+
+    /** Locked from this screen: the fingerprint isn't asked for straight back. */
+    var lockedHere by remember { mutableStateOf(false) }
+
+    /** Lock now couldn't save this note, so the key stayed: notes are still unlocked. */
+    var lockFailed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     var editor by remember { mutableStateOf<NoteEditText?>(null) }
     var state by remember { mutableStateOf(FormatState()) }
     var edits by remember { mutableIntStateOf(0) }
@@ -159,6 +186,24 @@ fun EditorScreen(
         delay(SAVE_DELAY_MS)
         save()
     }
+    // A locked note stays out of screenshots and the recent-apps thumbnail.
+    val window = LocalActivity.current?.window
+    DisposableEffect(window, locked) {
+        if (locked) window?.let(SecureWindows::acquire)
+        onDispose { if (locked) window?.let(SecureWindows::release) }
+    }
+    // Only the prompt straight after "Lock now" is skipped; later relocks ask again.
+    LaunchedEffect(needsUnlock) {
+        if (!needsUnlock) lockedHere = false else lockFailed = false
+    }
+
+    fun setLocked(on: Boolean) {
+        val doc = editor?.document() ?: return
+        // The session itself, not the collected state: right after a dialog unlocks, that lags a frame.
+        val now = locks.state.value
+        if (!on || now == LockSession.State.Unlocked) vm.setLocked(doc, on) else locking = now
+    }
+
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) save() }
@@ -207,9 +252,43 @@ fun EditorScreen(
         ) {
             if (showBack) BackLink(onBack) else Spacer(Modifier.width(12.dp))
             Spacer(Modifier.weight(1f))
-            IconAction(Icons.Undo, "Undo", { editor?.undo() }, enabled = state.canUndo)
-            IconAction(Icons.Redo, "Redo", { editor?.redo() }, enabled = state.canRedo)
-            IconAction(Icons.More, "More", { menu = true })
+            if (!needsUnlock) {
+                if (locked) {
+                    IconAction(Icons.Lock, "Lock now", {
+                        // Typing from the last moments saves (encrypted) before the key goes.
+                        save()
+                        lockedHere = true
+                        lockFailed = false
+                        scope.launch {
+                            if (!locks.lock()) {
+                                // Still unlocked: a later lock (idle, leaving the app) asks for the fingerprint again.
+                                lockedHere = false
+                                lockFailed = true
+                            }
+                        }
+                    })
+                }
+                IconAction(Icons.Undo, "Undo", { editor?.undo() }, enabled = state.canUndo)
+                IconAction(Icons.Redo, "Redo", { editor?.redo() }, enabled = state.canRedo)
+                IconAction(Icons.More, "More", { menu = true })
+            }
+        }
+        if (needsUnlock || unreadable) {
+            LockedNote(
+                storedTitle,
+                unreadable,
+                locks,
+                Modifier.weight(1f),
+                fingerprint = fingerprint,
+                promptFingerprint = !lockedHere
+            )
+        }
+        if (lockFailed && !needsUnlock) {
+            Banner(
+                "This note couldn't be saved, so locked notes are still unlocked. Try Lock now again.",
+                BannerKind.Error,
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
         }
         original?.let { o ->
             Banner(
@@ -221,7 +300,7 @@ fun EditorScreen(
             )
         }
         val doc = loaded
-        if (doc != null) {
+        if (doc != null && !needsUnlock) {
             AndroidView(
                 factory = { ctx ->
                     // The scroll view, not the EditText, scrolls: TextView's own scrolling has no fling or edge stretch.
@@ -274,8 +353,18 @@ fun EditorScreen(
             SheetItem(Icons.Share, "Share", {
                 menu = false
                 save()
-                editor?.document()?.let { share(context, it, emailNoteId = vm.id.takeIf { emailFrom != null }) }
+                // The server has only a locked note's ciphertext: it can't email it.
+                editor?.document()?.let {
+                    share(context, it, emailNoteId = vm.id.takeIf { emailFrom != null && !locked })
+                }
             })
+            // A blank new note has nothing to lock yet.
+            if (status != SaveStatus.Blank) {
+                SheetItem(Icons.Lock, if (locked) "Remove lock" else "Lock note", {
+                    menu = false
+                    setLocked(!locked)
+                })
+            }
             // A blank new note has nothing to delete: leaving discards it.
             if (status != SaveStatus.Blank) {
                 SheetItem(Icons.Trash, "Delete note", {
@@ -312,11 +401,49 @@ fun EditorScreen(
             editor?.setLink(url, label)
         }
     }
+    when (locking) {
+        LockSession.State.None -> LockSetupDialog(locks, onDismiss = { locking = null }, fingerprint = fingerprint) {
+            locking = null
+            setLocked(true)
+        }
+
+        LockSession.State.Locked -> LockNoteDialog(locks, onDismiss = { locking = null }, fingerprint = fingerprint) {
+            locking = null
+            setLocked(true)
+        }
+
+        else -> Unit
+    }
     if (emailing) {
         EmailDialog(emailFrom, onDismiss = { emailing = false }) { to ->
             save()
             vm.saved()
             sendEmail(to)
+        }
+    }
+}
+
+/**
+ * FLAG_SECURE is per window, but two editors can share it: during a
+ * transition the incoming locked note sets it before the outgoing one is
+ * disposed. Counted, so the last locked editor to go clears it. Main thread only.
+ */
+private object SecureWindows {
+    private val holders = WeakHashMap<Window, Int>()
+
+    fun acquire(window: Window) {
+        val n = holders[window] ?: 0
+        holders[window] = n + 1
+        if (n == 0) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    fun release(window: Window) {
+        val n = (holders[window] ?: return) - 1
+        if (n > 0) {
+            holders[window] = n
+        } else {
+            holders.remove(window)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
     }
 }

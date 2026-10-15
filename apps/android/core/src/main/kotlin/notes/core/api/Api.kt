@@ -66,6 +66,21 @@ internal data class ErrorBody(
 @Serializable
 data class EmailSettings(val configured: Boolean = false, val from: String = "", val keyHint: String = "")
 
+/** One wrapped copy of the locked-notes key (§10.1); nothing here opens without its secret. */
+@Serializable
+data class LockKey(
+    val id: String,
+    val kind: String,
+    val credentialId: String? = null,
+    val salt: String,
+    val iterations: Int = 0,
+    val wrapped: String,
+    val createdAt: Long = 0
+)
+
+@Serializable
+data class LockKeys(val keys: List<LockKey> = emptyList())
+
 /** A note as the server has it. A tombstone has [deletedAt] set and empty title and content. */
 @Serializable
 data class RemoteNote(

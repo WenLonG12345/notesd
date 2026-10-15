@@ -1,17 +1,21 @@
 package notes_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"notes/server/internal/database"
+	"notes/server/internal/locks"
 	"notes/server/internal/notes"
 	"notes/server/internal/search"
 )
@@ -557,5 +561,97 @@ func TestRebuildIfNeeded(t *testing.T) {
 	}
 	if rebuilt, err := search.RebuildIfNeeded(ctx, db); err != nil || rebuilt {
 		t.Fatalf("second: %v %v", rebuilt, err)
+	}
+}
+
+func TestLockedNotes(t *testing.T) {
+	db, s := setup(t)
+	// 28 bytes of base64url: the smallest well-formed envelope.
+	sealed := locks.Prefix + "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0"
+	create(t, s, "a", "Bank #private", sealed)
+	create(t, s, "b", "Open", "plain #public text")
+
+	items, _, err := s.List(ctx, search.Filter{}, 50, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]notes.ListItem{}
+	for _, it := range items {
+		got[it.ID] = it
+	}
+	if len(items) != 2 || len(got) != 2 {
+		t.Fatalf("list = %+v", items)
+	}
+	if a := got["a"]; !a.Locked || a.Preview != "" {
+		t.Fatalf("locked item = %+v", a)
+	}
+	if b := got["b"]; b.Locked || b.Preview == "" {
+		t.Fatalf("plain item = %+v", b)
+	}
+	// Only the title is indexed and tagged.
+	if got := tagNames(t, db); fmt.Sprint(got) != "map[private:1 public:1]" {
+		t.Fatalf("tags = %v", got)
+	}
+	if res, _ := search.Search(ctx, db, "c2VjcmV0", search.Filter{}, 10, 0); len(res) != 0 {
+		t.Fatalf("ciphertext searchable: %+v", res)
+	}
+	if res, _ := search.Search(ctx, db, "bank", search.Filter{}, 10, 0); len(res) != 1 || !res[0].Locked || res[0].Excerpt != "" {
+		t.Fatalf("title search = %+v", res)
+	}
+
+	// An edit made on the ciphertext as text is refused rather than stored.
+	_, err = s.Update(ctx, notes.UpdateInput{OperationID: "bad", ID: "a", BaseRevision: 1, Title: "Bank", Content: sealed + " typed"})
+	var verr *notes.ValidationError
+	if !errors.As(err, &verr) || verr.Field != "content" {
+		t.Fatalf("broken envelope: %v", err)
+	}
+
+	// Removing the lock is an ordinary update; the body is indexed again.
+	if _, err := s.Update(ctx, notes.UpdateInput{OperationID: "unlock", ID: "a", BaseRevision: 1, Title: "Bank", Content: "PIN #private"}); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := search.Search(ctx, db, "pin", search.Filter{}, 10, 0); len(res) != 1 || res[0].Locked {
+		t.Fatalf("after unlock = %+v", res)
+	}
+}
+
+func TestLockedNoteSizeLimit(t *testing.T) {
+	_, s := setup(t)
+	// The envelope of the largest note allowed is longer than the cap itself.
+	full := locks.EnvelopeLen(notes.MaxContentBytes)
+	sealed := locks.Prefix + strings.Repeat("A", full-len(locks.Prefix))
+	if !locks.ValidEnvelope(sealed) {
+		t.Fatal("test envelope invalid")
+	}
+	if _, err := s.Create(ctx, notes.CreateInput{OperationID: "big", ID: "a", Title: "Big", Content: sealed}); err != nil {
+		t.Fatalf("largest locked note: %v", err)
+	}
+	sealed += "AAAA"
+	_, err := s.Create(ctx, notes.CreateInput{OperationID: "bigger", ID: "b", Title: "Bigger", Content: sealed})
+	var verr *notes.ValidationError
+	if !errors.As(err, &verr) || verr.Field != "content" {
+		t.Fatalf("too large: %v", err)
+	}
+}
+
+// Locking a note leaves none of its old text in the database file, its
+// WAL, or the search index's own storage (§10.1).
+func TestLockingScrubsOldText(t *testing.T) {
+	db, s := setup(t)
+	const secret = "zanzibarquokka"
+	create(t, s, "a", "Bank", "PIN 1234 "+secret+"\n")
+	create(t, s, "b", "Other", "unrelated words")
+	sealed := locks.Prefix + "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0"
+	if _, err := s.Update(ctx, notes.UpdateInput{OperationID: "lock", ID: "a", BaseRevision: 1, Title: "Bank", Content: sealed}); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{db.Path, db.Path + "-wal"} {
+		b, err := os.ReadFile(f)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if bytes.Contains(b, []byte(secret)) {
+			t.Errorf("%s still holds the text from before locking", filepath.Base(f))
+		}
 	}
 }

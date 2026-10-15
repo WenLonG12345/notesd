@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import notes.app.notes.NotesNavigation
 import notes.app.ui.NotesTheme
 
@@ -31,6 +32,20 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    /** Any touch or key: locked notes' idle timeout starts over. */
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        graph().locks.touch()
+    }
+
+    /** Off screen (not just rotating): locked notes lock, after the editor's ON_STOP save. */
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) graph().let { g -> g.scope.launch { g.locks.lock() } }
+    }
+
+    private fun graph() = (application as NotesApp).graph
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

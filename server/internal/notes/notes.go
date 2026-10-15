@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"unicode/utf8"
 
 	"notes/server/internal/database"
+	"notes/server/internal/locks"
 	"notes/server/internal/search"
 )
 
@@ -256,7 +258,8 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (Result, error) {
 	now := s.now().UnixMilli()
 	updated := s.clientTime(in.UpdatedAt, now)
 
-	return s.apply(ctx, in.OperationID, hashRequest("update", in), func(tx *sql.Tx) (Result, error) {
+	locking := false
+	res, err := s.apply(ctx, in.OperationID, hashRequest("update", in), func(tx *sql.Tx) (Result, error) {
 		cur, err := loadForUpdate(ctx, tx, in.ID)
 		if err != nil {
 			return Result{}, err
@@ -288,9 +291,18 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (Result, error) {
 		if err := search.IndexNote(ctx, tx, cur.rowid, in.Title, in.Content); err != nil {
 			return Result{}, err
 		}
+		locking = locks.IsLocked(in.Content) && !locks.IsLocked(cur.Content)
 		return Result{ID: cur.ID, Status: StatusUpdated, Revision: rev, ChangeSeq: seq,
 			UpdatedAt: updated, HTTPStatus: 200}, nil
 	})
+	if err == nil && locking {
+		// The plain text is zeroed in the database (secure_delete) but its old
+		// pages are still in the WAL (§10.1). Best effort: the save stands.
+		if werr := s.db.ScrubWAL(ctx); werr != nil {
+			slog.WarnContext(ctx, "scrub WAL after locking a note", "err", werr)
+		}
+	}
+	return res, err
 }
 
 // Delete turns a note into a permanent tombstone (§6.4). The title and
@@ -364,6 +376,8 @@ type ListItem struct {
 	Revision  int64  `json:"revision"`
 	CreatedAt int64  `json:"createdAt"`
 	UpdatedAt int64  `json:"updatedAt"`
+	// Locked notes have an encrypted body and so an empty preview (§10.1).
+	Locked bool `json:"locked"`
 }
 
 // Count is the number of live (not deleted) notes matching filter.
@@ -390,7 +404,7 @@ func (s *Store) List(ctx context.Context, filter search.Filter, limit int, curso
 	cond, args := filter.SQL()
 	rows, err := s.db.R.QueryContext(ctx, `
 		SELECT n.id, n.title, n.revision, n.created_at, n.updated_at,
-		       substr(COALESCE(f.body_text, ''), 1, ?)
+		       substr(COALESCE(f.body_text, ''), 1, ?), substr(n.content, 1, ?) = ?
 		FROM notes n
 		LEFT JOIN notes_fts f ON f.rowid = n.seq
 		WHERE n.deleted_at IS NULL
@@ -398,7 +412,7 @@ func (s *Store) List(ctx context.Context, filter search.Filter, limit int, curso
 		  AND `+cond+`
 		ORDER BY n.updated_at DESC, n.id DESC
 		LIMIT ?`,
-		append(append([]any{previewFetch, boolInt(cursor != ""), afterTime, afterID}, args...), limit+1)...)
+		append(append([]any{previewFetch, len(locks.Prefix), locks.Prefix, boolInt(cursor != ""), afterTime, afterID}, args...), limit+1)...)
 	if err != nil {
 		return nil, "", err
 	}
@@ -406,7 +420,7 @@ func (s *Store) List(ctx context.Context, filter search.Filter, limit int, curso
 	items = []ListItem{}
 	for rows.Next() {
 		var it ListItem
-		if err := rows.Scan(&it.ID, &it.Title, &it.Revision, &it.CreatedAt, &it.UpdatedAt, &it.Preview); err != nil {
+		if err := rows.Scan(&it.ID, &it.Title, &it.Revision, &it.CreatedAt, &it.UpdatedAt, &it.Preview, &it.Locked); err != nil {
 			return nil, "", err
 		}
 		it.Preview = preview(it.Preview, utf8.RuneCountInString(it.Preview) == previewFetch)
@@ -543,15 +557,23 @@ func validateID(field, id string) error {
 }
 
 func validateText(title, content string) error {
+	// The cap is on the Markdown: a locked note may hold as much as any
+	// other, which its envelope's nonce, tag and base64 make longer.
+	maxContent := MaxContentBytes
+	if locks.IsLocked(content) {
+		maxContent = locks.EnvelopeLen(MaxContentBytes)
+	}
 	switch {
 	case len(title) > MaxTitleBytes:
 		return &ValidationError{"title", fmt.Sprintf("exceeds %d bytes", MaxTitleBytes)}
-	case len(content) > MaxContentBytes:
-		return &ValidationError{"content", fmt.Sprintf("exceeds %d bytes", MaxContentBytes)}
+	case len(content) > maxContent:
+		return &ValidationError{"content", fmt.Sprintf("exceeds %d bytes", maxContent)}
 	case !utf8.ValidString(title) || strings.ContainsRune(title, 0):
 		return &ValidationError{"title", "must be valid UTF-8 without NUL characters"}
 	case !utf8.ValidString(content) || strings.ContainsRune(content, 0):
 		return &ValidationError{"content", "must be valid UTF-8 without NUL characters"}
+	case locks.IsLocked(content) && !locks.ValidEnvelope(content):
+		return &ValidationError{"content", "is not a valid locked note"}
 	}
 	return nil
 }

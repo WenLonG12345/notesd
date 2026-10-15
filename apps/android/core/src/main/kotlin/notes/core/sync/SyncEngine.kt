@@ -15,6 +15,7 @@ import notes.core.api.ApiResult
 import notes.core.api.MutationResult
 import notes.core.api.RemoteNote
 import notes.core.db.Database
+import notes.core.db.LockKeyStore
 import notes.core.db.Operation
 import notes.core.db.SyncEvent
 import notes.core.db.SyncStore
@@ -49,6 +50,9 @@ class SyncEngine(
     clock: () -> Long = System::currentTimeMillis
 ) {
     val store = SyncStore(db, clock)
+
+    /** The locked-notes keyring as last synced, for unlocking offline (§10.1). */
+    val lockKeys = LockKeyStore(db)
     private val lock = Mutex()
 
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.NotConnected)
@@ -83,7 +87,25 @@ class SyncEngine(
     private suspend fun cycle(api: ApiClient): Stop? {
         push(api)?.let { return it }
         pull(api)?.let { return it }
+        keyring(api)?.let { return it }
         return if (store.nextOperation() != null) push(api) else null
+    }
+
+    /**
+     * The keyring is tiny and has no change feed: fetched whole every cycle.
+     * A change made on this device while the fetch was out is newer; the
+     * fetched copy is dropped, and the next cycle brings the server's.
+     */
+    private suspend fun keyring(api: ApiClient): Stop? {
+        val since = lockKeys.generation()
+        return when (val result = api.lockKeys()) {
+            is ApiResult.Ok -> {
+                lockKeys.replaceIfUnchanged(result.value, since)
+                null
+            }
+
+            else -> stop(result)
+        }
     }
 
     private suspend fun push(api: ApiClient): Stop? {

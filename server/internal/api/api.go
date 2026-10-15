@@ -18,6 +18,7 @@ import (
 
 	"notes/server/internal/auth"
 	"notes/server/internal/database"
+	"notes/server/internal/locks"
 	"notes/server/internal/mail"
 	"notes/server/internal/notes"
 	"notes/server/internal/web"
@@ -36,6 +37,7 @@ type Config struct {
 type Server struct {
 	db      *database.DB
 	notes   *notes.Store
+	locks   *locks.Store
 	auth    *auth.Service
 	limiter *auth.Limiter
 	mailer  *mail.Client
@@ -46,7 +48,7 @@ type Server struct {
 // New wires a Server.
 func New(db *database.DB, store *notes.Store, authSvc *auth.Service, log *slog.Logger, cfg Config) *Server {
 	return &Server{
-		db: db, notes: store, auth: authSvc, log: log, cfg: cfg,
+		db: db, notes: store, locks: locks.NewStore(db), auth: authSvc, log: log, cfg: cfg,
 		limiter: auth.NewLimiter(10, 15*time.Minute),
 		mailer:  mail.NewClient(cfg.ResendURL),
 	}
@@ -82,6 +84,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/settings/email", s.authed(s.emailSettings))
 	mux.Handle("PUT /api/v1/settings/email", s.authed(s.saveEmailSettings))
 	mux.Handle("DELETE /api/v1/settings/email", s.authed(s.deleteEmailSettings))
+
+	mux.Handle("GET /api/v1/locks", s.authed(s.listLockKeys))
+	mux.Handle("DELETE /api/v1/locks", s.authed(s.resetLocks))
+	mux.Handle("PUT /api/v1/locks/keys/{id}", s.authed(s.putLockKey))
+	mux.Handle("DELETE /api/v1/locks/keys/{id}", s.authed(s.deleteLockKey))
 
 	mux.Handle("GET /api/v1/sync", gzipped(s.authed(s.sync)))
 	mux.Handle("GET /api/v1/search", gzipped(s.authed(s.search)))

@@ -227,6 +227,46 @@
   font: 400 30px/1.1 var(--font-serif);
 }
 
+.lockMark {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hover);
+  color: var(--ink-2);
+}
+
+.lockNow,
+.lockNowMobile {
+  flex: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lockNow {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--ink-2);
+}
+
+.lockNow:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.lockNowMobile {
+  width: 44px;
+  height: 44px;
+  color: var(--tint);
+}
+
 .muted {
   font-size: 14px;
   color: var(--ink-3);

@@ -119,6 +119,32 @@ class ApiClient(
         )
     }) { }
 
+    /** The locked-notes keyring. */
+    suspend fun lockKeys(): ApiResult<List<LockKey>> =
+        authed({ request("GET", url("api/v1/locks"), null, it) }) { json.decodeFromString<LockKeys>(it).keys }
+
+    /** Creates or replaces a keyring entry; [verifier] proves this device holds the key (the first password entry sets it). */
+    suspend fun putLockKey(key: LockKey, verifier: String): ApiResult<LockKey> = authed({
+        request(
+            "PUT",
+            url("api/v1/locks/keys").newBuilder().addPathSegment(key.id).build(),
+            buildJsonObject {
+                put("kind", key.kind)
+                key.credentialId?.let { id -> put("credentialId", id) }
+                put("salt", key.salt)
+                put("iterations", key.iterations)
+                put("wrapped", key.wrapped)
+                put("verifier", verifier)
+            },
+            it
+        )
+    }) { json.decodeFromString(it) }
+
+    /** Forgets the keyring: notes locked so far can never be opened again. */
+    suspend fun resetLocks(accountPassword: String): ApiResult<Unit> = authed({
+        request("DELETE", url("api/v1/locks"), buildJsonObject { put("accountPassword", accountPassword) }, it)
+    }) { }
+
     // --- plumbing ------------------------------------------------------------
 
     private suspend fun <T> authed(build: (access: String) -> Request, decode: (String) -> T): ApiResult<T> {

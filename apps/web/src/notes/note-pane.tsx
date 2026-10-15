@@ -6,10 +6,13 @@ import { ChecklistTool, IndentTools, LinkForm, LinkTool, MarkTools, NoteContent,
 import { noteFields, noteSummary, titleOf } from '../editor/note-doc'
 import { Banner } from '../ui/banner'
 import { Button } from '../ui/button'
-import { ComposeIcon, TrashIcon } from '../ui/icons'
+import { ComposeIcon, LockIcon, TrashIcon } from '../ui/icons'
+import { LockedError } from '../locks/crypto'
+import { lockSession, useLockStatus } from '../locks/session'
+import { UnlockForm } from '../locks/unlock'
 import { StatusPill } from '../ui/status-pill'
 import { offlineNotice, useStatusShown } from './save-status'
-import type { NoteSaver } from './saver'
+import { openNote, type NoteSaver } from './saver'
 import { NoteMenu } from './share'
 import { useNotes } from './store'
 import { tagKey } from './tags'
@@ -32,26 +35,82 @@ type Props = {
   onGone: (id: string) => void
 }
 
-type Load = { kind: 'loading' } | { kind: 'missing' } | { kind: 'failed' } | { kind: 'ready'; saver: NoteSaver }
+type Load =
+  | { kind: 'loading' }
+  | { kind: 'missing' }
+  | { kind: 'failed' }
+  /**
+   * A locked note, and locked notes are locked: only its title is readable.
+   * [draft]: a new note, not on the server yet, kept until unlocked.
+   * [keyFailed]: the key in memory didn't open it (the keyring was reset since).
+   */
+  | { kind: 'locked'; title: string; draft?: NoteSaver; keyFailed: boolean }
+  | { kind: 'ready'; saver: NoteSaver }
 
 export function NotePane({ id, draft, mobile, onBack, onNew, onCreated, onOpenDraft, onDelete, onGone }: Props) {
   const { existingSaver, saverFor, release, removed } = useNotes()
+  const lockStatus = useLockStatus()
   const [load, setLoad] = useState<Load>(() => {
     const ready = draft ?? (id ? existingSaver(id) : undefined)
-    return ready ? { kind: 'ready', saver: ready } : { kind: 'loading' }
+    // A locked note's saver holds plain text: only show it while unlocked.
+    if (!ready || (ready.isLocked() && !lockSession.key())) return draft ? lockedDraft(draft) : { kind: 'loading' }
+    return { kind: 'ready', saver: ready }
   })
+
+  // Locked notes locked again: the open note closes (during render, so its
+  // text is never shown again) and reloads as a locked placeholder. A new
+  // note can't be reloaded; it waits, in memory, for the unlock.
+  if (load.kind === 'ready' && load.saver.isLocked() && lockStatus !== 'unlocked') {
+    setLoad(draft ? lockedDraft(draft) : { kind: 'loading' })
+  }
+
+  // The locked new note reached the server and is opened by id now.
+  if (load.kind === 'locked' && load.draft && !draft) setLoad({ kind: 'loading' })
+
+  // Unlocked elsewhere (another note, Settings, a password change): try again.
+  if (load.kind === 'locked' && !load.keyFailed && lockStatus === 'unlocked') {
+    setLoad(load.draft ? { kind: 'ready', saver: load.draft } : { kind: 'loading' })
+  }
+
+  // A locked new note behind the placeholder: an untouched one just goes; one
+  // that reached the server (saved before the key went) opens by id, locked.
+  const lockedNew = load.kind === 'locked' ? load.draft : undefined
+  useEffect(() => {
+    if (!lockedNew) return
+    const check = () => {
+      if (lockedNew.getSnapshot().created) onCreated(lockedNew.id)
+      else if (lockedNew.isBlankDraft()) onGone(lockedNew.id)
+    }
+    check()
+    return lockedNew.subscribe(check)
+  }, [lockedNew, onCreated, onGone])
 
   useEffect(() => {
     if (load.kind !== 'loading' || !id) return
     let cancelled = false
     api.get(id).then(
-      (note) => {
+      async (stored) => {
+        let opened
+        try {
+          opened = await openNote(stored)
+        } catch (err) {
+          if (cancelled) return
+          setLoad(
+            err instanceof LockedError
+              ? { kind: 'locked', title: stored.title, keyFailed: lockSession.key() !== null }
+              : { kind: 'failed' },
+          )
+          return
+        }
         if (cancelled) return
+        const { note, locked, envelope } = opened
         const saver = saverFor({
           id: note.id,
           fields: { title: note.title, content: note.content },
           revision: note.revision,
           updatedAt: note.updatedAt,
+          locked,
+          envelope,
         })
         setLoad({ kind: 'ready', saver })
       },
@@ -103,6 +162,24 @@ export function NotePane({ id, draft, mobile, onBack, onNew, onCreated, onOpenDr
                 <span className={styles.muted}>It may have been deleted on another device.</span>
               </>
             )}
+            {load.kind === 'locked' && (
+              <>
+                <span className={styles.lockMark}>
+                  <LockIcon size={24} />
+                </span>
+                <h2 className={styles.placeholderTitle}>{load.title.trim() || 'Locked note'}</h2>
+                {lockStatus === 'none' || (load.keyFailed && lockStatus === 'unlocked') ? (
+                  // The keyring was reset since this note was locked: its key is gone.
+                  <span className={styles.muted}>This note was locked with a password that was reset. It can’t be opened.</span>
+                ) : (
+                  <>
+                    <span className={styles.muted}>This note is locked.</span>
+                    {/* Unlocking re-renders this pane as unlocked, which opens the note. */}
+                    <UnlockForm onUnlocked={() => undefined} autoFocus={!mobile} />
+                  </>
+                )}
+              </>
+            )}
             {load.kind === 'failed' && (
               <>
                 <h2 className={styles.placeholderTitle}>Couldn’t load this note.</h2>
@@ -116,6 +193,16 @@ export function NotePane({ id, draft, mobile, onBack, onNew, onCreated, onOpenDr
       )}
     </section>
   )
+}
+
+function lockedDraft(saver: NoteSaver): Load {
+  return { kind: 'locked', title: saver.fields().title, draft: saver, keyFailed: false }
+}
+
+/** The list row's title and preview; a locked note's body stays out of the list. */
+function summary(saver: NoteSaver, doc: Parameters<typeof noteSummary>[0]) {
+  const s = noteSummary(doc)
+  return saver.isLocked() ? { ...s, preview: '' } : s
 }
 
 function BackButton({ onClick }: { onClick: () => void }) {
@@ -163,7 +250,7 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
       saver.edit()
       touchTimer.current ??= setTimeout(() => {
         touchTimer.current = undefined
-        if (!ed.isDestroyed) touch(saver.id, noteSummary(ed.state.doc))
+        if (!ed.isDestroyed) touch(saver.id, summary(saver, ed.state.doc))
       }, TOUCH_MS)
     },
     onLinkShortcut: () => {
@@ -185,7 +272,7 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
     const detach = saver.attach(() => noteFields(editor.state.doc))
     const off = saver.onRemoteChange((next) => {
       replaceNote(editor, next)
-      touch(saver.id, noteSummary(editor.state.doc))
+      touch(saver.id, summary(saver, editor.state.doc))
     })
     return () => {
       off()
@@ -255,9 +342,11 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
       ? undefined
       : problem?.kind === 'rejected'
         ? 'The server didn’t accept this save'
-        : problem === null
-          ? 'Waiting for you to sign in again'
-          : undefined
+        : problem?.kind === 'unlock'
+          ? 'Unlock locked notes to save'
+          : problem === null
+            ? 'Waiting for you to sign in again'
+            : undefined
   const edited = snap.created && snap.updatedAt !== null ? snap.updatedAt : openedAt
 
   return (
@@ -266,6 +355,17 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
         {mobile && <BackButton onClick={onBack} />}
         <span className={styles.spacer} />
         <StatusPill state={snap.state} shown={statusShown} detail={statusDetail} />
+        {snap.locked && (
+          <button
+            type="button"
+            className={mobile ? styles.lockNowMobile : styles.lockNow}
+            onClick={() => void lockSession.lock()}
+            aria-label="Lock now"
+            title="Locked note. Lock now"
+          >
+            <LockIcon size={mobile ? 19 : 16} />
+          </button>
+        )}
         {mobile ? <NoteMenu saver={saver} mobile /> : <NoteMenu saver={saver} mobile={false} onDelete={onDelete} />}
         {mobile && <DeleteButton onClick={onDelete} />}
       </div>

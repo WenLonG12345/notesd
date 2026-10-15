@@ -299,6 +299,7 @@ fun NotesListScreen(
                                         hit.excerpt,
                                         SpanStyle(background = t.accent.copy(alpha = 0.45f))
                                     ),
+                                    locked = hit.locked,
                                     selected = hit.id == selected,
                                     onOpen = { onOpen(hit.id) },
                                     onMore = { sheetFor = hit.id to hit.title },
@@ -319,6 +320,7 @@ fun NotesListScreen(
                                     preview = AnnotatedString(
                                         note.preview.split('\n').joinToString(" · ").ifEmpty { "No additional text" }
                                     ),
+                                    locked = note.locked,
                                     selected = note.id == selected,
                                     onOpen = { onOpen(note.id) },
                                     onMore = { sheetFor = note.id to note.title },
@@ -539,7 +541,9 @@ private fun NoteRow(
     onOpen: () -> Unit,
     onMore: () -> Unit,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** The body is encrypted: "Locked" stands in for the preview. */
+    locked: Boolean = false
 ) {
     val t = LocalTokens.current
     val haptics = LocalHapticFeedback.current
@@ -611,7 +615,13 @@ private fun NoteRow(
                     maxLines = 1
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(preview, style = Type.rowMeta, color = t.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (locked) {
+                    Icon(Icons.Lock, null, Modifier.size(14.dp).align(Alignment.CenterVertically), tint = t.ink3)
+                    Spacer(Modifier.width(3.dp))
+                    Text("Locked", style = Type.rowMeta, color = t.ink3, maxLines = 1)
+                } else {
+                    Text(preview, style = Type.rowMeta, color = t.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }

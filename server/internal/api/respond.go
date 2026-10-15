@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"notes/server/internal/auth"
+	"notes/server/internal/locks"
 	"notes/server/internal/mail"
 	"notes/server/internal/notes"
 	"notes/server/internal/search"
@@ -71,6 +72,7 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	var aerr *auth.InputError
 	var conflict *notes.ConflictError
 	var merr *mail.InputError
+	var lerr *locks.InputError
 	var send *mail.SendError
 	switch {
 	case errors.As(err, &verr):
@@ -79,6 +81,16 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: aerr.Message, Field: aerr.Field})
 	case errors.As(err, &merr):
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: merr.Message, Field: merr.Field})
+	case errors.As(err, &lerr):
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: lerr.Message, Field: lerr.Field})
+	case errors.Is(err, locks.ErrBadVerifier):
+		writeError(w, http.StatusForbidden, "bad_verifier", "unlock locked notes first; the keyring may have been reset elsewhere")
+	case errors.Is(err, locks.ErrNoPassword):
+		writeError(w, http.StatusConflict, "no_lock_password", err.Error())
+	case errors.Is(err, locks.ErrLastKey):
+		writeError(w, http.StatusConflict, "password_key_required", err.Error())
+	case errors.Is(err, locks.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "lock key not found")
 	case errors.Is(err, mail.ErrNotConfigured):
 		writeError(w, http.StatusConflict, "email_not_configured", "add a Resend API key in Settings to send email")
 	case errors.As(err, &send):

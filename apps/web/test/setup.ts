@@ -1,6 +1,8 @@
 import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
 import { resetEmailSettings } from '../src/notes/email-settings'
+import { kdfCost } from '../src/locks/crypto'
+import { lockTiming } from '../src/locks/session'
 import { timing } from '../src/notes/saver'
 import { PHONE, WIDE } from '../src/ui/media'
 
@@ -10,6 +12,8 @@ timing.retryBaseMs = 60
 timing.retryMaxMs = 200
 timing.undoDeleteMs = 300
 timing.quietMs = 100
+// The server's minimum; 600k iterations per unlock would dominate the run.
+kdfCost.password = 10_000
 
 // jsdom has no media queries. Tests get the wide layout (tags sidebar, list,
 // note) unless they ask for another (helpers.phoneLayout, mediumLayout);
@@ -64,6 +68,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return
   const open = [...document.querySelectorAll('dialog[open]')]
   open.at(-1)?.dispatchEvent(new Event('cancel', { cancelable: true }))
+})
+
+afterEach(() => {
+  lockTiming.idleMs = 5 * 60_000
+  lockTiming.hiddenMs = 5 * 60_000
 })
 
 afterEach(() => {

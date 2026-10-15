@@ -1,5 +1,6 @@
 package notes.app.settings
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -58,11 +59,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import notes.app.AppGraph
 import notes.app.BuildConfig
 import notes.app.account.Account
+import notes.app.locks.FingerprintUnlock
+import notes.app.locks.MIN_LOCK_PASSWORD
+import notes.app.locks.UnlockDialog
+import notes.app.locks.message
 import notes.app.ui.BackLink
 import notes.app.ui.BrandMark
 import notes.app.ui.ButtonKind
@@ -76,6 +82,7 @@ import notes.app.ui.NotesField
 import notes.app.ui.Type
 import notes.app.ui.pressScale
 import notes.core.api.ApiResult
+import notes.core.crypto.LockSession
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private sealed interface Confirm {
@@ -163,6 +170,12 @@ fun SettingsScreen(
                 if (account is Account.SignedIn) {
                     Section("Email")
                     EmailCard(graph)
+                }
+
+                val lockState by graph.locks.state.collectAsStateWithLifecycle()
+                if (account is Account.SignedIn || lockState != LockSession.State.None) {
+                    Section("Locked notes")
+                    LockedNotesCard(graph.locks, lockState, graph.fingerprint)
                 }
 
                 Section("Appearance")
@@ -338,6 +351,209 @@ private fun EmailCard(graph: AppGraph) {
                     }, kind = ButtonKind.DangerText, enabled = !busy, small = true)
                 }
             }
+        }
+    }
+}
+
+/** Locked notes (§10.1): change the lock password, lock now, or reset after forgetting it. */
+@Composable
+private fun LockedNotesCard(locks: LockSession, state: LockSession.State, fingerprint: FingerprintUnlock) {
+    val t = LocalTokens.current
+    val scope = rememberCoroutineScope()
+    val activity = LocalActivity.current as? FragmentActivity
+    val fingerprintOn by fingerprint.enabled.collectAsStateWithLifecycle()
+    val canFingerprint = remember { fingerprint.available() } && activity != null
+    var askingPassword by remember { mutableStateOf(false) }
+    var current by remember { mutableStateOf("") }
+    var next by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    var errors by remember { mutableStateOf(mapOf<String, String>()) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var resetting by remember { mutableStateOf(false) }
+    var account by remember { mutableStateOf("") }
+
+    if (state == LockSession.State.None) {
+        Card { Info("No lock password yet", "Choose Lock note from a note's menu to create one.") }
+        return
+    }
+
+    fun turnOnFingerprint() {
+        if (activity == null || busy) return
+        // The session itself, not [state]: right after the password dialog, that lags a frame.
+        if (locks.state.value != LockSession.State.Unlocked) {
+            askingPassword = true
+            return
+        }
+        busy = true
+        message = null
+        scope.launch {
+            val outcome = fingerprint.enable(activity)
+            busy = false
+            message = when (outcome) {
+                FingerprintUnlock.Outcome.Done -> "Fingerprint unlock is on for this phone."
+                FingerprintUnlock.Outcome.Cancelled -> null
+                else -> "Couldn't turn on fingerprint unlock. Try again."
+            }
+        }
+    }
+
+    fun change() {
+        errors = buildMap {
+            if (current.isEmpty()) put("current", "Enter your current lock password.")
+            if (next.length < MIN_LOCK_PASSWORD) {
+                put("next", "Use at least $MIN_LOCK_PASSWORD characters.")
+            } else if (confirm != next) {
+                put("confirm", "The passwords don't match.")
+            }
+        }
+        message = null
+        if (errors.isNotEmpty() || busy) return
+        busy = true
+        scope.launch {
+            val rewrapped = locks.passwordEntry()
+            val outcome = locks.changePassword(current, next)
+            busy = false
+            when (outcome) {
+                LockSession.Outcome.Done -> {
+                    fingerprint.passwordChanged(rewrapped)
+                    current = ""
+                    next = ""
+                    confirm = ""
+                    message = "Lock password changed. Other devices use the new one once they sync."
+                }
+
+                LockSession.Outcome.WrongPassword -> errors = mapOf("current" to "That isn't your lock password.")
+
+                else -> message = outcome.message()
+            }
+        }
+    }
+
+    fun reset() {
+        if (busy) return
+        busy = true
+        scope.launch {
+            val outcome = locks.reset(account)
+            busy = false
+            if (outcome == LockSession.Outcome.Done) fingerprint.disable()
+            if (outcome == LockSession.Outcome.WrongPassword) {
+                errors = mapOf("account" to "That isn't your account password.")
+            } else if (outcome != LockSession.Outcome.Done) {
+                message = outcome.message()
+            }
+        }
+    }
+
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (resetting) {
+                Text(
+                    "Resetting forgets the lock password. Notes locked with it stay encrypted and can never be " +
+                        "opened again, on any device. You can then create a new lock password.",
+                    style = Type.small,
+                    color = t.ink2
+                )
+                NotesField(
+                    value = account,
+                    onValueChange = {
+                        account = it
+                        errors = emptyMap()
+                    },
+                    label = "Account password",
+                    error = errors["account"],
+                    secret = true,
+                    enabled = !busy
+                )
+            } else {
+                NotesField(
+                    value = current,
+                    onValueChange = {
+                        current = it
+                        errors = errors - "current"
+                    },
+                    label = "Current lock password",
+                    error = errors["current"],
+                    secret = true,
+                    enabled = !busy
+                )
+                NotesField(
+                    value = next,
+                    onValueChange = {
+                        next = it
+                        errors = errors - "next"
+                    },
+                    label = "New lock password",
+                    placeholder = "At least $MIN_LOCK_PASSWORD characters",
+                    error = errors["next"],
+                    secret = true,
+                    enabled = !busy
+                )
+                NotesField(
+                    value = confirm,
+                    onValueChange = {
+                        confirm = it
+                        errors = errors - "confirm"
+                    },
+                    label = "Confirm new lock password",
+                    error = errors["confirm"],
+                    secret = true,
+                    enabled = !busy
+                )
+            }
+            message?.let {
+                Text(
+                    it,
+                    style = Type.small,
+                    color = t.ink2,
+                    modifier = Modifier.semantics {
+                        liveRegion =
+                            LiveRegionMode.Polite
+                    }
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (resetting) {
+                    NotesButton("Cancel", { resetting = false }, kind = ButtonKind.Chip, enabled = !busy, small = true)
+                    NotesButton("Reset locked notes", ::reset, kind = ButtonKind.Danger, busy = busy, small = true)
+                } else {
+                    NotesButton(if (busy) "Changing…" else "Change", ::change, busy = busy, small = true)
+                }
+            }
+        }
+        if (!resetting) {
+            if (state == LockSession.State.Unlocked) {
+                Divider()
+                Action("Lock now", t.link, enabled = !busy) {
+                    message = null
+                    scope.launch {
+                        if (!locks.lock()) {
+                            message =
+                                "An open note couldn't be saved, so locked notes are still unlocked. Try again."
+                        }
+                    }
+                }
+            }
+            if (canFingerprint) {
+                Divider()
+                if (fingerprintOn) {
+                    Action("Turn off fingerprint unlock", t.link, enabled = !busy) { fingerprint.turnOff() }
+                } else {
+                    Action("Unlock with fingerprint", t.link, enabled = !busy, onClick = ::turnOnFingerprint)
+                }
+            }
+            Divider()
+            Action("Forgot it? Reset locked notes…", t.danger, enabled = !busy) {
+                message = null
+                resetting = true
+            }
+        }
+    }
+    if (askingPassword) {
+        // Fingerprint unlock is turned on right after, so the dialog doesn't offer it too.
+        UnlockDialog(locks, "Unlock locked notes", onDismiss = { askingPassword = false }) {
+            askingPassword = false
+            turnOnFingerprint()
         }
     }
 }

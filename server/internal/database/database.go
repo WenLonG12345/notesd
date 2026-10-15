@@ -85,6 +85,10 @@ func dsn(path string, readOnly bool) string {
 	q.Add("_pragma", "synchronous(NORMAL)") // durable across process crashes in WAL mode
 	q.Add("_pragma", "foreign_keys(ON)")
 	q.Add("_pragma", "temp_store(MEMORY)")
+	// Deleted content is zeroed, so text from before a note was locked (or
+	// deleted) doesn't linger in the file (§10.1). The WAL still holds the
+	// old page images until ScrubWAL or a checkpoint overwrites them.
+	q.Add("_pragma", "secure_delete(ON)")
 	if readOnly {
 		q.Add("_pragma", "query_only(ON)")
 	} else {
@@ -110,6 +114,21 @@ func (db *DB) Ping(ctx context.Context) error {
 func (db *DB) Close() error {
 	_, _ = db.W.Exec("PRAGMA optimize")
 	return errors.Join(db.R.Close(), db.W.Close())
+}
+
+// ScrubWAL checkpoints the WAL into the database file and truncates it, so
+// the page images it held from before a write (a note's text before it was
+// locked) are gone from the -wal file too. Readers still using those pages
+// make it give up; the next checkpoint finishes the job.
+func (db *DB) ScrubWAL(ctx context.Context) error {
+	var busy, frames, done int
+	if err := db.W.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &frames, &done); err != nil {
+		return err
+	}
+	if busy != 0 {
+		return errors.New("wal checkpoint: readers still busy")
+	}
+	return nil
 }
 
 // WriteTx runs fn in a write transaction, committing if it returns nil.

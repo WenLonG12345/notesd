@@ -4,6 +4,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import notes.core.crypto.LockedNotes
 import notes.core.text.previewOf
 
 data class Note(
@@ -21,7 +22,14 @@ data class Note(
     val baseContent: String? = null
 )
 
-data class NoteSummary(val id: String, val title: String, val preview: String, val updatedAt: Long)
+/** [locked]: the body is encrypted (§10.1), so there's no preview. */
+data class NoteSummary(
+    val id: String,
+    val title: String,
+    val preview: String,
+    val updatedAt: Long,
+    val locked: Boolean = false
+)
 
 /** Narrows the list and search; null shows every note. */
 sealed interface NoteFilter {
@@ -46,8 +54,14 @@ private fun NoteFilter?.sql(): Pair<String, List<Any>> = when (this) {
             listOf(key, "$key/", "${key}0")
 }
 
-/** A search result. [excerpt] marks matches with [Search.MARK_OPEN] / [Search.MARK_CLOSE]. */
-data class SearchHit(val id: String, val title: String, val excerpt: String, val updatedAt: Long)
+/** A search result. [excerpt] marks matches with [Search.MARK_OPEN] / [Search.MARK_CLOSE]; a [locked] note matched on its title only. */
+data class SearchHit(
+    val id: String,
+    val title: String,
+    val excerpt: String,
+    val updatedAt: Long,
+    val locked: Boolean = false
+)
 
 /**
  * Notes on this device. Every local change is one transaction that updates the
@@ -73,13 +87,23 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
         val (cond, args) = filter.sql()
         sql.query(
             """
-            SELECT n.id, n.title, n.updated_at, f.body_text
+            SELECT n.id, n.title, n.updated_at, f.body_text, substr(n.content, 1, ?) = ?
             FROM notes n LEFT JOIN notes_fts f ON f.rowid = n.seq
             WHERE n.deleted_at IS NULL AND $cond
             ORDER BY n.updated_at DESC, n.id DESC
             """,
+            LockedNotes.PREFIX.length,
+            LockedNotes.PREFIX,
             *args.toTypedArray()
-        ) { NoteSummary(it.getText(0), it.getText(1), previewOf(it.textOrNull(3).orEmpty()), it.getLong(2)) }
+        ) {
+            NoteSummary(
+                it.getText(0),
+                it.getText(1),
+                previewOf(it.textOrNull(3).orEmpty()),
+                it.getLong(2),
+                it.getLong(4) == 1L
+            )
+        }
     }
 
     /** Ranked as on the server: title matches weigh 10×, then the most recently edited. */
@@ -90,7 +114,7 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
         return db.read { sql ->
             sql.query(
                 """
-                SELECT n.id, n.title, n.updated_at, snippet(notes_fts, 1, ?, ?, '…', 20)
+                SELECT n.id, n.title, n.updated_at, snippet(notes_fts, 1, ?, ?, '…', 20), substr(n.content, 1, ?) = ?
                 FROM notes_fts JOIN notes n ON n.seq = notes_fts.rowid
                 WHERE notes_fts MATCH ? AND n.deleted_at IS NULL AND $cond
                 ORDER BY bm25(notes_fts, ?, ?), n.updated_at DESC
@@ -98,12 +122,16 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
                 """,
                 Search.MARK_OPEN,
                 Search.MARK_CLOSE,
+                LockedNotes.PREFIX.length,
+                LockedNotes.PREFIX,
                 match,
                 *args.toTypedArray(),
                 Search.TITLE_WEIGHT,
                 Search.CONTENT_WEIGHT,
                 limit
-            ) { SearchHit(it.getText(0), it.getText(1), it.textOrNull(3).orEmpty(), it.getLong(2)) }
+            ) {
+                SearchHit(it.getText(0), it.getText(1), it.textOrNull(3).orEmpty(), it.getLong(2), it.getLong(4) == 1L)
+            }
         }
     }
 
@@ -272,6 +300,7 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
             sql.exec("DELETE FROM note_tags")
             sql.exec("DELETE FROM notes")
             sql.exec("DELETE FROM sync_outbox")
+            sql.exec("DELETE FROM lock_keys")
             sql.exec(
                 """
                 UPDATE sync_state SET cursor = 0, generation = NULL, last_sync_at = NULL, last_error = NULL,
