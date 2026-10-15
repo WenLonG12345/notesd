@@ -1,7 +1,8 @@
 // Package locks covers locked notes (§10.1): recognizing their encrypted
 // content and storing the keyring that clients unlock them with. The server
 // never holds a key; it only keeps locked bodies out of search, tags,
-// previews and email, and stores wrapped keys it cannot open.
+// previews and email, and stores wrapped keys it cannot open. The exception
+// is the export command, given the lock password by the owner (open.go).
 package locks
 
 import (

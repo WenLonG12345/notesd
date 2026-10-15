@@ -61,6 +61,28 @@ The Android app won't send your password over plain HTTP outside your local netw
 The full threat model is in
 [docs/architecture.md §10.1](docs/architecture.md#101-locked-notes).
 
+## Your data
+
+Everything the server knows lives in one SQLite file, `notes.db`, in the data
+directory. SQLite runs inside the server process, so there's no database server
+to run and a query is a function call instead of a network round trip. On an NVMe
+drive a commit takes a fraction of a millisecond, and a single file is easy to 
+back up and move.
+
+The database runs in **WAL mode**. Search uses **FTS5**.
+
+Notes are stored as Markdown, and you can take them out as plain files at any
+time:
+
+```bash
+notesd export --out ~/notes-export
+```
+
+Each note becomes a `.md` file named after its title. Locked notes are left
+out unless you add `--include-locked`, which asks you to confirm and to type
+the lock password, then writes them unencrypted. The command only reads the
+database, so it's safe to run while the server is up.
+
 ## How it's built
 
 | Part | Stack |
