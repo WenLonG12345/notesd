@@ -11,6 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: android-actions/setup-android@v3
+        with:
+          # The default also asks for "tools", which current sdkmanager no longer has.
+          # Gradle downloads the platform and build tools it needs.
+          packages: platform-tools
       - uses: jdx/mise-action@v2
       - run: mise run check
       - run: mise run test:android
