@@ -243,7 +243,13 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
                             ) {
                                 NotesListScreen(
                                     vm = viewModel {
-                                        NotesListViewModel(graph.store, graph.deletions, graph.sync, graph.listFilter)
+                                        NotesListViewModel(
+                                            graph.store,
+                                            graph.deletions,
+                                            graph.sync,
+                                            graph.listFilter,
+                                            graph.scheduler::request
+                                        )
                                     },
                                     signedOut = account is Account.SignedOut,
                                     beside = twoPane,
@@ -262,7 +268,6 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
                                         EditorViewModel(graph.store, key.id, graph.scope, key.startTag)
                                     },
                                     showBack = !twoPane,
-                                    connected = account != Account.None,
                                     emailFrom = email?.takeIf { it.configured && account is Account.SignedIn }?.from,
                                     emailRequested = emailFor == key.id,
                                     onEmailRequestHandled = { emailFor = null },

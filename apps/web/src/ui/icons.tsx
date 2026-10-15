@@ -98,3 +98,13 @@ export function ShareIcon({ size = 16 }: Props) {
     </svg>
   )
 }
+
+export function MoreIcon({ size = 16 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <circle cx="3.5" cy="8" r="1.25" />
+      <circle cx="8" cy="8" r="1.25" />
+      <circle cx="12.5" cy="8" r="1.25" />
+    </svg>
+  )
+}

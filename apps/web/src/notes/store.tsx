@@ -350,7 +350,6 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     }
     const onOnline = () => {
       for (const s of all()) s.resume()
-      // Also confirms the server is reachable, which clears the offline banner.
       void fetchPage(true)
       fetchTags()
     }

@@ -139,3 +139,9 @@ export function selectInBody(text: string) {
   }
   throw new Error(`"${text}" not in the note`)
 }
+
+/** Desktop: Delete lives at the end of the note's More menu. */
+export async function deleteNote(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'More' }))
+  await user.click(within(screen.getByRole('menu', { name: 'More' })).getByRole('menuitem', { name: 'Delete note' }))
+}

@@ -51,33 +51,17 @@
   flex: 1;
 }
 
-.delete,
 .deleteMobile {
   flex: none;
+  width: 44px;
+  height: 44px;
   border: 0;
   background: transparent;
+  color: var(--tint);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.delete {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  color: var(--ink-2);
-}
-
-.delete:hover {
-  background: var(--hover);
-  color: var(--danger);
-}
-
-.deleteMobile {
-  width: 44px;
-  height: 44px;
-  color: var(--tint);
 }
 
 .aa {

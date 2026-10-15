@@ -107,6 +107,7 @@ import notes.app.ui.Banner
 import notes.app.ui.BannerKind
 import notes.app.ui.BrandMark
 import notes.app.ui.ButtonKind
+import notes.app.ui.IconAction
 import notes.app.ui.Icons
 import notes.app.ui.Kicker
 import notes.app.ui.LocalHaze
@@ -117,7 +118,6 @@ import notes.app.ui.Sheet
 import notes.app.ui.SheetItem
 import notes.app.ui.ToastHost
 import notes.app.ui.Type
-import notes.app.ui.breathing
 import notes.app.ui.glass
 import notes.app.ui.hairline
 import notes.app.ui.pressScale
@@ -145,9 +145,10 @@ fun NotesListScreen(
     val t = LocalTokens.current
     val state by vm.state.collectAsStateWithLifecycle()
     val pending by vm.deletions.pending.collectAsStateWithLifecycle()
-    val sync by vm.sync.collectAsStateWithLifecycle()
+    val notSynced by vm.notSynced.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var sheetFor by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var syncSheet by remember { mutableStateOf(false) }
     val toasts = remember { SnackbarHostState() }
     val haze = rememberHazeState()
     val list = rememberLazyListState()
@@ -225,7 +226,13 @@ fun NotesListScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     item(key = "header", contentType = "header") {
-                        Header(sync.status, sync.pending, scope, mark = onTags != null, onClear = { vm.filter(null) })
+                        Header(
+                            notSynced?.pending,
+                            scope,
+                            mark = onTags != null,
+                            onClear = { vm.filter(null) },
+                            onNotSynced = { syncSheet = true }
+                        )
                     }
                     // Nothing to search before the first note.
                     if (state.notes.isNotEmpty() || query.isNotEmpty() || scope != null) {
@@ -344,7 +351,32 @@ fun NotesListScreen(
             }, danger = true)
         }
     }
+
+    val stuck = notSynced
+    if (syncSheet && stuck != null) {
+        Sheet(onDismiss = { syncSheet = false }) {
+            Column(
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(notSyncedLabel(stuck.pending), style = Type.title, color = t.ink)
+                Text(
+                    "They're saved on this phone and sync on their own once the server can be reached.",
+                    style = Type.body,
+                    color = t.ink2
+                )
+                if (stuck.error != null) Text("The server said: ${stuck.error}", style = Type.small, color = t.ink3)
+                Spacer(Modifier.height(4.dp))
+                NotesButton("Sync now", {
+                    syncSheet = false
+                    vm.syncNow()
+                }, Modifier.fillMaxWidth())
+            }
+        }
+    }
 }
+
+private fun notSyncedLabel(n: Int) = if (n == 1) "1 note not synced" else "$n notes not synced"
 
 private fun results(n: Int) = if (n == 1) "1 result" else "$n results"
 
@@ -379,73 +411,46 @@ private fun TopBar(collapsed: Boolean, title: String, onTags: (() -> Unit)?, mod
 }
 
 /**
- * The large title (the selected tag, if any, with a way back to all notes), with the sync state beneath it.
+ * The large title (the selected tag, if any, with a way back to all notes).
  * [mark]: the brand mark leads the title, unless the tags sidebar beside the list already shows it.
+ * [notSynced]: notes stuck on this phone; a quiet icon at the end, and nothing when sync is fine.
  */
 @Composable
-private fun Header(status: SyncStatus, pending: Int, scope: String?, mark: Boolean, onClear: () -> Unit) {
+private fun Header(notSynced: Int?, scope: String?, mark: Boolean, onClear: () -> Unit, onNotSynced: () -> Unit) {
     val t = LocalTokens.current
-    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, bottom = 12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (mark) {
-                BrandMark(26.dp)
-                Spacer(Modifier.width(12.dp))
-            }
-            Text(
-                scope ?: "Notes",
-                style = Type.display,
-                color = t.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false).semantics { heading() }
-            )
-            if (scope != null) {
-                Box(
-                    Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .clickable(role = Role.Button, onClick = onClear)
-                        .semantics { contentDescription = "Show all notes" },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(Modifier.size(24.dp).clip(CircleShape).background(t.on), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Close, null, Modifier.size(13.dp), tint = t.ink2)
-                    }
+    Row(
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (mark) {
+            BrandMark(26.dp)
+            Spacer(Modifier.width(12.dp))
+        }
+        Text(
+            scope ?: "Notes",
+            style = Type.display,
+            color = t.ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false).semantics { heading() }
+        )
+        if (scope != null) {
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = onClear)
+                    .semantics { contentDescription = "Show all notes" },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(Modifier.size(24.dp).clip(CircleShape).background(t.on), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Close, null, Modifier.size(13.dp), tint = t.ink2)
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
-        SyncState(status, pending, if (mark) 38.dp else 0.dp)
-    }
-}
-
-/** A quiet dot and a word: where sync stands. The dot breathes while syncing. */
-@Composable
-private fun SyncState(status: SyncStatus, pending: Int, indent: Dp) {
-    val t = LocalTokens.current
-    val toSend = if (pending > 0) " · $pending to send" else ""
-    val (word, color) = when (status) {
-        SyncStatus.NotConnected -> "On this phone" to t.statusUnsaved
-        SyncStatus.SignedOut -> "Signed out$toSend" to t.statusConflict
-        SyncStatus.Syncing -> "Syncing…" to t.statusSaving
-        is SyncStatus.Synced -> "Synced$toSend" to t.statusSaved
-        SyncStatus.Offline -> "Offline$toSend" to t.statusUnsaved
-        is SyncStatus.Failed -> "Sync error$toSend" to t.statusFailed
-    }
-    val dot by animateColorAsState(color, label = "dot")
-    val alpha = breathing(status == SyncStatus.Syncing)
-    Row(
-        Modifier.padding(start = indent).semantics(mergeDescendants = true) {},
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(Modifier.size(7.dp).drawBehind { drawCircle(dot.copy(alpha = alpha)) })
-        Spacer(Modifier.width(7.dp))
-        AnimatedContent(
-            word,
-            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
-            label = "sync"
-        ) {
-            Text(it, style = Type.small, color = t.ink3)
+        if (notSynced != null) {
+            Spacer(Modifier.weight(1f))
+            IconAction(Icons.CloudOff, notSyncedLabel(notSynced), onNotSynced, tint = t.ink3)
         }
     }
 }

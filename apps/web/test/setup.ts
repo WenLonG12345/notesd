@@ -9,6 +9,7 @@ timing.debounceMs = 40
 timing.retryBaseMs = 60
 timing.retryMaxMs = 200
 timing.undoDeleteMs = 300
+timing.quietMs = 100
 
 // jsdom has no media queries. Tests get the wide layout (tags sidebar, list,
 // note) unless they ask for another (helpers.phoneLayout, mediumLayout);

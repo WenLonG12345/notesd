@@ -22,6 +22,8 @@ export type Snapshot = {
   /** False until the server has the note (new notes POST on first save). */
   created: boolean
   updatedAt: number | null
+  /** Unreachable-server failures since the last save that landed; Retry doesn't reset it. */
+  failures: number
 }
 
 type Pending = { operationId: string; fields: Fields; create: boolean; baseRevision: number }
@@ -42,7 +44,7 @@ function canonicalFields(f: Fields): Fields {
 }
 
 // Tests shorten these; nothing else should touch them.
-export const timing = { debounceMs: 1500, retryBaseMs: 2000, retryMaxMs: 30_000, undoDeleteMs: 5000 }
+export const timing = { debounceMs: 1500, retryBaseMs: 2000, retryMaxMs: 30_000, undoDeleteMs: 5000, quietMs: 2000 }
 
 /** How many bytes a keepalive request may carry (browsers cap the total at 64 KB). */
 const KEEPALIVE_LIMIT = 60_000
@@ -75,6 +77,7 @@ export class NoteSaver {
   private debounce: ReturnType<typeof setTimeout> | undefined
   private retryTimer: ReturnType<typeof setTimeout> | undefined
   private attempts = 0
+  private failures = 0
   private waitingForAuth = false
   private listeners = new Set<() => void>()
   private remoteListeners = new Set<(fields: Fields) => void>()
@@ -266,6 +269,7 @@ export class NoteSaver {
       }
       this.pending = null
       this.attempts = 0
+      this.failures = 0
       this.created = true
       this.revision = result.revision
       this.base = p.fields
@@ -305,6 +309,7 @@ export class NoteSaver {
     // before that check runs.
     if (err instanceof NetworkError || (err instanceof ApiError && err.status >= 500)) {
       this.problem = { kind: 'offline' }
+      this.failures++
       this.set('failed')
       const delay = Math.min(timing.retryBaseMs * 2 ** this.attempts, timing.retryMaxMs)
       this.attempts++
@@ -456,6 +461,12 @@ export class NoteSaver {
   }
 
   private makeSnapshot(): Snapshot {
-    return { state: this.state, problem: this.problem, created: this.created, updatedAt: this.updatedAt }
+    return {
+      state: this.state,
+      problem: this.problem,
+      created: this.created,
+      updatedAt: this.updatedAt,
+      failures: this.failures,
+    }
   }
 }

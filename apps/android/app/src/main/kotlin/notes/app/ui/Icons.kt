@@ -58,6 +58,7 @@ object Icons {
     val Quote = icon("M5.5 4.5h8M5.5 8h8M5.5 11.5h5", "M2.2 3v10", stroke = 1.5f)
     val Indent = icon("M2.5 3h11M7.5 6.5h6M7.5 9.5h6M2.5 13h11", "M2.5 6l2.2 2-2.2 2")
     val Outdent = icon("M2.5 3h11M7.5 6.5h6M7.5 9.5h6M2.5 13h11", "M4.7 6L2.5 8l2.2 2")
+    val CloudOff = icon("M4.5 12.5a3 3 0 0 1-.4-6A4 4 0 0 1 11.8 5.6a3.4 3.4 0 0 1 .2 6.9z", "M2.5 2l11 12")
     val Cloud = icon("M4.5 12.5a3 3 0 0 1-.4-6A4 4 0 0 1 11.8 5.6a3.4 3.4 0 0 1 .2 6.9z")
 
     private fun icon(

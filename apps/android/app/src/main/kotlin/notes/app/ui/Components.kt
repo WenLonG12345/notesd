@@ -114,30 +114,6 @@ fun Heading(text: String, modifier: Modifier = Modifier, style: TextStyle = Type
     Text(text, style = style, color = LocalTokens.current.ink, modifier = modifier.semantics { heading() })
 }
 
-// --- status ------------------------------------------------------------------
-
-/** A dot and a word: the save or sync state. The dot breathes while [busy]. */
-@Composable
-fun StatusPill(word: String, dot: Color, ink: Color, modifier: Modifier = Modifier, busy: Boolean = false) {
-    val t = LocalTokens.current
-    val alpha = breathing(busy)
-    val dotColor by animateColorAsState(dot, tween(250), label = "dot")
-    Row(
-        modifier
-            .height(30.dp)
-            .clip(CircleShape)
-            .background(t.chip)
-            .border(1.dp, t.edge, CircleShape)
-            .padding(start = 11.dp, end = 12.dp)
-            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(Modifier.size(8.dp).drawBehind { drawCircle(dotColor.copy(alpha = dotColor.alpha * alpha)) })
-        Spacer(Modifier.width(7.dp))
-        Text(word, style = Type.label, color = ink, maxLines = 1)
-    }
-}
-
 // --- buttons -----------------------------------------------------------------
 
 enum class ButtonKind { Solid, Accent, Chip, Ghost, Danger, DangerText }

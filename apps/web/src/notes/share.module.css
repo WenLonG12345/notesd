@@ -37,7 +37,7 @@
   position: absolute;
   z-index: 10;
   top: calc(100% + 6px);
-  left: 0;
+  right: 0;
   min-width: 190px;
   padding: 6px;
   display: flex;
@@ -50,11 +50,6 @@
     var(--inset),
     0 24px 50px -16px rgb(0 0 0 / 0.35);
   animation: pop-in 0.16s ease-out;
-}
-
-.menuMobile {
-  left: auto;
-  right: 0;
 }
 
 .item {
@@ -72,6 +67,16 @@
 .item:hover,
 .item:focus-visible {
   background: var(--hover);
+}
+
+.danger {
+  color: var(--danger);
+}
+
+.separator {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--hair);
 }
 
 @keyframes pop-in {

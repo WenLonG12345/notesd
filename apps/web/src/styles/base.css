@@ -72,15 +72,6 @@ code {
   }
 }
 
-@keyframes settle {
-  from {
-    box-shadow: 0 0 0 0 currentcolor;
-  }
-  to {
-    box-shadow: 0 0 0 7px transparent;
-  }
-}
-
 @keyframes sheet-in {
   from {
     opacity: 0;

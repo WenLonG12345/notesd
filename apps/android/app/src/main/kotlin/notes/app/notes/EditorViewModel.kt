@@ -27,7 +27,7 @@ import notes.core.doc.Document
 import notes.core.markdown.Markdown
 import notes.core.text.tagText
 
-enum class SaveStatus { Blank, Unsaved, Saved, Synced }
+enum class SaveStatus { Blank, Unsaved, Saved }
 
 /** The note a conflicted copy was split from. */
 data class Original(val id: String, val title: String)
@@ -190,12 +190,7 @@ class EditorViewModel(
     }
 
     private suspend fun show(note: Note) {
-        if (edits ==
-            saved
-        ) {
-            _status.value =
-                if (!note.dirty && note.serverRevision != null) SaveStatus.Synced else SaveStatus.Saved
-        }
+        if (edits == saved) _status.value = SaveStatus.Saved
         val originalId = note.conflictOf
         if (originalId != null && _original.value?.id != originalId) {
             _original.value = store.get(originalId)?.takeIf { it.deletedAt == null }?.let { Original(it.id, it.title) }

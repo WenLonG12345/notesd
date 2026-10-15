@@ -27,11 +27,6 @@ data class Tokens(
     val on: Color,
     val glass: Color,
     val glassHi: Color,
-    val statusSaved: Color,
-    val statusUnsaved: Color,
-    val statusSaving: Color,
-    val statusFailed: Color,
-    val statusConflict: Color,
     val edge: Color,
     val field: Color,
     val chip: Color,
@@ -50,13 +45,6 @@ data class Tokens(
     val blobOpacity: Float,
     val dark: Boolean
 ) {
-    // Status word colours: the dot is the status colour, the word a darker or lighter ink of it.
-    val statusSavedInk get() = good
-    val statusUnsavedInk get() = ink2
-    val statusSavingInk get() = link
-    val statusFailedInk get() = danger
-    val statusConflictInk get() = warnInk
-
     // Password strength (apps/web/src/ui/password-meter.module.css), same in both themes.
     val meterWeak get() = Color(0xFFE57255) // oklch(0.68 0.15 35)
     val meterFair get() = Color(0xFFE4A339) // oklch(0.76 0.14 75)
@@ -82,11 +70,6 @@ data class Tokens(
             on = Color(0x1C3C2D19), // rgb(60 45 25 / 0.11)
             glass = Color(0xBDFFFDFA), // rgb(255 253 250 / 0.74)
             glassHi = Color(0xE0FFFDFA), // rgb(255 253 250 / 0.88)
-            statusSaved = Color(0xFF56AE6C), // oklch(0.68 0.13 150)
-            statusUnsaved = Color(0xFF96918C), // oklch(0.66 0.01 70)
-            statusSaving = Color(0xFFE8A127), // oklch(0.76 0.15 75)
-            statusFailed = Color(0xFFE24942), // oklch(0.62 0.19 27)
-            statusConflict = Color(0xFFE67339), // oklch(0.68 0.16 45)
             edge = Color(0xD9FFFFFF), // rgb(255 255 255 / 0.85)
             field = Color(0xC7FFFFFF), // rgb(255 255 255 / 0.78)
             chip = Color(0x9EFFFFFF), // rgb(255 255 255 / 0.62)
@@ -125,11 +108,6 @@ data class Tokens(
             on = Color(0x21FFFFFF), // rgb(255 255 255 / 0.13)
             glass = Color(0xB827292B), // rgb(39 41 43 / 0.72)
             glassHi = Color(0xE02D2F31), // rgb(45 47 49 / 0.88)
-            statusSaved = Color(0xFF56AE6C), // oklch(0.68 0.13 150)
-            statusUnsaved = Color(0xFF96918C), // oklch(0.66 0.01 70)
-            statusSaving = Color(0xFFE8A127), // oklch(0.76 0.15 75)
-            statusFailed = Color(0xFFE24942), // oklch(0.62 0.19 27)
-            statusConflict = Color(0xFFE67339), // oklch(0.68 0.16 45)
             edge = Color(0x14FFFFFF), // rgb(255 255 255 / 0.08)
             field = Color(0x0FFFFFFF), // rgb(255 255 255 / 0.06)
             chip = Color(0x12FFFFFF), // rgb(255 255 255 / 0.07)

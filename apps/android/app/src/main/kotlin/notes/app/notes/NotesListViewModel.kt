@@ -3,11 +3,14 @@ package notes.app.notes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
@@ -27,21 +30,38 @@ data class ListState(
     val hits: List<SearchHit> = emptyList()
 )
 
-/** What the list's status line shows: the engine's state and how many notes wait to be sent. */
-data class SyncLine(val status: SyncStatus, val pending: Int)
+/** Notes that are only on this phone because sync can't get through; [error] when the server refused. */
+data class NotSynced(val pending: Int, val error: String?)
+
+/**
+ * Sync is meant to go unnoticed, so this is null unless changes are stuck. Syncing is skipped
+ * rather than clearing it: the scheduler's retries would otherwise make it flicker.
+ */
+fun notSynced(status: Flow<SyncStatus>, pending: Flow<Int>): Flow<NotSynced?> =
+    combine(status.filter { it != SyncStatus.Syncing }, pending) { s, n ->
+        when {
+            n == 0 -> null
+            s == SyncStatus.Offline -> NotSynced(n, null)
+            s is SyncStatus.Failed -> NotSynced(n, s.message)
+            else -> null
+        }
+    }.distinctUntilChanged()
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotesListViewModel(
     private val store: NoteStore,
     val deletions: Deletions,
     private val engine: SyncEngine,
-    private val filter: MutableStateFlow<NoteFilter?>
+    private val filter: MutableStateFlow<NoteFilter?>,
+    private val requestSync: () -> Unit
 ) : ViewModel() {
     val events: SharedFlow<SyncEvent> get() = engine.events
 
-    val sync: StateFlow<SyncLine> =
-        combine(engine.status, store.changes.onStart { emit(Unit) }.mapLatest { store.pendingNotes() }, ::SyncLine)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SyncLine(engine.status.value, 0))
+    val notSynced: StateFlow<NotSynced?> =
+        notSynced(engine.status, store.changes.onStart { emit(Unit) }.mapLatest { store.pendingNotes() })
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun syncNow() = requestSync()
 
     private val query = MutableStateFlow("")
 

@@ -95,7 +95,6 @@ import notes.app.ui.NotesDialog
 import notes.app.ui.Reveal
 import notes.app.ui.Sheet
 import notes.app.ui.SheetItem
-import notes.app.ui.StatusPill
 import notes.app.ui.Type
 import notes.app.ui.hairline
 import notes.app.ui.pressScale
@@ -109,8 +108,7 @@ private const val SAVE_DELAY_MS = 700L
 /**
  * A note. Saves locally shortly after typing stops, and at once on leaving or
  * backgrounding. [showBack] is false beside the list (two panes), where
- * there's nothing to go back to. [connected]: a server exists, so "Saved"
- * means "not yet synced".
+ * there's nothing to go back to.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -121,7 +119,6 @@ fun EditorScreen(
     onOpen: (String) -> Unit,
     onOpenTag: (String) -> Unit = {},
     showBack: Boolean = true,
-    connected: Boolean = true,
     /** The sender's address when the server can email notes; null hides Email from the share sheet. */
     emailFrom: String? = null,
     /** "Email" was chosen in this note's share sheet. */
@@ -204,26 +201,7 @@ fun EditorScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (showBack) BackLink(onBack) else Spacer(Modifier.width(12.dp))
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                if (status != SaveStatus.Blank) {
-                    val (word, dot, ink) = when (status) {
-                        SaveStatus.Synced -> Triple("Synced", t.statusSaved, t.statusSavedInk)
-
-                        SaveStatus.Saved -> if (connected) {
-                            Triple("Saved", t.statusSaving, t.statusSavingInk)
-                        } else {
-                            Triple("Saved", t.statusSaved, t.statusSavedInk)
-                        }
-
-                        else -> Triple("Editing", t.statusUnsaved, t.statusUnsavedInk)
-                    }
-                    AnimatedContent(word, transitionSpec = {
-                        fadeIn(tween(180)) togetherWith fadeOut(tween(120))
-                    }, label = "status") {
-                        StatusPill(it, dot, ink)
-                    }
-                }
-            }
+            Spacer(Modifier.weight(1f))
             IconAction(Icons.Undo, "Undo", { editor?.undo() }, enabled = state.canUndo)
             IconAction(Icons.Redo, "Redo", { editor?.redo() }, enabled = state.canRedo)
             IconAction(Icons.More, "More", { menu = true })

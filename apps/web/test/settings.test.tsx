@@ -91,14 +91,15 @@ describe('closing settings', () => {
 })
 
 describe('connection', () => {
-  it('shows a quiet banner while the server is unreachable', async () => {
+  it('says nothing about an unreachable server until something the user did fails', async () => {
     const { server, user } = await signedIn()
     server.setOffline(true)
-    await user.type(screen.getByRole('searchbox', { name: 'Search notes' }), 'x')
-    expect(await screen.findByText(/No connection to the server/)).toBeTruthy()
-
-    server.setOffline(false)
+    // Refetches in the background, which fails.
     window.dispatchEvent(new Event('online'))
-    await waitFor(() => expect(screen.queryByText(/No connection to the server/)).toBeNull())
+    await new Promise((r) => setTimeout(r, 100))
+    expect(screen.queryByText(/connection|reach the server/i)).toBeNull()
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search notes' }), 'x')
+    expect(await screen.findByText('Search didn’t work.')).toBeTruthy()
   })
 })

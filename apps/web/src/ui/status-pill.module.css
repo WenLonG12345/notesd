@@ -7,6 +7,7 @@
   border-radius: 999px;
   background: var(--chip);
   border: 1px solid var(--edge);
+  animation: fade-in 0.2s;
 }
 
 .dot {
@@ -27,10 +28,6 @@
 .saved {
   --dot: var(--status-saved);
   --dot-ink: var(--status-saved-ink);
-}
-
-.saved .dot {
-  animation: settle 0.7s ease-out 1;
 }
 
 .unsaved {

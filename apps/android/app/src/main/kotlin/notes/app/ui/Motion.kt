@@ -40,19 +40,6 @@ fun systemReducesMotion(): Boolean {
     }
 }
 
-/** 0.4 → 1 → 0.4 while [active]; still at 1 otherwise or with reduced motion. */
-@Composable
-fun breathing(active: Boolean): Float {
-    if (!active || LocalReduceMotion.current) return 1f
-    val pulse by rememberInfiniteTransition("breathing").animateFloat(
-        initialValue = 1f,
-        targetValue = 0.35f,
-        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breathing"
-    )
-    return pulse
-}
-
 /** Pressed controls sink slightly. */
 fun Modifier.pressScale(interaction: InteractionSource, pressed: Float = 0.96f): Modifier = composed {
     val isPressed by interaction.collectIsPressedAsState()

@@ -10,7 +10,7 @@ async function configureEmail(server: TestServer) {
   expect(res.status).toBe(200)
 }
 
-const shareMenu = () => screen.getByRole('menu', { name: 'Share' })
+const moreMenu = () => screen.getByRole('menu', { name: 'More' })
 
 describe('email settings', () => {
   it('saves the key and sender, shows only the key’s end, and removes them', async () => {
@@ -43,12 +43,12 @@ describe('email settings', () => {
   })
 })
 
-describe('share menu', () => {
+describe('note menu', () => {
   it('offers email only once a Resend key is set', async () => {
     const { user } = await signedIn({ seed: async (s) => void (await createNote(s, 'Plans', 'Bike')) })
-    await user.click(await screen.findByRole('button', { name: 'Share' }))
-    expect(within(shareMenu()).queryByRole('menuitem', { name: 'Email…' })).toBeNull()
-    expect(within(shareMenu()).getByRole('menuitem', { name: 'Copy as Markdown' })).toBeTruthy()
+    await user.click(await screen.findByRole('button', { name: 'More' }))
+    expect(within(moreMenu()).queryByRole('menuitem', { name: 'Email…' })).toBeNull()
+    expect(within(moreMenu()).getByRole('menuitem', { name: 'Copy as Markdown' })).toBeTruthy()
   })
 
   it('emails what the editor shows, after saving it', async () => {
@@ -64,8 +64,8 @@ describe('share menu', () => {
     // Not saved yet when Send is pressed: sending waits for the save.
     await typeAtEnd(user, ' and park')
 
-    await user.click(await screen.findByRole('button', { name: 'Share' }))
-    await user.click(await within(shareMenu()).findByRole('menuitem', { name: 'Email…' }))
+    await user.click(await screen.findByRole('button', { name: 'More' }))
+    await user.click(await within(moreMenu()).findByRole('menuitem', { name: 'Email…' }))
     const dialog = await screen.findByRole('dialog', { name: 'Email this note' })
     expect(within(dialog).getByText('From Me <notes@example.com>. Separate addresses with commas.')).toBeTruthy()
 
@@ -90,8 +90,8 @@ describe('share menu', () => {
         await createNote(s, 'Plans', 'Bike')
       },
     })
-    await user.click(await screen.findByRole('button', { name: 'Share' }))
-    await user.click(await within(shareMenu()).findByRole('menuitem', { name: 'Email…' }))
+    await user.click(await screen.findByRole('button', { name: 'More' }))
+    await user.click(await within(moreMenu()).findByRole('menuitem', { name: 'Email…' }))
     const dialog = await screen.findByRole('dialog', { name: 'Email this note' })
     await user.type(within(dialog).getByLabelText('To'), 'sam@example.org')
     await user.click(within(dialog).getByRole('button', { name: 'Send' }))

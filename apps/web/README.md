@@ -118,8 +118,11 @@ of React, so saves outlive the editor.
 
 - **Autosave.** 1.5 s after the last change, the note is serialized and
   sent. Saves for a note are serialized: one request in flight, and edits
-  made meanwhile go out afterwards against the revision it returned. The
-  status pill shows Unsaved, Saving, Saved, Couldn't save or Conflict.
+  made meanwhile go out afterwards against the revision it returned.
+  Saving is meant to go unnoticed: the status pill (`src/notes/save-status.ts`)
+  appears only for a save still pending after 2 s, a conflict, or a failure.
+  A single unreachable-server failure counts as pending, because the first
+  retry usually fixes it.
 - **Retries.** A network failure or 5xx retries with backoff (2 s doubling
   to 30 s), and again on focus or when the browser comes back online. A
   retry reuses the request's `operationId`, so a save whose response was

@@ -6,6 +6,7 @@ import {
   body,
   bodyText,
   createNote,
+  deleteNote,
   editElsewhere,
   getNote,
   list,
@@ -370,7 +371,7 @@ describe('deleting', () => {
     })
     await openNote(user, 'Remove me')
 
-    await user.click(screen.getByRole('button', { name: 'Delete note' }))
+    await deleteNote(user)
     expect(within(list()).queryByRole('link', { name: /^Remove me/ })).toBeNull()
     expect(screen.getByText('Note deleted')).toBeTruthy()
     // The next note opens in its place.
@@ -382,7 +383,7 @@ describe('deleting', () => {
     expect(row('Remove me').getAttribute('aria-current')).toBe('page')
     expect((await listNotes(server)).map((n) => n.title).toSorted()).toEqual(['Keep', 'Remove me'])
 
-    await user.click(screen.getByRole('button', { name: 'Delete note' }))
+    await deleteNote(user)
     await waitFor(async () => expect((await listNotes(server)).map((n) => n.title)).toEqual(['Keep']))
     await waitFor(() => expect(screen.queryByText('Note deleted')).toBeNull())
     expect(within(list()).getByText('1 note')).toBeTruthy()
@@ -397,7 +398,7 @@ describe('deleting', () => {
     })
     await waitFor(() => expect(noteTitle()).toBe('Shared'))
 
-    await user.click(screen.getByRole('button', { name: 'Delete note' }))
+    await deleteNote(user)
     await editElsewhere(server, id, { content: 'Theirs' })
 
     expect(await screen.findByText('Not deleted: it changed on another device.')).toBeTruthy()

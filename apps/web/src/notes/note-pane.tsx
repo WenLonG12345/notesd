@@ -8,8 +8,9 @@ import { Banner } from '../ui/banner'
 import { Button } from '../ui/button'
 import { ComposeIcon, TrashIcon } from '../ui/icons'
 import { StatusPill } from '../ui/status-pill'
+import { offlineNotice, useStatusShown } from './save-status'
 import type { NoteSaver } from './saver'
-import { ShareButton } from './share'
+import { NoteMenu } from './share'
 import { useNotes } from './store'
 import { tagKey } from './tags'
 import styles from './note-pane.module.css'
@@ -247,6 +248,16 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
   }
 
   const problem = snap.problem
+  const statusShown = useStatusShown(snap)
+  // A 401 or a refusal also reads "Couldn't save"; the tooltip says which.
+  const statusDetail =
+    snap.state !== 'failed'
+      ? undefined
+      : problem?.kind === 'rejected'
+        ? 'The server didn’t accept this save'
+        : problem === null
+          ? 'Waiting for you to sign in again'
+          : undefined
   const edited = snap.created && snap.updatedAt !== null ? snap.updatedAt : openedAt
 
   return (
@@ -256,9 +267,6 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
           <BackButton onClick={onBack} />
         ) : (
           <div className={styles.tools} role="toolbar" aria-label="Formatting">
-            <DeleteButton onClick={onDelete} />
-            <ShareButton saver={saver} mobile={false} />
-            <span className={styles.sep} aria-hidden="true" />
             <StylesButton editor={editor} id={stylesId} open={stylesOpen} onToggle={toggleStyles} />
             <MarkTools editor={editor} />
             <span className={styles.sep} aria-hidden="true" />
@@ -267,9 +275,9 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
           </div>
         )}
         <span className={styles.spacer} />
-        <StatusPill state={snap.state} />
-        {mobile && <ShareButton saver={saver} mobile />}
-        {mobile && <DeleteButton onClick={onDelete} mobile />}
+        <StatusPill state={snap.state} shown={statusShown} detail={statusDetail} />
+        {mobile ? <NoteMenu saver={saver} mobile /> : <NoteMenu saver={saver} mobile={false} onDelete={onDelete} />}
+        {mobile && <DeleteButton onClick={onDelete} />}
       </div>
 
       {linkOpen && (
@@ -278,7 +286,7 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
         </div>
       )}
 
-      {problem?.kind === 'offline' && (
+      {offlineNotice(snap) && (
         <Notice
           tone="error"
           actions={
@@ -397,16 +405,10 @@ function StylesButton({ editor, id, open, onToggle, mobile = false }: { editor: 
   )
 }
 
-function DeleteButton({ onClick, mobile = false }: { onClick: () => void; mobile?: boolean }) {
+function DeleteButton({ onClick }: { onClick: () => void }) {
   return (
-    <button
-      type="button"
-      className={mobile ? styles.deleteMobile : styles.delete}
-      onClick={onClick}
-      aria-label="Delete note"
-      title="Delete note"
-    >
-      <TrashIcon size={mobile ? 18 : 16} />
+    <button type="button" className={styles.deleteMobile} onClick={onClick} aria-label="Delete note" title="Delete note">
+      <TrashIcon size={18} />
     </button>
   )
 }

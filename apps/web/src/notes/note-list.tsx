@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from 'react'
 import { Button } from '../ui/button'
 import { PlusIcon, SearchIcon, SidebarIcon } from '../ui/icons'
-import { ConnectionBanner } from './connection'
 import { groupByDate, listTime } from './list-time'
 import { useSearch } from './search'
 import { useNotes } from './store'
@@ -102,7 +101,6 @@ export function NoteList({ selectedId, query, onQuery, onSelect, onNew, tags, on
           )}
         </div>
       </div>
-      <ConnectionBanner />
 
       <div className={styles.scroll}>
         {searching ? (

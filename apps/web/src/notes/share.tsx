@@ -5,7 +5,7 @@ import { genericMessage } from '../auth/errors'
 import { Button } from '../ui/button'
 import { Dialog } from '../ui/dialog'
 import { Field } from '../ui/field'
-import { ShareIcon } from '../ui/icons'
+import { MoreIcon, ShareIcon } from '../ui/icons'
 import { useEmailSettings } from './email-settings'
 import type { NoteSaver } from './saver'
 import styles from './share.module.css'
@@ -17,11 +17,13 @@ function exportMarkdown(saver: NoteSaver): string {
 }
 
 /**
- * Share menu: Email (when Settings has a Resend key), the browser's share
- * sheet where there is one, and Copy as Markdown. Browsers can't add our
- * own action to their share sheet, hence a menu.
+ * The note's menu: Email (when Settings has a Resend key), the browser's share
+ * sheet where there is one, and Copy as Markdown. Browsers can't add our own
+ * action to their share sheet, hence a menu. With [onDelete] it's the desktop's
+ * one "More" menu and ends with Delete; phones keep Delete as its own button.
  */
-export function ShareButton({ saver, mobile }: { saver: NoteSaver; mobile: boolean }) {
+export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile: boolean; onDelete?: () => void }) {
+  const name = onDelete ? 'More' : 'Share'
   const email = useEmailSettings()
   const [open, setOpen] = useState(false)
   const [emailing, setEmailing] = useState(false)
@@ -60,17 +62,17 @@ export function ShareButton({ saver, mobile }: { saver: NoteSaver; mobile: boole
       <button
         type="button"
         className={mobile ? styles.buttonMobile : styles.button}
-        aria-label="Share"
-        title="Share"
+        aria-label={name}
+        title={name}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => setOpen((v) => !v)}
       >
-        <ShareIcon size={mobile ? 19 : 16} />
+        {onDelete ? <MoreIcon /> : <ShareIcon size={mobile ? 19 : 16} />}
       </button>
       {open && (
-        <div id={menuId} role="menu" aria-label="Share" className={[styles.menu, mobile && styles.menuMobile].filter(Boolean).join(' ')}>
+        <div id={menuId} role="menu" aria-label={name} className={styles.menu}>
           {email?.configured && (
             <button
               type="button"
@@ -109,6 +111,22 @@ export function ShareButton({ saver, mobile }: { saver: NoteSaver; mobile: boole
           >
             {copied ? 'Copied' : 'Copy as Markdown'}
           </button>
+          {onDelete && (
+            <>
+              <div role="separator" className={styles.separator} />
+              <button
+                type="button"
+                role="menuitem"
+                className={[styles.item, styles.danger].join(' ')}
+                onClick={() => {
+                  setOpen(false)
+                  onDelete()
+                }}
+              >
+                Delete note
+              </button>
+            </>
+          )}
         </div>
       )}
       {emailing && email?.configured && (
