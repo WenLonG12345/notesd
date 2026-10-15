@@ -19,8 +19,8 @@ import kotlinx.coroutines.runBlocking
 import notes.app.MainActivity
 import notes.app.NotesApp
 import notes.app.TestNotesApp
-import notes.app.runOffMain
 import notes.app.editor.NoteEditText
+import notes.app.runOffMain
 import notes.core.db.NoteFilter
 import org.junit.After
 import org.junit.Before

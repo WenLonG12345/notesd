@@ -283,14 +283,14 @@ class LinkSpan(val href: String, val title: String?, private val style: EditorSt
 /**
  * A #tag (architecture §7.5): tinted, still plain editable text. Not an
  * [EditorSpan]: the [Normalizer] re-derives it after every change and it never
- * reaches the document.
+ * reaches the document. [NoteEditText] draws the tint as a pill; a span's
+ * bgColor would fill the whole line height, line spacing included.
  */
-class TagSpan(val name: String, private val style: EditorStyle) :
+class TagSpan(val name: String) :
     CharacterStyle(),
     UpdateAppearance {
-    override fun updateDrawState(tp: TextPaint) {
-        tp.bgColor = style.tagBg
-    }
+    // Still an UpdateAppearance so adding or moving one redraws the text.
+    override fun updateDrawState(tp: TextPaint) = Unit
 }
 
 /** Marks a "\n" that is a line break inside a paragraph, not the end of a block. */

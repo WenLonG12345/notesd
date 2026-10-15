@@ -20,6 +20,7 @@ import androidx.compose.material3.adaptive.navigation3.rememberListDetailSceneSt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -130,16 +131,38 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
         if (!wide) backStack.add(0, TagsKey)
     }
 
-    /** Back to the tags screen, under the list. */
+    /**
+     * Back to the tags screen, under the list. Beside a note (two panes) the tags
+     * go on top instead: they take the list's pane and the note stays open.
+     */
     fun tags() {
         view.hideKeyboard()
+        if (twoPane) {
+            backStack.remove(TagsKey)
+            backStack += TagsKey
+            return
+        }
         if (TagsKey !in backStack) backStack.add(0, TagsKey)
         while (backStack.last() != TagsKey) backStack.removeAt(backStack.lastIndex)
     }
 
     fun show(filter: NoteFilter?) {
         graph.listFilter.value = filter
-        if (backStack.lastOrNull() == TagsKey) backStack += NotesKey
+        if (backStack.lastOrNull() != TagsKey) return
+        // Tags over the list (two panes): back to the list beneath them.
+        if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) else backStack += NotesKey
+    }
+
+    // Narrower than the sidebar, the tags always sit under the list: back from the list reaches them,
+    // including after they were shown on top of it and closed.
+    val tagsMissing by remember { derivedStateOf { TagsKey !in backStack && NotesKey in backStack } }
+    LaunchedEffect(tagsMissing, wide) {
+        if (tagsMissing && !wide) backStack.add(0, TagsKey)
+    }
+
+    // Folded while the tags were over the list: close them rather than show them over the note full screen.
+    LaunchedEffect(twoPane) {
+        if (!twoPane && backStack.size > 1 && backStack.last() == TagsKey) backStack.removeAt(backStack.lastIndex)
     }
 
     // Folded, unfolded, resized: the tags move between sidebar and screen.
@@ -147,8 +170,6 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
         if (wide) {
             if (backStack.lastOrNull() == TagsKey) backStack += NotesKey
             backStack.removeAll { it == TagsKey }
-        } else if (backStack.firstOrNull() == NotesKey) {
-            backStack.add(0, TagsKey)
         }
     }
 
@@ -227,7 +248,11 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
                                 scaleOut(springSlide(reduce), targetScale = 0.9f) + fadeOut(tween(ms))
                         },
                         entryProvider = entryProvider {
-                            entry<TagsKey> {
+                            entry<TagsKey>(
+                                metadata = ListDetailSceneStrategy.listPane(detailPlaceholder = {
+                                    NothingOpen(hasNotes = true, onNew = ::new)
+                                })
+                            ) {
                                 TagsPane(
                                     vm = viewModel { TagsViewModel(graph.store, graph.listFilter) },
                                     state = graph.tagTree,

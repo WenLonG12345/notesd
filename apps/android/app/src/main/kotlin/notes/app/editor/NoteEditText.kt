@@ -1,6 +1,9 @@
 package notes.app.editor
 
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -11,8 +14,10 @@ import android.text.InputType
 import android.text.Selection
 import android.text.SpannableString
 import android.text.Spanned
+import android.text.TextPaint
 import android.text.TextUtils
 import android.text.TextWatcher
+import android.text.style.MetricAffectingSpan
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
@@ -26,6 +31,7 @@ import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.InputMethodManager
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.core.graphics.ColorUtils
+import androidx.core.graphics.withTranslation
 import kotlin.math.abs
 import notes.core.doc.Container
 import notes.core.doc.Document
@@ -133,6 +139,51 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
 
     /** The note as a document: title line first. Cheap enough per save, not per keystroke. */
     fun document(): Document = SpanCodec.toDocument(text!!)
+
+    private val tagPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = editorStyle.tagBg }
+    private val tagMetrics = TextPaint()
+    private val tagRect = RectF()
+
+    override fun onDraw(canvas: Canvas) {
+        drawTagPills(canvas)
+        super.onDraw(canvas)
+    }
+
+    /** The web's tag pill: as tall as the letters, not the line, one per line a tag wraps across. */
+    private fun drawTagPills(canvas: Canvas) {
+        val t = text ?: return
+        val layout = layout ?: return
+        val tags = t.getSpans(0, t.length, TagSpan::class.java)
+        if (tags.isEmpty()) return
+        canvas.withTranslation(totalPaddingLeft.toFloat(), totalPaddingTop.toFloat()) {
+            for (tag in tags) {
+                val start = t.getSpanStart(tag)
+                val end = t.getSpanEnd(tag)
+                if (start < 0 || end <= start) continue
+                // Headings scale their tags: measure with the spans that size this text.
+                tagMetrics.set(paint)
+                for (s in t.getSpans(start, end, MetricAffectingSpan::class.java)) s.updateMeasureState(tagMetrics)
+                val fm = tagMetrics.fontMetrics
+                for (line in layout.getLineForOffset(start)..layout.getLineForOffset(end)) {
+                    val from = maxOf(start, layout.getLineStart(line))
+                    val to = minOf(end, layout.getLineEnd(line))
+                    if (to <= from) continue
+                    val left = layout.getPrimaryHorizontal(from)
+                    // To the line's end means it wraps there, where that offset would measure at the next line's start.
+                    val wraps = to == layout.getLineEnd(line) && line < layout.lineCount - 1
+                    val right = if (wraps) layout.getLineRight(line) else layout.getPrimaryHorizontal(to)
+                    val baseline = layout.getLineBaseline(line).toFloat()
+                    tagRect.set(
+                        left - editorStyle.tagPadX,
+                        baseline + fm.ascent,
+                        right + editorStyle.tagPadX,
+                        baseline + fm.descent
+                    )
+                    canvas.drawRoundRect(tagRect, editorStyle.tagRadius, editorStyle.tagRadius, tagPaint)
+                }
+            }
+        }
+    }
 
     /** Loads [doc]. With [keepSelection], the cursor stays at the same offset (a remote change). */
     fun setDocument(doc: Document, keepSelection: Boolean = false) {

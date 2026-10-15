@@ -36,6 +36,10 @@ class EditorStyle(
     /** Behind #tags (web: .prose [data-tag]). */
     val tagBg = tokens.accent.copy(alpha = 0.3f).toArgb()
 
+    // Under half a space: two tags in a row keep a gap between their pills.
+    val tagPadX = dp(2f)
+    val tagRadius = dp(6f)
+
     /** Width one list level adds; the marker is drawn inside it. */
     val itemIndent = dp(28f)
 

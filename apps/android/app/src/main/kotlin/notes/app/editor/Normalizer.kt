@@ -304,7 +304,7 @@ class Normalizer(private val style: EditorStyle) {
             if (found[at] == span.name) found.remove(at) else text.removeSpan(span)
         }
         for ((at, name) in found) {
-            text.setSpan(TagSpan(name, style), at.first, at.second, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            text.setSpan(TagSpan(name), at.first, at.second, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
 
