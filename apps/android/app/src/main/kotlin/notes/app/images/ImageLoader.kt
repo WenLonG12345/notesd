@@ -54,7 +54,9 @@ class ImageLoader(private val store: ImageStore, private val locks: LockSession,
             }
             if (result.second && started != generation) {
                 // Locked notes locked while this decrypted: it must not stay in memory.
+                // Asked again (unlocked again meanwhile), it decrypts afresh.
                 result.first.recycle()
+                onReady()
                 return@launch
             }
             failedAt -= key
@@ -84,6 +86,8 @@ class ImageLoader(private val store: ImageStore, private val locks: LockSession,
                 LockedNotes.decryptImage(k, file.bytes)
             } catch (_: LockedException) {
                 return null
+            } finally {
+                k.fill(0)
             }
         } else {
             file.bytes

@@ -1,6 +1,6 @@
 import { ApiError, NetworkError } from '../api/client'
 import { notes } from '../api/notes'
-import { canonical } from '../editor/markdown'
+import { canonical, parse } from '../editor/markdown'
 import type { MutationResult, Note } from '../api/types'
 import { imageIds } from '../images/ref'
 import { LockedError, decryptBody, encryptBody, isLocked } from '../locks/crypto'
@@ -249,8 +249,7 @@ export class NoteSaver {
   appendClosed(markdown: string): boolean {
     if (this.isAttached()) return false
     const { title, content } = this.read()
-    const body = content.trimEnd()
-    const next = { title, content: `${body ? `${body}\n\n` : ''}${markdown}\n` }
+    const next = { title, content: appendBlock(content, markdown) }
     this.read = () => next
     this.edit()
     return true
@@ -694,4 +693,27 @@ export class NoteSaver {
       imagesBusy: this.imagesBusy > 0,
     }
   }
+}
+
+/**
+ * content with block on its own line at the end. A code fence left open at
+ * the end would take the line in as code: it is closed first.
+ */
+export function appendBlock(content: string, block: string): string {
+  const body = content.trimEnd()
+  const next = `${body ? `${body}\n\n` : ''}${block}\n`
+  if (outsideCode(next, block)) return next
+  const fence = /^ {0,3}(`{3,}|~{3,})/
+  const opener = body.split('\n').findLast((line) => fence.test(line))
+  const marker = opener?.match(fence)?.[1]
+  return marker ? `${body}\n${marker}\n\n${block}\n` : next
+}
+
+/** Whether block is still its own image (or text) in markdown, not swallowed by a raw code block. */
+function outsideCode(markdown: string, block: string): boolean {
+  let raw = false
+  parse(markdown).descendants((node) => {
+    if (node.type.name === 'rawBlock' && String(node.attrs.source).includes(block)) raw = true
+  })
+  return !raw
 }

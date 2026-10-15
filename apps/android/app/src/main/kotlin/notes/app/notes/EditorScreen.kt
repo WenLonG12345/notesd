@@ -214,19 +214,20 @@ fun EditorScreen(
         }
         scope.launch {
             // The pictures go with the lock (§10.1): stored again encrypted, or plain, before the note is.
+            // Applied only once all have moved: a failure partway leaves the note as it was.
             var pending = ids
             val done = HashSet<String>()
+            val moved = HashMap<String, String>()
             while (true) {
-                val moved = vm.moveImages(pending, on) ?: return@launch
+                moved += vm.moveImages(pending, on) ?: return@launch
                 val e = editor ?: return@launch
-                e.replaceImages(moved)
                 done += pending
-                done += moved.values
                 // Pictures added while those moved go with the lock too.
                 pending = e.imageIds() - done
                 if (pending.isEmpty()) break
             }
             val e = editor ?: return@launch
+            e.replaceImages(moved)
             vm.setLocked(e.document(), on)
         }
     }
