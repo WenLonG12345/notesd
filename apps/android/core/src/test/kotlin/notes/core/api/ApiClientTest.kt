@@ -8,8 +8,10 @@ import kotlin.test.assertNull
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 
 class ApiClientTest {
     private val server = MockWebServer().apply { start() }
@@ -143,14 +145,18 @@ class ApiClientTest {
 
     @Test
     fun `concurrent 401s share one refresh`() = runBlocking<Unit> {
-        server.enqueue(unauthenticated)
-        server.enqueue(unauthenticated)
-        server.enqueue(refreshed("a2"))
-        server.enqueue(MockResponse.Builder().code(204).build())
-        server.enqueue(MockResponse.Builder().code(204).build())
+        // Answered by what each request is, not arrival order: the calls race, so
+        // one may refresh before the other's first request reaches the server.
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.url.encodedPath == "/api/v1/auth/refresh" -> refreshed("a2")
+                request.headers["Authorization"] == "Bearer a2" -> MockResponse.Builder().code(204).build()
+                else -> unauthenticated
+            }
+        }
         val results = listOf(async { api.logout() }, async { api.logout() }).awaitAll()
         assertEquals(listOf(ApiResult.Ok(Unit), ApiResult.Ok(Unit)), results)
-        val paths = List(5) { server.takeRequest().url.encodedPath }
+        val paths = List(server.requestCount) { server.takeRequest().url.encodedPath }
         assertEquals(1, paths.count { it == "/api/v1/auth/refresh" })
     }
 
