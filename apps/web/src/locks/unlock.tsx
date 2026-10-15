@@ -14,23 +14,32 @@ import styles from './locks.module.css'
 export const MIN_LOCK_PASSWORD = 8
 
 const UNLOCK: [string, string] = ['Unlock', 'Unlocking…']
+const UNLOCK_PASSKEY: [string, string] = ['Unlock with passkey', 'Waiting for the passkey…']
 
-/** The lock password field and its button ([action], Unlock by default); inline in the note pane or inside LockNoteDialog. */
+/**
+ * The way into locked notes; inline in the note pane or inside
+ * LockNoteDialog. With a passkey set up, that's the one button, and the
+ * lock password field waits behind "Use password instead". [action] and
+ * [passkeyAction] name the buttons (idle, busy).
+ */
 export function UnlockForm({
   onUnlocked,
   onCancel,
   autoFocus = true,
   action = UNLOCK,
+  passkeyAction = UNLOCK_PASSKEY,
 }: {
   onUnlocked: () => void
   onCancel?: () => void
   autoFocus?: boolean
   action?: [string, string]
+  passkeyAction?: [string, string]
 }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
   const [ref, shake] = useShake<HTMLFormElement>()
+  const [usePassword, setUsePassword] = useState(false)
   const canPasskey = useLockKeys().some((k) => k.kind === 'passkey') && passkeysAvailable()
 
   async function passkey() {
@@ -41,7 +50,11 @@ export function UnlockForm({
       onUnlocked()
     } catch (err) {
       if (err instanceof PasskeyError && err.reason === 'cancelled') return
-      setError(err instanceof PasskeyError || err instanceof LockedError ? 'That passkey couldn’t unlock notes. Use the lock password.' : genericMessage(err))
+      setError(
+        err instanceof PasskeyError || err instanceof LockedError
+          ? 'That passkey couldn’t unlock notes. Use the lock password instead.'
+          : genericMessage(err),
+      )
     } finally {
       setBusy(false)
     }
@@ -63,6 +76,39 @@ export function UnlockForm({
     }
   }
 
+  if (canPasskey && !usePassword) {
+    return (
+      <div className={onCancel ? styles.stack : styles.inline}>
+        <div className={styles.actions}>
+          {onCancel && (
+            <Button size="md" onClick={onCancel} disabled={busy}>
+              Cancel
+            </Button>
+          )}
+          <Button variant="solid" size="md" onClick={() => void passkey()} busy={busy} grow={!onCancel} autoFocus={autoFocus}>
+            {busy ? passkeyAction[1] : passkeyAction[0]}
+          </Button>
+        </div>
+        {error && (
+          <p role="alert" className={styles.error}>
+            {error}
+          </p>
+        )}
+        <button
+          type="button"
+          className={styles.link}
+          onClick={() => {
+            setError(undefined)
+            setUsePassword(true)
+          }}
+          disabled={busy}
+        >
+          Use password instead
+        </button>
+      </div>
+    )
+  }
+
   return (
     <form ref={ref} className={onCancel ? styles.stack : styles.inline} onSubmit={(e) => void submit(e)} noValidate>
       <Field
@@ -75,7 +121,8 @@ export function UnlockForm({
           setError(undefined)
         }}
         error={error}
-        autoFocus={autoFocus}
+        // Chosen over the passkey: the field is what's wanted next.
+        autoFocus={autoFocus || usePassword}
       />
       <div className={styles.actions}>
         {onCancel && (
@@ -88,13 +135,24 @@ export function UnlockForm({
         </Button>
       </div>
       {canPasskey && (
-        <Button size="md" onClick={() => void passkey()} disabled={busy}>
-          Use a passkey
-        </Button>
+        <button
+          type="button"
+          className={styles.link}
+          onClick={() => {
+            setError(undefined)
+            setUsePassword(false)
+          }}
+          disabled={busy}
+        >
+          Use passkey instead
+        </button>
       )}
     </form>
   )
 }
+
+const LOCK: [string, string] = ['Lock', 'Locking…']
+const LOCK_PASSKEY: [string, string] = ['Lock with passkey', 'Waiting for the passkey…']
 
 /**
  * Lock note, when a lock password already exists (made on any device) but
@@ -103,6 +161,7 @@ export function UnlockForm({
  */
 export function LockNoteDialog({ onUnlocked, onClose }: { onUnlocked: () => void; onClose: () => void }) {
   const titleId = useId()
+  const canPasskey = useLockKeys().some((k) => k.kind === 'passkey') && passkeysAvailable()
   return (
     <Dialog labelledBy={titleId} onClose={onClose}>
       <div className={styles.stack}>
@@ -110,10 +169,11 @@ export function LockNoteDialog({ onUnlocked, onClose }: { onUnlocked: () => void
           Lock this note
         </h2>
         <p className={styles.text}>
-          Locked notes share one lock password, made the first time a note was locked on any of your devices. Enter
-          it to lock this note.
+          {canPasskey
+            ? 'Locked notes are opened with your passkey or the lock password. Use one to lock this note.'
+            : 'Locked notes share one lock password, made the first time a note was locked on any of your devices. Enter it to lock this note.'}
         </p>
-        <UnlockForm onUnlocked={onUnlocked} onCancel={onClose} action={['Lock', 'Locking…']} />
+        <UnlockForm onUnlocked={onUnlocked} onCancel={onClose} action={LOCK} passkeyAction={LOCK_PASSKEY} />
       </div>
     </Dialog>
   )

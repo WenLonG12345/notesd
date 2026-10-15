@@ -172,7 +172,25 @@ describe('passkeys for locked notes', () => {
     await closeSettings(s)
     await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
     await screen.findByText('This note is locked.')
-    await s.user.click(screen.getByRole('button', { name: 'Use a passkey' }))
+    await s.user.click(screen.getByRole('button', { name: 'Unlock with passkey' }))
+    await waitFor(() => expect(bodyText()).toBe('PIN 1234 #money'))
+  })
+
+  it('with a passkey, the lock password waits behind "Use password instead"', async () => {
+    fakeAuthenticator()
+    const s = await seeded()
+    await lockOpenNote(s)
+    await addPasskey(s)
+    await closeSettings(s)
+    await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    await screen.findByText('This note is locked.')
+    expect(screen.getByRole('button', { name: 'Unlock with passkey' })).toBeTruthy()
+    expect(screen.queryByLabelText('Lock password')).toBeNull()
+
+    await s.user.click(screen.getByRole('button', { name: 'Use password instead' }))
+    expect(document.activeElement).toBe(screen.getByLabelText('Lock password'))
+    expect(screen.queryByRole('button', { name: 'Unlock with passkey' })).toBeNull()
+    await s.user.type(screen.getByLabelText('Lock password'), `${LOCK_PASSWORD}{Enter}`)
     await waitFor(() => expect(bodyText()).toBe('PIN 1234 #money'))
   })
 
@@ -185,7 +203,7 @@ describe('passkeys for locked notes', () => {
     await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
     await screen.findByText('This note is locked.')
     auth.dismissNext = true
-    await s.user.click(screen.getByRole('button', { name: 'Use a passkey' }))
+    await s.user.click(screen.getByRole('button', { name: 'Unlock with passkey' }))
     expect(screen.getByText('This note is locked.')).toBeTruthy()
     expect(screen.queryByText(/couldn’t unlock/)).toBeNull()
   })
