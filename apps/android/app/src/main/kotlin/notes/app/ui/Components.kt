@@ -9,7 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
@@ -75,24 +76,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import notes.app.R
 
 // --- brand -------------------------------------------------------------------
 
-/** The amber square with its darker bottom edge (web: .mark). */
+/** The app icon's tile: a curling sheet on amber (web: .mark). */
 @Composable
 fun BrandMark(size: Dp = 22.dp) {
-    val t = LocalTokens.current
-    Canvas(Modifier.size(size)) {
-        val r = CornerRadius(this.size.width * 0.3f)
-        drawRoundRect(t.accentDeep, cornerRadius = r)
-        // The face, lifted off the deep edge by about a quarter.
-        drawRoundRect(t.accent, size = Size(this.size.width, this.size.height * 0.77f), cornerRadius = r)
-        drawRect(
-            t.accent,
-            topLeft = Offset(0f, this.size.height * 0.4f),
-            size = Size(this.size.width, this.size.height * 0.37f)
-        )
-    }
+    Image(painterResource(R.drawable.brand_mark), contentDescription = null, modifier = Modifier.size(size))
 }
 
 @Composable

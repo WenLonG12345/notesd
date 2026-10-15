@@ -1,3 +1,5 @@
+<p align="center"><img src="apps/web/public/icon-512.png" alt="notesd icon" width="128" height="128"></p>
+
 # notesd
 
 Self-hosted notes server + web and Android native app.
