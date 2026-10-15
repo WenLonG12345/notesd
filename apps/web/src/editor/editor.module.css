@@ -183,13 +183,19 @@
 }
 
 .prose {
-  outline: none;
   min-height: 300px;
   font-size: 17px;
   line-height: 1.6;
   color: var(--ink);
   caret-color: var(--tint);
   overflow-wrap: anywhere;
+}
+
+/* The caret already shows where you are; base.css's focus ring would frame the whole note.
+   Two selectors' worth of specificity so it wins whichever stylesheet loads last. */
+.prose:focus,
+.prose:focus-visible {
+  outline: none;
 }
 
 /* The first line is the note's title. */
