@@ -28,8 +28,13 @@ async function withTags() {
   })
 }
 
-const panel = () => screen.getByRole('navigation', { name: 'Tags' })
-const tags = () => within(panel()).getByRole('list', { name: 'Tags' })
+const panel = () => screen.getByRole('navigation', { name: 'Sidebar' })
+const tags = () => {
+  // The first list; expanded parents nest their own.
+  const [top] = within(within(panel()).getByRole('region', { name: 'Tags' })).getAllByRole('list')
+  if (!top) throw new Error('no tag list')
+  return top
+}
 const tagRow = (name: string) => within(tags()).getByRole('button', { name: new RegExp(`^#${name},`, 'i') })
 const rowTitles = () =>
   within(list())
@@ -127,12 +132,12 @@ describe('typing a tag', () => {
 describe('tags sidebar', () => {
   it('hides and comes back, and stays as left', async () => {
     const { user } = await withTags()
-    await user.click(within(panel()).getByRole('button', { name: 'Hide tags' }))
-    expect(screen.queryByRole('navigation', { name: 'Tags' })).toBeNull()
+    await user.click(within(panel()).getByRole('button', { name: 'Hide sidebar' }))
+    expect(screen.queryByRole('navigation', { name: 'Sidebar' })).toBeNull()
 
-    await user.click(within(list()).getByRole('button', { name: 'Show tags' }))
+    await user.click(within(list()).getByRole('button', { name: 'Show sidebar' }))
     expect(panel()).toBeTruthy()
-    expect(within(list()).queryByRole('button', { name: 'Show tags' })).toBeNull()
+    expect(within(list()).queryByRole('button', { name: 'Show sidebar' })).toBeNull()
     expect(localStorage.getItem('notes.sidebar.hidden')).toBe('false')
   })
 
@@ -152,9 +157,9 @@ describe('tags screen on a phone', () => {
   it('goes from the list to the tags and back to the list, filtered', async () => {
     phoneLayout()
     const { user } = await withTags()
-    expect(screen.queryByRole('navigation', { name: 'Tags' })).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Sidebar' })).toBeNull()
 
-    await user.click(within(list()).getByRole('button', { name: 'Tags' }))
+    await user.click(within(list()).getByRole('button', { name: 'Sidebar' }))
     expect(window.location.pathname).toBe('/tags')
     expect(screen.queryByRole('complementary', { name: 'Notes' })).toBeNull()
     await user.click(await waitFor(() => tagRow('home')))
@@ -167,7 +172,7 @@ describe('tags screen on a phone', () => {
   it('opens settings from the tags screen and returns to it', async () => {
     phoneLayout()
     const { user } = await withTags()
-    await user.click(within(list()).getByRole('button', { name: 'Tags' }))
+    await user.click(within(list()).getByRole('button', { name: 'Sidebar' }))
     await user.click(within(panel()).getByRole('button', { name: 'Settings' }))
     await user.click(await screen.findByRole('button', { name: 'Done' }))
     expect(window.location.pathname).toBe('/tags')
@@ -180,7 +185,7 @@ describe('tags screen beside a note', () => {
     mediumLayout()
     const { user } = await withTags()
     await openNote(user, 'Loose')
-    await user.click(within(list()).getByRole('button', { name: 'Tags' }))
+    await user.click(within(list()).getByRole('button', { name: 'Sidebar' }))
 
     expect(screen.queryByRole('complementary', { name: 'Notes' })).toBeNull()
     expect(noteTitle()).toBe('Loose')

@@ -1,12 +1,14 @@
 import { useId, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { TagCount } from '../api/types'
-import { ChevronIcon, HashIcon, SettingsIcon, SidebarIcon } from '../ui/icons'
+import { ChevronIcon, HashIcon, LockIcon, SettingsIcon, SidebarIcon } from '../ui/icons'
 import type { ListFilter } from './store'
 import { buildTree, type TagNode } from './tag-tree'
 import styles from './tags-panel.module.css'
 
 type Props = {
   tags: TagCount[]
+  /** Hides the Locked row while there are none. */
+  lockedCount: number
   filter: ListFilter
   onFilter: (filter: ListFilter) => void
   onSettings: () => void
@@ -34,9 +36,9 @@ function save(key: string, value: unknown) {
   }
 }
 
-/** Where the list can point: All notes, Untagged and the tag tree. Settings live here too. */
-export function TagsPanel({ tags, filter, onFilter, onSettings, onHide }: Props) {
-  const headingId = useId()
+/** Where the list can point: All notes, Untagged, Locked and the tag tree. Settings live here too. */
+export function TagsPanel({ tags, lockedCount, filter, onFilter, onSettings, onHide }: Props) {
+  const tagsId = useId()
   const tree = useMemo(() => buildTree(tags), [tags])
   const [expanded, setExpanded] = useState(() => new Set(load<string[]>(EXPANDED_KEY, [])))
 
@@ -48,7 +50,7 @@ export function TagsPanel({ tags, filter, onFilter, onSettings, onHide }: Props)
     save(EXPANDED_KEY, [...next])
   }
 
-  const selected = !filter ? 'all' : 'tag' in filter ? `#${filter.tag}` : 'untagged'
+  const selected = !filter ? 'all' : 'tag' in filter ? `#${filter.tag}` : 'locked' in filter ? 'locked' : 'untagged'
 
   // Up and down move between rows; right and left open and close a parent.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -109,17 +111,12 @@ export function TagsPanel({ tags, filter, onFilter, onSettings, onHide }: Props)
     )
   }
 
-  const Heading = onHide ? 'h2' : 'h1'
-
   return (
-    <nav className={[styles.panel, onHide ? styles.docked : ''].join(' ')} aria-labelledby={headingId}>
+    <nav className={[styles.panel, onHide ? styles.docked : ''].join(' ')} aria-label="Sidebar">
       <div className={styles.header}>
         <span className={styles.mark} aria-hidden="true" />
-        <Heading id={headingId} className={styles.heading}>
-          Tags
-        </Heading>
         {onHide && (
-          <button type="button" className={styles.tool} onClick={onHide} aria-label="Hide tags" title="Hide tags">
+          <button type="button" className={styles.tool} onClick={onHide} aria-label="Hide sidebar" title="Hide sidebar">
             <SidebarIcon />
           </button>
         )}
@@ -157,16 +154,37 @@ export function TagsPanel({ tags, filter, onFilter, onSettings, onHide }: Props)
               </button>
             </div>
           </li>
+          {/* Kept while selected, so the last note unlocked doesn't pull the row from under the list. */}
+          {(lockedCount > 0 || selected === 'locked') && (
+            <li>
+              <div className={styles.item}>
+                <span className={styles.expander} aria-hidden="true" />
+                <button
+                  type="button"
+                  className={styles.row}
+                  data-row=""
+                  aria-current={selected === 'locked' ? 'true' : undefined}
+                  onClick={() => onFilter({ locked: true })}
+                >
+                  <LockIcon />
+                  <span className={styles.label}>Locked</span>
+                </button>
+              </div>
+            </li>
+          )}
         </ul>
-        {tree.length > 0 ? (
-          <ul className={styles.list} aria-label="Tags">
-            {tree.map((n) => renderNode(n, 0))}
-          </ul>
-        ) : (
-          <p className={styles.hint}>
-            Type <code>#tag</code> in a note to group it here. <code>#parent/child</code> nests.
-          </p>
-        )}
+        <section aria-labelledby={tagsId}>
+          <h2 id={tagsId} className={styles.section}>
+            Tags
+          </h2>
+          {tree.length > 0 ? (
+            <ul className={styles.list}>{tree.map((n) => renderNode(n, 0))}</ul>
+          ) : (
+            <p className={styles.hint}>
+              Type <code>#tag</code> in a note to group it here. <code>#parent/child</code> nests.
+            </p>
+          )}
+        </section>
       </div>
     </nav>
   )

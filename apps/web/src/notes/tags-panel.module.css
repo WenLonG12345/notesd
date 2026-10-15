@@ -23,14 +23,17 @@
   flex: none;
   width: 20px;
   height: 20px;
+  margin-right: auto;
   background: url('../ui/mark.png') center / contain no-repeat;
 }
 
-.heading {
-  flex: 1;
-  margin: 0;
-  font: 400 21px/1 var(--font-serif);
-  letter-spacing: -0.01em;
+/* Lines up with the rows' labels, past the expander column. */
+.section {
+  margin: 6px 10px 4px 26px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
 }
 
 .tool {
@@ -175,10 +178,6 @@
     padding: calc(20px + env(safe-area-inset-top)) 16px 12px;
   }
 
-  .heading {
-    font-size: 30px;
-  }
-
   .tool {
     width: 36px;
     height: 36px;
@@ -192,5 +191,10 @@
   .expander {
     width: 28px;
     height: 44px;
+  }
+
+  .section {
+    margin-left: 34px;
+    font-size: 13px;
   }
 }

@@ -42,7 +42,7 @@ function ShellView({ username }: { username: string }) {
   // Wide: the tags sit in a sidebar. Narrower, they're a screen of their own (/tags) in the list's place.
   const wide = useMediaQuery(WIDE)
   const [sidebarHidden, setSidebarHidden] = useState(loadSidebarHidden)
-  const { items, status, newDraft, remove, undoRemove, removed, tags, filter, setFilter } = useNotes()
+  const { items, status, newDraft, remove, undoRemove, removed, tags, lockedCount, filter, setFilter } = useNotes()
   // A note the server doesn't have yet: open, but not in the URL until it's saved.
   const [draft, setDraft] = useState<NoteSaver | null>(null)
   const [query, setQuery] = useState('')
@@ -151,7 +151,7 @@ function ShellView({ username }: { username: string }) {
   const showList = !tagsScreen && (!mobile || selectedId === null)
   const showPane = !mobile || (!tagsScreen && selectedId !== null)
   const tagsPanel = (onHide?: () => void) => (
-    <TagsPanel tags={tags} filter={filter} onFilter={showFilter} onSettings={() => navigate('/settings')} onHide={onHide} />
+    <TagsPanel tags={tags} lockedCount={lockedCount} filter={filter} onFilter={showFilter} onSettings={() => navigate('/settings')} onHide={onHide} />
   )
 
   return (

@@ -6,7 +6,7 @@ export const SEARCH_PAGE = 30
 const path = (id: string) => `/notes/${encodeURIComponent(id)}`
 
 const filterParams = (filter: NoteFilter) =>
-  !filter ? '' : 'tag' in filter ? `&tag=${encodeURIComponent(filter.tag)}` : '&untagged=true'
+  !filter ? '' : 'tag' in filter ? `&tag=${encodeURIComponent(filter.tag)}` : 'locked' in filter ? '&locked=true' : '&untagged=true'
 
 /** imageIds lists a locked note's images (§7.6); the server reads a plain note's from its content. */
 export type CreateNote = {
@@ -43,5 +43,5 @@ export const notes = {
   /** Emails the server's copy, which must be at revision (409 stale_revision otherwise). */
   email: (id: string, to: string[], revision: number) =>
     request<{ id: string }>('POST', `${path(id)}/email`, { to, revision }),
-  tags: (signal?: AbortSignal) => request<{ tags: TagCount[] }>('GET', '/tags', undefined, { ...(signal && { signal }) }),
+  tags: (signal?: AbortSignal) => request<{ tags: TagCount[]; locked: number }>('GET', '/tags', undefined, { ...(signal && { signal }) }),
 }

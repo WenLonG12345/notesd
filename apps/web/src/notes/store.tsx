@@ -7,8 +7,8 @@ import { preview as previewOf } from './plaintext'
 import { NoteSaver, timing, type Fields } from './saver'
 import { hasTag, tags, tagText } from './tags'
 
-/** What the list shows: every note, one tag (by key, with its nested tags), or notes without tags. */
-export type ListFilter = { tag: string; name: string } | { untagged: true } | null
+/** What the list shows: every note, one tag (by key, with its nested tags), notes without tags, or locked notes. */
+export type ListFilter = { tag: string; name: string } | { untagged: true } | { locked: true } | null
 
 const FILTER_KEY = 'notes.filter'
 
@@ -18,6 +18,7 @@ function savedFilter(): ListFilter {
     const f = JSON.parse(localStorage.getItem(FILTER_KEY) ?? 'null') as ListFilter
     if (f && 'tag' in f && typeof f.tag === 'string' && typeof f.name === 'string') return { tag: f.tag, name: f.name }
     if (f && 'untagged' in f && f.untagged === true) return { untagged: true }
+    if (f && 'locked' in f && f.locked === true) return { locked: true }
   } catch {
     // Starts on All notes.
   }
@@ -34,6 +35,7 @@ function saveFilter(filter: ListFilter) {
 
 function matches(filter: ListFilter, fields: Fields, locked: boolean): boolean {
   if (!filter) return true
+  if ('locked' in filter) return locked
   // A locked body is ciphertext on the server: only the title's tags count (§10.1).
   const noteTags = tags(fields.title, locked ? '' : fields.content)
   return 'tag' in filter ? hasTag(noteTags, filter.tag) : noteTags.length === 0
@@ -56,6 +58,8 @@ export type DeleteOutcome = 'deleted' | 'undone' | 'changed' | 'failed'
 type NotesContextValue = Omit<ListState, 'hidden'> & {
   /** Every tag in live notes, refreshed after saves. */
   tags: TagCount[]
+  /** Live locked notes, refreshed with the tags. */
+  lockedCount: number
   filter: ListFilter
   /** Shows another slice of the notes, loading it from the start. */
   setFilter: (filter: ListFilter) => void
@@ -99,6 +103,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   })
   const [filter, setFilterState] = useState<ListFilter>(savedFilter)
   const [tagList, setTagList] = useState<TagCount[]>([])
+  const [lockedCount, setLockedCount] = useState(0)
   const filterRef = useRef<ListFilter>(filter)
   /** Bumped per filter change: pages for an earlier filter are dropped. */
   const generation = useRef(0)
@@ -155,7 +160,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
   const fetchTags = useCallback((signal?: AbortSignal) => {
     api.tags(signal).then(
-      ({ tags: all }) => setTagList(all),
+      ({ tags: all, locked }) => {
+        setTagList(all)
+        setLockedCount(locked)
+      },
       () => undefined, // the list shows connection problems
     )
   }, [])
@@ -422,6 +430,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     () => ({
       items: visible,
       tags: tagList,
+      lockedCount,
       filter,
       setFilter,
       status,
@@ -442,7 +451,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       remove,
       undoRemove,
     }),
-    [visible, tagList, filter, setFilter, status, hasMore, total, version, fetchPage, fetchTags, saverFor, existingSaver, newDraft, release, removed, touch, remove, undoRemove],
+    [visible, tagList, lockedCount, filter, setFilter, status, hasMore, total, version, fetchPage, fetchTags, saverFor, existingSaver, newDraft, release, removed, touch, remove, undoRemove],
   )
   return <NotesContext value={value}>{children}</NotesContext>
 }
