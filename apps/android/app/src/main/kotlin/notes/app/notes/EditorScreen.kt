@@ -88,9 +88,9 @@ import notes.app.editor.LinkTap
 import notes.app.editor.NoteEditText
 import notes.app.editor.TagStrip
 import notes.app.editor.keepCursorInView
+import notes.app.locks.LockNoteDialog
 import notes.app.locks.LockSetupDialog
 import notes.app.locks.LockedNote
-import notes.app.locks.UnlockDialog
 import notes.app.ui.Banner
 import notes.app.ui.BannerKind
 import notes.app.ui.IconAction
@@ -369,7 +369,7 @@ fun EditorScreen(
             setLocked(true)
         }
 
-        LockSession.State.Locked -> UnlockDialog(locks, onDismiss = { locking = null }) {
+        LockSession.State.Locked -> LockNoteDialog(locks, onDismiss = { locking = null }) {
             locking = null
             setLocked(true)
         }

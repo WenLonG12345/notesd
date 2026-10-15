@@ -12,8 +12,18 @@ import styles from './locks.module.css'
 /** Shortest lock password accepted; it's the only thing between the server and the notes. */
 export const MIN_LOCK_PASSWORD = 8
 
-/** The lock password field and button; inline in the note pane or inside UnlockDialog. */
-export function UnlockForm({ onUnlocked, onCancel, autoFocus = true }: { onUnlocked: () => void; onCancel?: () => void; autoFocus?: boolean }) {
+/** The lock password field and its button ([action], Unlock by default); inline in the note pane or inside LockNoteDialog. */
+export function UnlockForm({
+  onUnlocked,
+  onCancel,
+  autoFocus = true,
+  action = ['Unlock', 'Unlocking…'],
+}: {
+  onUnlocked: () => void
+  onCancel?: () => void
+  autoFocus?: boolean
+  action?: [string, string]
+}) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
@@ -56,22 +66,31 @@ export function UnlockForm({ onUnlocked, onCancel, autoFocus = true }: { onUnloc
           </Button>
         )}
         <Button variant="solid" size="md" type="submit" busy={busy} grow={!onCancel}>
-          {busy ? 'Unlocking…' : 'Unlock'}
+          {busy ? action[1] : action[0]}
         </Button>
       </div>
     </form>
   )
 }
 
-export function UnlockDialog({ onUnlocked, onClose }: { onUnlocked: () => void; onClose: () => void }) {
+/**
+ * Lock note, when a lock password already exists (made on any device) but
+ * isn't entered yet: every locked note shares it, so it's asked for, not
+ * created.
+ */
+export function LockNoteDialog({ onUnlocked, onClose }: { onUnlocked: () => void; onClose: () => void }) {
   const titleId = useId()
   return (
     <Dialog labelledBy={titleId} onClose={onClose}>
       <div className={styles.stack}>
         <h2 id={titleId} className={styles.title}>
-          Unlock locked notes
+          Lock this note
         </h2>
-        <UnlockForm onUnlocked={onUnlocked} onCancel={onClose} />
+        <p className={styles.text}>
+          Locked notes share one lock password, made the first time a note was locked on any of your devices. Enter
+          it to lock this note.
+        </p>
+        <UnlockForm onUnlocked={onUnlocked} onCancel={onClose} action={['Lock', 'Locking…']} />
       </div>
     </Dialog>
   )

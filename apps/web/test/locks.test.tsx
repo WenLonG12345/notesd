@@ -109,6 +109,32 @@ describe('locked notes', () => {
     expect(await readLocked(s.server, s.id, 'brand new pass')).toBe('PIN 1234 #money\n')
   })
 
+  it('locking another note asks for the existing lock password, not a new one', async () => {
+    let other = ''
+    const s = await signedIn({
+      seed: async (srv) => {
+        other = await createNote(srv, 'Diary', 'Dear diary')
+        await createNote(srv, 'Bank', 'PIN 1234 #money')
+      },
+    })
+    await waitFor(() => expect(noteTitle()).toBe('Bank'))
+    await lockOpenNote(s)
+    await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    await screen.findByText('This note is locked.')
+
+    await s.user.click(within(list()).getByRole('link', { name: /^Diary/ }))
+    await waitFor(() => expect(noteTitle()).toBe('Diary'))
+    await s.user.click(screen.getByRole('button', { name: 'More' }))
+    await s.user.click(within(moreMenu()).getByRole('menuitem', { name: 'Lock note' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Lock this note' })
+    expect(screen.queryByRole('dialog', { name: 'Create a lock password' })).toBeNull()
+    await s.user.type(within(dialog).getByLabelText('Lock password'), LOCK_PASSWORD)
+    await s.user.click(within(dialog).getByRole('button', { name: 'Lock' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await saved()
+    expect(await readLocked(s.server, other)).toBe('Dear diary\n')
+  })
+
   it('a locked note can’t be emailed', async () => {
     const s = await seeded()
     await s.server.api('PUT', '/settings/email', { apiKey: 're_test_123456789', from: 'Me <notes@example.com>' })

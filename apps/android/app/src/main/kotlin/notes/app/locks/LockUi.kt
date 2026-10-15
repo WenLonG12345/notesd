@@ -56,9 +56,15 @@ fun LockSession.Outcome.message(): String? = when (this) {
     LockSession.Outcome.Failed -> "Something went wrong. Try again."
 }
 
-/** The lock password field and Unlock button; the placeholder and the dialog share it. */
+/** The lock password field and its button ([action], "Unlock" by default); the placeholder and the dialog share it. */
 @Composable
-fun UnlockFields(locks: LockSession, onUnlocked: () -> Unit, onCancel: (() -> Unit)? = null) {
+fun UnlockFields(
+    locks: LockSession,
+    onUnlocked: () -> Unit,
+    onCancel: (() -> Unit)? = null,
+    action: String = "Unlock",
+    busyAction: String = "Unlocking…"
+) {
     val scope = rememberCoroutineScope()
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -92,7 +98,7 @@ fun UnlockFields(locks: LockSession, onUnlocked: () -> Unit, onCancel: (() -> Un
             if (onCancel != null) {
                 NotesButton("Cancel", onCancel, Modifier.weight(1f), kind = ButtonKind.Chip, enabled = !busy)
             }
-            NotesButton(if (busy) "Unlocking…" else "Unlock", ::submit, Modifier.weight(1f), busy = busy)
+            NotesButton(if (busy) busyAction else action, ::submit, Modifier.weight(1f), busy = busy)
         }
     }
 }
@@ -130,10 +136,24 @@ fun LockedNote(title: String, unreadable: Boolean, locks: LockSession, modifier:
     }
 }
 
+/**
+ * Lock note, when a lock password already exists (made on any device) but
+ * isn't entered yet: every locked note shares it, so it's asked for, not
+ * created.
+ */
 @Composable
-fun UnlockDialog(locks: LockSession, onDismiss: () -> Unit, onUnlocked: () -> Unit) {
-    NotesDialog(onDismiss, "Unlock locked notes") {
-        UnlockFields(locks, onUnlocked, onCancel = onDismiss)
+fun LockNoteDialog(locks: LockSession, onDismiss: () -> Unit, onUnlocked: () -> Unit) {
+    val t = LocalTokens.current
+    NotesDialog(onDismiss, "Lock this note") {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                "Locked notes share one lock password, made the first time a note was locked on any of your " +
+                    "devices. Enter it to lock this note.",
+                style = Type.small,
+                color = t.ink2
+            )
+            UnlockFields(locks, onUnlocked, onCancel = onDismiss, action = "Lock", busyAction = "Locking…")
+        }
     }
 }
 

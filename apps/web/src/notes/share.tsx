@@ -7,7 +7,7 @@ import { Dialog } from '../ui/dialog'
 import { Field } from '../ui/field'
 import { MoreIcon, ShareIcon } from '../ui/icons'
 import { lockSession, useLockStatus } from '../locks/session'
-import { SetupDialog, UnlockDialog } from '../locks/unlock'
+import { LockNoteDialog, SetupDialog } from '../locks/unlock'
 import { useEmailSettings } from './email-settings'
 import type { NoteSaver } from './saver'
 import styles from './share.module.css'
@@ -160,7 +160,7 @@ export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile
         />
       )}
       {locking === 'unlock' && (
-        <UnlockDialog
+        <LockNoteDialog
           onClose={() => setLocking(null)}
           onUnlocked={() => {
             setLocking(null)

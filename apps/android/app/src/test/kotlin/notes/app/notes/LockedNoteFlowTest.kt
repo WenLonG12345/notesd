@@ -114,6 +114,25 @@ class LockedNoteFlowTest {
         assertTrue(runBlocking { graph.store.list().single() }.let { !it.locked && it.preview == "PIN 1234" })
     }
 
+    @Test
+    fun `locking another note asks for the existing lock password, not a new one`() {
+        runBlocking { graph.store.save("d", "Diary", "Dear diary\n") }
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitUntilExactlyOneExists(hasText("Diary"))
+        compose.onNodeWithText("Diary").performClick()
+        compose.waitUntilExactlyOneExists(hasContentDescription("More"))
+        compose.onNodeWithContentDescription("More").performClick()
+        compose.onNodeWithText("Lock note").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Lock this note"))
+        compose.onNodeWithText("Create a lock password").assertDoesNotExist()
+        compose.onNodeWithText("Lock password").performTextInput(PASSWORD)
+        compose.onNode(hasText("Lock") and hasClickAction()).performClick()
+        compose.waitUntil(5_000) {
+            runBlocking { graph.store.get("d")?.content }?.let { LockedNotes.isLocked(it) } == true
+        }
+        assertEquals("Dear diary\n", LockedNotes.decrypt(key, runBlocking { graph.store.get("d")!!.content }))
+    }
+
     private companion object {
         const val PASSWORD = "lock pass 123"
     }
