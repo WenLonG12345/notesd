@@ -101,7 +101,9 @@ function ShellView({ username }: { username: string }) {
 
   const created = useCallback((id: string) => {
     setDraft(null)
-    navigate(`/notes/${id}`)
+    // No transition: it runs the URL change async, so the draft's pane would
+    // unmount first (selectedId drops back to the old route) and the editor lose focus.
+    navigate(`/notes/${id}`, { animate: false })
   }, [])
 
   /** Where to go when the open note goes away: the next one down, or the list on a phone. */
