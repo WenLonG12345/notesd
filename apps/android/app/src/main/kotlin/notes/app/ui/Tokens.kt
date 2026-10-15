@@ -36,7 +36,6 @@ data class Tokens(
     val field: Color,
     val chip: Color,
     val scrim: Color,
-    val onAccent2: Color,
     val dangerBg: Color,
     val good: Color,
     val goodBg: Color,
@@ -48,8 +47,6 @@ data class Tokens(
     val warnInk: Color,
     val focus: Color,
     val blob1: Color,
-    val blob2: Color,
-    val blob3: Color,
     val blobOpacity: Float,
     val dark: Boolean
 ) {
@@ -94,7 +91,6 @@ data class Tokens(
             field = Color(0xC7FFFFFF), // rgb(255 255 255 / 0.78)
             chip = Color(0x9EFFFFFF), // rgb(255 255 255 / 0.62)
             scrim = Color(0x6BF0EAE0), // rgb(240 234 224 / 0.42)
-            onAccent2 = Color(0xFF402F1C), // oklch(0.32 0.04 70)
             dangerBg = Color(0x1AD24D45), // oklch(0.6 0.17 27 / 0.1)
             good = Color(0xFF0E492A), // oklch(0.36 0.08 155)
             goodBg = Color(0xBFC0EACD), // oklch(0.9 0.06 155 / 0.75)
@@ -106,9 +102,7 @@ data class Tokens(
             warnInk = Color(0xFF623512), // oklch(0.38 0.08 55)
             focus = Color(0x8CDD9314), // oklch(0.72 0.15 72 / 0.55)
             blob1 = Color(0xFFF9D696), // oklch(0.89 0.09 82)
-            blob2 = Color(0xFFC0EACD), // oklch(0.9 0.06 155)
-            blob3 = Color(0xFFDDCFFA), // oklch(0.88 0.06 300)
-            blobOpacity = 0.5f,
+            blobOpacity = 0.22f,
             dark = false
         )
 
@@ -140,7 +134,6 @@ data class Tokens(
             field = Color(0x0FFFFFFF), // rgb(255 255 255 / 0.06)
             chip = Color(0x12FFFFFF), // rgb(255 255 255 / 0.07)
             scrim = Color(0x800B0D0E), // rgb(11 13 14 / 0.5)
-            onAccent2 = Color(0xFF402F1C), // oklch(0.32 0.04 70)
             dangerBg = Color(0x29D24D45), // oklch(0.6 0.17 27 / 0.16)
             good = Color(0xFF9EE0B4), // oklch(0.85 0.09 155)
             goodBg = Color(0x80245337), // oklch(0.4 0.07 155 / 0.5)
@@ -152,9 +145,7 @@ data class Tokens(
             warnInk = Color(0xFFF8D8B4), // oklch(0.9 0.06 70)
             focus = Color(0x8CDD9314), // oklch(0.72 0.15 72 / 0.55)
             blob1 = Color(0xFF624821), // oklch(0.42 0.065 75)
-            blob2 = Color(0xFF264C34), // oklch(0.38 0.06 155)
-            blob3 = Color(0xFF43345C), // oklch(0.36 0.07 300)
-            blobOpacity = 0.45f,
+            blobOpacity = 0.2f,
             dark = true
         )
     }

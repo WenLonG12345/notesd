@@ -6,35 +6,14 @@
   pointer-events: none;
 }
 
-.backdrop > div {
+.wash {
   position: absolute;
-  border-radius: 50%;
-  opacity: var(--blob-opacity);
-}
-
-.b1 {
   width: 620px;
   height: 620px;
   left: -160px;
   top: -200px;
+  border-radius: 50%;
   background: var(--blob-1);
+  opacity: var(--blob-opacity);
   filter: blur(100px);
-}
-
-.b2 {
-  width: 560px;
-  height: 560px;
-  right: -160px;
-  top: 24%;
-  background: var(--blob-2);
-  filter: blur(110px);
-}
-
-.b3 {
-  width: 640px;
-  height: 640px;
-  left: 28%;
-  bottom: -320px;
-  background: var(--blob-3);
-  filter: blur(120px);
 }

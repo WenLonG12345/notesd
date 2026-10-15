@@ -546,9 +546,7 @@ private fun NoteRow(
         }
     }
     val shape = RoundedCornerShape(16.dp)
-    val bg by animateColorAsState(if (selected) t.accent else Color.Transparent, label = "selected")
-    val titleColor = if (selected) t.onAccent else t.ink
-    val metaColor = if (selected) t.onAccent2 else t.ink3
+    val bg by animateColorAsState(if (selected) t.on else Color.Transparent, label = "selected")
     val shownTitle = title.trim().ifEmpty { "New note" }
     SwipeToDismissBox(
         state = swipe,
@@ -598,17 +596,17 @@ private fun NoteRow(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Text(shownTitle, style = Type.rowTitle, color = titleColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(shownTitle, style = Type.rowTitle, color = t.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row {
                 Text(
                     time,
                     style = Type.rowMeta,
                     fontWeight = FontWeight.Medium,
-                    color = if (selected) t.onAccent else t.ink2,
+                    color = t.ink2,
                     maxLines = 1
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(preview, style = Type.rowMeta, color = metaColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(preview, style = Type.rowMeta, color = t.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -639,7 +637,6 @@ private fun Footer(count: Int, searching: Boolean, onNew: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .glass()
-            .hairline(t.hair, top = true)
             .navigationBarsPadding()
             .height(72.dp)
             .padding(start = 24.dp, end = 16.dp),

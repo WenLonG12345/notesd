@@ -7,6 +7,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import notes.app.R
@@ -34,28 +35,34 @@ val Serif = FontFamily(
     Font(R.font.instrument_serif_italic, FontWeight.Normal, FontStyle.Italic)
 )
 
-/** JetBrains Mono: small uppercase labels, server addresses, tokens. */
+/** JetBrains Mono: server addresses, tokens. */
 val Mono = FontFamily(weights.take(3).map { variable(R.font.jetbrains_mono, it, FontStyle.Normal) })
 
 /** Named styles, sized for phones (the web app's mobile sizes). */
 object Type {
-    val display = TextStyle(fontFamily = Serif, fontSize = 34.sp, lineHeight = 38.sp, letterSpacing = (-0.02).em)
-    val heading = TextStyle(fontFamily = Serif, fontSize = 30.sp, lineHeight = 33.sp, letterSpacing = (-0.015).em)
-    val title = TextStyle(fontFamily = Serif, fontSize = 22.sp, lineHeight = 26.sp)
-    val lede = TextStyle(fontFamily = Sans, fontSize = 16.sp, lineHeight = 24.sp)
-    val body = TextStyle(fontFamily = Sans, fontSize = 15.sp, lineHeight = 22.sp)
-    val rowTitle = TextStyle(fontFamily = Sans, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold)
+    val display = TextStyle(
+        fontFamily = Serif,
+        fontSize = 34.sp,
+        lineHeight = 38.sp,
+        letterSpacing = (-0.02).em,
+        lineBreak = LineBreak.Heading
+    )
+    val heading = TextStyle(
+        fontFamily = Serif,
+        fontSize = 30.sp,
+        lineHeight = 33.sp,
+        letterSpacing = (-0.015).em,
+        lineBreak = LineBreak.Heading
+    )
+    val title = TextStyle(fontFamily = Serif, fontSize = 22.sp, lineHeight = 26.sp, lineBreak = LineBreak.Heading)
+    val lede = TextStyle(fontFamily = Sans, fontSize = 16.sp, lineHeight = 24.sp, lineBreak = LineBreak.Paragraph)
+    val body = TextStyle(fontFamily = Sans, fontSize = 15.sp, lineHeight = 22.sp, lineBreak = LineBreak.Paragraph)
+    val rowTitle = TextStyle(fontFamily = Sans, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium)
     val rowMeta = TextStyle(fontFamily = Sans, fontSize = 14.sp, lineHeight = 19.sp)
     val label = TextStyle(fontFamily = Sans, fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.Medium)
     val small = TextStyle(fontFamily = Sans, fontSize = 13.sp, lineHeight = 18.sp)
     val button = TextStyle(fontFamily = Sans, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
-    val kicker = TextStyle(
-        fontFamily = Mono,
-        fontSize = 11.5.sp,
-        lineHeight = 14.sp,
-        fontWeight = FontWeight.Medium,
-        letterSpacing = 0.05.em
-    )
+    val kicker = TextStyle(fontFamily = Sans, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold)
     val mono = TextStyle(fontFamily = Mono, fontSize = 14.sp, lineHeight = 20.sp)
 
     /** The wordmark: lowercase and monospaced, like the daemon it's named after. */

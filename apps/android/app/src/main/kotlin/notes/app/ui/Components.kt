@@ -103,10 +103,10 @@ fun Brand(large: Boolean = false) {
     }
 }
 
-/** A small uppercase mono label above a heading or a group (web: Kicker). */
+/** A small quiet label above a heading or a group (web: Kicker). */
 @Composable
 fun Kicker(text: String, modifier: Modifier = Modifier, color: Color = LocalTokens.current.ink3) {
-    Text(text.uppercase(), style = Type.kicker, color = color, modifier = modifier)
+    Text(text, style = Type.kicker, color = color, modifier = modifier)
 }
 
 @Composable
@@ -499,30 +499,27 @@ fun PasswordMeter(password: String, modifier: Modifier = Modifier) {
 // --- backdrop ----------------------------------------------------------------
 
 /**
- * The web's three soft colour blobs behind the glass. Radial gradients rather
- * than blurred circles: the same look without a blur pass on every frame.
+ * The web's faint warm wash behind the window. A radial gradient rather than
+ * a blurred circle: the same look without a blur pass on every frame.
  */
 @Composable
 fun Backdrop(modifier: Modifier = Modifier) {
     val t = LocalTokens.current
     Box(modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            fun blob(color: Color, center: Offset, radius: Float) = drawCircle(
+            val center = Offset(size.width * 0.1f, -size.height * 0.02f)
+            val radius = size.width
+            drawCircle(
                 Brush.radialGradient(
-                    0f to color.copy(alpha = t.blobOpacity),
-                    0.45f to color.copy(alpha = t.blobOpacity * 0.55f),
-                    1f to color.copy(alpha = 0f),
+                    0f to t.blob1.copy(alpha = t.blobOpacity),
+                    0.45f to t.blob1.copy(alpha = t.blobOpacity * 0.55f),
+                    1f to t.blob1.copy(alpha = 0f),
                     center = center,
                     radius = radius
                 ),
                 radius = radius,
                 center = center
             )
-            blob(t.blob1, Offset(w * 0.1f, -h * 0.02f), w * 1.0f)
-            blob(t.blob2, Offset(w * 1.05f, h * 0.45f), w * 0.85f)
-            blob(t.blob3, Offset(w * 0.45f, h * 1.05f), w * 1.0f)
         }
     }
 }

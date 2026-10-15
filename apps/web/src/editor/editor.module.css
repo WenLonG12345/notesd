@@ -185,7 +185,7 @@
 .prose {
   outline: none;
   min-height: 300px;
-  font-size: 15.5px;
+  font-size: 17px;
   line-height: 1.6;
   color: var(--ink);
   caret-color: var(--tint);
@@ -194,7 +194,7 @@
 
 /* The first line is the note's title. */
 .prose h1[data-title] {
-  font: 400 30px/1.15 var(--font-serif);
+  font: 400 34px/1.15 var(--font-serif);
   letter-spacing: -0.015em;
   margin: 0 0 0.35em;
 }
@@ -211,21 +211,28 @@
 .prose p {
   margin: 0 0 0.15em;
   min-height: 1.6em;
+  text-wrap: pretty;
+}
+
+.prose h1,
+.prose h2,
+.prose h3 {
+  text-wrap: balance;
 }
 
 .prose h1 {
-  font: 400 30px/1.15 var(--font-serif);
+  font: 400 32px/1.15 var(--font-serif);
   letter-spacing: -0.015em;
   margin: 0.5em 0 0.25em;
 }
 
 .prose h2 {
-  font: 400 23px/1.2 var(--font-serif);
+  font: 400 25px/1.2 var(--font-serif);
   margin: 0.6em 0 0.2em;
 }
 
 .prose h3 {
-  font: 600 15.5px/1.3 var(--font-sans);
+  font: 600 17px/1.3 var(--font-sans);
   margin: 0.8em 0 0.2em;
 }
 
@@ -238,6 +245,7 @@
 .prose li {
   margin: 0.15em 0;
   padding-left: 0.2em;
+  text-wrap: pretty;
 }
 
 .prose li > p {
@@ -248,7 +256,7 @@
   margin: 0.6em 0;
   padding: 0 0 0 18px;
   border-left: 2px solid var(--accent);
-  font: italic 400 18.5px/1.45 var(--font-serif);
+  font: italic 400 20px/1.45 var(--font-serif);
   color: var(--ink-2);
 }
 
@@ -343,10 +351,6 @@
 
 /* Phones keep the prototype's larger, iOS-like sizes. */
 @media (max-width: 759px) {
-  .prose {
-    font-size: 17px;
-  }
-
   .prose h1[data-title],
   .prose h1 {
     font-size: 36px;
@@ -354,10 +358,6 @@
 
   .prose h2 {
     font-size: 27px;
-  }
-
-  .prose h3 {
-    font-size: 17px;
   }
 
   .prose blockquote {

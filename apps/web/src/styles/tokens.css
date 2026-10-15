@@ -10,6 +10,8 @@
 
   color-scheme: light;
   --bg: oklch(0.965 0.007 80);
+  /* The note's sheet: solid, one step lighter than the window. */
+  --paper: oklch(0.988 0.004 80);
   --ink: oklch(0.24 0.012 60);
   --ink-2: oklch(0.42 0.012 60);
   --ink-3: oklch(0.5 0.012 60);
@@ -35,7 +37,6 @@
   --accent: oklch(0.8 0.14 78);
   --accent-deep: oklch(0.72 0.15 72);
   --on-accent: oklch(0.22 0.012 60);
-  --on-accent-2: oklch(0.32 0.04 70);
   /* Icon buttons and the caret: iOS-style tinted controls. */
   --tint: oklch(0.62 0.15 70);
   --link: oklch(0.48 0.11 65);
@@ -51,9 +52,7 @@
   --warn-ink: oklch(0.38 0.08 55);
   --focus: oklch(0.72 0.15 72 / 0.55);
   --blob-1: oklch(0.89 0.09 82);
-  --blob-2: oklch(0.9 0.06 155);
-  --blob-3: oklch(0.88 0.06 300);
-  --blob-opacity: 0.5;
+  --blob-opacity: 0.22;
 
   /* Save status: dot color, label color. */
   --status-saved: oklch(0.68 0.13 150);
@@ -75,6 +74,7 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
     --bg: oklch(0.19 0.005 250);
+    --paper: oklch(0.225 0.005 250);
     --ink: oklch(0.94 0.004 250);
     --ink-2: oklch(0.77 0.005 250);
     --ink-3: oklch(0.67 0.005 250);
@@ -107,15 +107,14 @@
     --warn-edge: oklch(0.45 0.07 60);
     --warn-ink: oklch(0.9 0.06 70);
     --blob-1: oklch(0.42 0.065 75);
-    --blob-2: oklch(0.38 0.06 155);
-    --blob-3: oklch(0.36 0.07 300);
-    --blob-opacity: 0.45;
+    --blob-opacity: 0.2;
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: oklch(0.19 0.005 250);
+  --paper: oklch(0.225 0.005 250);
   --ink: oklch(0.94 0.004 250);
   --ink-2: oklch(0.77 0.005 250);
   --ink-3: oklch(0.67 0.005 250);
@@ -148,7 +147,5 @@
   --warn-edge: oklch(0.45 0.07 60);
   --warn-ink: oklch(0.9 0.06 70);
   --blob-1: oklch(0.42 0.065 75);
-  --blob-2: oklch(0.38 0.06 155);
-  --blob-3: oklch(0.36 0.07 300);
-  --blob-opacity: 0.45;
+  --blob-opacity: 0.2;
 }
