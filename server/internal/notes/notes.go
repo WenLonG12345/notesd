@@ -30,6 +30,7 @@ import (
 	"unicode/utf8"
 
 	"notes/server/internal/database"
+	"notes/server/internal/locks"
 	"notes/server/internal/search"
 )
 
@@ -364,6 +365,8 @@ type ListItem struct {
 	Revision  int64  `json:"revision"`
 	CreatedAt int64  `json:"createdAt"`
 	UpdatedAt int64  `json:"updatedAt"`
+	// Locked notes have an encrypted body and so an empty preview (§10.1).
+	Locked bool `json:"locked"`
 }
 
 // Count is the number of live (not deleted) notes matching filter.
@@ -390,7 +393,7 @@ func (s *Store) List(ctx context.Context, filter search.Filter, limit int, curso
 	cond, args := filter.SQL()
 	rows, err := s.db.R.QueryContext(ctx, `
 		SELECT n.id, n.title, n.revision, n.created_at, n.updated_at,
-		       substr(COALESCE(f.body_text, ''), 1, ?)
+		       substr(COALESCE(f.body_text, ''), 1, ?), substr(n.content, 1, ?) = ?
 		FROM notes n
 		LEFT JOIN notes_fts f ON f.rowid = n.seq
 		WHERE n.deleted_at IS NULL
@@ -398,7 +401,7 @@ func (s *Store) List(ctx context.Context, filter search.Filter, limit int, curso
 		  AND `+cond+`
 		ORDER BY n.updated_at DESC, n.id DESC
 		LIMIT ?`,
-		append(append([]any{previewFetch, boolInt(cursor != ""), afterTime, afterID}, args...), limit+1)...)
+		append(append([]any{previewFetch, len(locks.Prefix), locks.Prefix, boolInt(cursor != ""), afterTime, afterID}, args...), limit+1)...)
 	if err != nil {
 		return nil, "", err
 	}
@@ -406,7 +409,7 @@ func (s *Store) List(ctx context.Context, filter search.Filter, limit int, curso
 	items = []ListItem{}
 	for rows.Next() {
 		var it ListItem
-		if err := rows.Scan(&it.ID, &it.Title, &it.Revision, &it.CreatedAt, &it.UpdatedAt, &it.Preview); err != nil {
+		if err := rows.Scan(&it.ID, &it.Title, &it.Revision, &it.CreatedAt, &it.UpdatedAt, &it.Preview, &it.Locked); err != nil {
 			return nil, "", err
 		}
 		it.Preview = preview(it.Preview, utf8.RuneCountInString(it.Preview) == previewFetch)
@@ -552,6 +555,8 @@ func validateText(title, content string) error {
 		return &ValidationError{"title", "must be valid UTF-8 without NUL characters"}
 	case !utf8.ValidString(content) || strings.ContainsRune(content, 0):
 		return &ValidationError{"content", "must be valid UTF-8 without NUL characters"}
+	case locks.IsLocked(content) && !locks.ValidEnvelope(content):
+		return &ValidationError{"content", "is not a valid locked note"}
 	}
 	return nil
 }

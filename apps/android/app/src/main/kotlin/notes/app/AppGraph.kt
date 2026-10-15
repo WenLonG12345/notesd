@@ -21,6 +21,7 @@ import notes.app.notes.TagTreeState
 import notes.app.settings.Appearance
 import notes.app.sync.SyncScheduler
 import notes.core.api.ApiClient
+import notes.core.crypto.LockSession
 import notes.core.db.Database
 import notes.core.db.NoteFilter
 import notes.core.db.NoteStore
@@ -42,6 +43,9 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
     /** Null server while never connected; signed out, its requests come back Unauthenticated. */
     val sync = SyncEngine(database, { api() })
     val scheduler = SyncScheduler(context.applicationContext, sync, store, accounts, scope)
+
+    /** The locked-notes key (§10.1), unlocked against the keyring sync keeps. */
+    val locks = LockSession(sync.lockKeys, { api() }, scope)
 
     /** Emails notes through the server; it syncs a note before sending it. */
     val mailer = NoteMailer(store, sync) { api() }
@@ -84,12 +88,14 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
     suspend fun signOut() {
         withTimeoutOrNull(LOGOUT_WAIT_MS) { api()?.logout() }
         accounts.signOut()
+        locks.lock()
     }
 
     /** Back to a fresh install: no notes, no account, onboarding on next launch. */
     suspend fun removeAllData() {
         if (accounts.account.value is Account.SignedIn) withTimeoutOrNull(LOGOUT_WAIT_MS) { api()?.logout() }
         store.wipe()
+        locks.forget()
         accounts.clear()
         setOnboardingDismissed(false)
     }
@@ -104,6 +110,11 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
         scope.launch { listFilter.drop(1).collect { f -> prefs.edit { putString(LIST_FILTER, encodeFilter(f)) } } }
         // Fetched when a note or Settings opens; another account's settings must not linger.
         scope.launch { accounts.account.collect { if (it !is Account.SignedIn) email.forget() } }
+        // Each sync may bring the first lock password, a changed one, or a reset.
+        scope.launch {
+            locks.refresh()
+            sync.status.collect { locks.refresh() }
+        }
     }
 
     private companion object {

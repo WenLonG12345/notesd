@@ -190,6 +190,23 @@ func (s *Service) ChangePassword(ctx context.Context, current, next, keepSession
 	return s.setPassword(ctx, next, keepSessionID)
 }
 
+// CheckPassword verifies the owner's password, for actions that need it
+// again in an open session.
+func (s *Service) CheckPassword(ctx context.Context, password string) error {
+	_, hash, err := s.owner(ctx)
+	if err != nil {
+		return err
+	}
+	ok, err := VerifyPassword(password, hash)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrInvalidCredentials
+	}
+	return nil
+}
+
 func (s *Service) setPassword(ctx context.Context, password, keepSessionID string) error {
 	if err := validatePassword(password); err != nil {
 		return err

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { ApiError } from '../api/client'
 import { notes as api } from '../api/notes'
 import { genericMessage } from '../auth/errors'
@@ -6,6 +6,8 @@ import { Button } from '../ui/button'
 import { Dialog } from '../ui/dialog'
 import { Field } from '../ui/field'
 import { MoreIcon, ShareIcon } from '../ui/icons'
+import { lockSession, useLockStatus } from '../locks/session'
+import { SetupDialog, UnlockDialog } from '../locks/unlock'
 import { useEmailSettings } from './email-settings'
 import type { NoteSaver } from './saver'
 import styles from './share.module.css'
@@ -21,6 +23,8 @@ function exportMarkdown(saver: NoteSaver): string {
  * sheet where there is one, and Copy as Markdown. Browsers can't add our own
  * action to their share sheet, hence a menu. With [onDelete] it's the desktop's
  * one "More" menu and ends with Delete; phones keep Delete as its own button.
+ * Lock note / Remove lock sit there too; a locked note can't be emailed, since
+ * the server only has its ciphertext.
  */
 export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile: boolean; onDelete?: () => void }) {
   const name = onDelete ? 'More' : 'Share'
@@ -28,6 +32,9 @@ export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile
   const [open, setOpen] = useState(false)
   const [emailing, setEmailing] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [locking, setLocking] = useState<'setup' | 'unlock' | null>(null)
+  const { locked } = useSyncExternalStore(saver.subscribe, saver.getSnapshot)
+  const lockStatus = useLockStatus()
   const menuId = useId()
   const anchor = useRef<HTMLSpanElement>(null)
   const canShare = typeof navigator.share === 'function'
@@ -73,7 +80,7 @@ export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile
       </button>
       {open && (
         <div id={menuId} role="menu" aria-label={name} className={styles.menu}>
-          {email?.configured && (
+          {email?.configured && !locked && (
             <button
               type="button"
               role="menuitem"
@@ -111,6 +118,20 @@ export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile
           >
             {copied ? 'Copied' : 'Copy as Markdown'}
           </button>
+          <div role="separator" className={styles.separator} />
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.item}
+            onClick={() => {
+              setOpen(false)
+              if (locked) saver.setLocked(false)
+              else if (lockSession.key()) saver.setLocked(true)
+              else setLocking(lockStatus === 'none' ? 'setup' : 'unlock')
+            }}
+          >
+            {locked ? 'Remove lock' : 'Lock note'}
+          </button>
           {onDelete && (
             <>
               <div role="separator" className={styles.separator} />
@@ -128,6 +149,24 @@ export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile
             </>
           )}
         </div>
+      )}
+      {locking === 'setup' && (
+        <SetupDialog
+          onClose={() => setLocking(null)}
+          onDone={() => {
+            setLocking(null)
+            saver.setLocked(true)
+          }}
+        />
+      )}
+      {locking === 'unlock' && (
+        <UnlockDialog
+          onClose={() => setLocking(null)}
+          onUnlocked={() => {
+            setLocking(null)
+            saver.setLocked(true)
+          }}
+        />
       )}
       {emailing && email?.configured && (
         <EmailDialog saver={saver} from={email.from} onClose={() => setEmailing(false)} />

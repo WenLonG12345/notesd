@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from 'react'
 import { Button } from '../ui/button'
-import { PlusIcon, SearchIcon, SidebarIcon } from '../ui/icons'
+import { LockIcon, PlusIcon, SearchIcon, SidebarIcon } from '../ui/icons'
 import { groupByDate, listTime } from './list-time'
 import { useSearch } from './search'
 import { useNotes } from './store'
@@ -122,7 +122,7 @@ export function NoteList({ selectedId, query, onQuery, onSelect, onNew, tags, on
                     selected={r.id === selectedId}
                     onSelect={onSelect}
                     // The server escapes the note text and adds only <mark>: the one place raw HTML is allowed.
-                    preview={<span dangerouslySetInnerHTML={{ __html: r.excerpt }} />}
+                    preview={r.locked ? <Locked /> : <span dangerouslySetInnerHTML={{ __html: r.excerpt }} />}
                   />
                 ))}
               </Section>
@@ -150,7 +150,9 @@ export function NoteList({ selectedId, query, onQuery, onSelect, onNew, tags, on
                     time={note.updatedAt}
                     selected={note.id === selectedId}
                     onSelect={onSelect}
-                    preview={note.preview ? note.preview.split('\n').join(' · ') : 'No additional text'}
+                    preview={
+                      note.locked ? <Locked /> : note.preview ? note.preview.split('\n').join(' · ') : 'No additional text'
+                    }
                   />
                 ))}
               </Section>
@@ -218,6 +220,16 @@ function Row({ id, title, time, preview, selected, onSelect }: RowProps) {
         </span>
       </a>
     </li>
+  )
+}
+
+/** A locked note's preview: its body is encrypted. */
+function Locked() {
+  return (
+    <span className={styles.locked}>
+      <LockIcon size={11} />
+      Locked
+    </span>
   )
 }
 

@@ -262,4 +262,32 @@ class NoteStoreTest {
             reopened.close()
         }
     }
+
+    @Test
+    fun `a locked body is neither indexed, tagged nor previewed`() = runBlocking {
+        val key = notes.core.crypto.LockedNotes.newKey()
+        val sealed = notes.core.crypto.LockedNotes.encrypt(key, "PIN 1234 #money\n")
+        store.save("a", "Bank #private", sealed)
+        val summary = store.list().single()
+        assertTrue(summary.locked)
+        assertEquals("", summary.preview)
+        assertEquals(emptyList(), store.search("1234"))
+        assertEquals(listOf("private"), store.tags().map { it.key })
+        assertTrue(store.search("bank").single().locked)
+
+        // Unlocking is an ordinary edit: the body is indexed again.
+        store.save("a", "Bank #private", "PIN 1234 #money\n")
+        assertEquals(listOf("a"), store.search("1234").map { it.id })
+        assertEquals(listOf("money", "private"), store.tags().map { it.key })
+    }
+
+    @Test
+    fun `envelopes compare as stored, never as Markdown`() {
+        val key = notes.core.crypto.LockedNotes.newKey()
+        val a = notes.core.crypto.LockedNotes.encrypt(key, "same\n")
+        val b = notes.core.crypto.LockedNotes.encrypt(key, "same\n")
+        assertTrue(Merge.sameMarkdown(a, a))
+        assertTrue(!Merge.sameMarkdown(a, b))
+        assertNull(Merge.field(a, b, notes.core.crypto.LockedNotes.encrypt(key, "theirs\n"), Merge.sameMarkdown))
+    }
 }

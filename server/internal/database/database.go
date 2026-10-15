@@ -85,6 +85,9 @@ func dsn(path string, readOnly bool) string {
 	q.Add("_pragma", "synchronous(NORMAL)") // durable across process crashes in WAL mode
 	q.Add("_pragma", "foreign_keys(ON)")
 	q.Add("_pragma", "temp_store(MEMORY)")
+	// Deleted pages are zeroed, so text from before a note was locked (or
+	// deleted) doesn't linger in the file (§10.1).
+	q.Add("_pragma", "secure_delete(ON)")
 	if readOnly {
 		q.Add("_pragma", "query_only(ON)")
 	} else {

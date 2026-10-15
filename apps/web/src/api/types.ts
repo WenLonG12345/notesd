@@ -13,6 +13,8 @@ export type Note = {
 
 export type ListItem = Pick<Note, 'id' | 'title' | 'revision' | 'createdAt' | 'updatedAt'> & {
   preview: string
+  /** The body is encrypted (§10.1): no preview. */
+  locked: boolean
 }
 
 export type NoteList = {
@@ -40,6 +42,8 @@ export type SearchResult = {
   /** HTML-escaped text with matches wrapped in <mark>. */
   excerpt: string
   updatedAt: number
+  /** Matched on the title only; the body is encrypted. */
+  locked: boolean
 }
 
 export type MutationResult = {
@@ -70,3 +74,14 @@ export type ErrorBody = {
 
 /** The server's Resend settings for emailing notes; the key itself is never sent back. */
 export type EmailSettings = { configured: boolean; from: string; keyHint: string }
+
+/** One wrapped copy of the locked-notes key (§10.1). The server can't open it. */
+export type LockKey = {
+  id: string
+  kind: 'password' | 'recovery' | 'passkey'
+  credentialId?: string
+  salt: string
+  iterations: number
+  wrapped: string
+  createdAt: number
+}

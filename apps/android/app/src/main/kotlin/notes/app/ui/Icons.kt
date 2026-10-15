@@ -60,6 +60,8 @@ object Icons {
     val Outdent = icon("M2.5 3h11M7.5 6.5h6M7.5 9.5h6M2.5 13h11", "M4.7 6L2.5 8l2.2 2")
     val CloudOff = icon("M4.5 12.5a3 3 0 0 1-.4-6A4 4 0 0 1 11.8 5.6a3.4 3.4 0 0 1 .2 6.9z", "M2.5 2l11 12")
     val Cloud = icon("M4.5 12.5a3 3 0 0 1-.4-6A4 4 0 0 1 11.8 5.6a3.4 3.4 0 0 1 .2 6.9z")
+    val Lock =
+        icon("M5 7h6a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z", "M5.5 7V5a2.5 2.5 0 0 1 5 0v2")
 
     private fun icon(
         vararg paths: String,

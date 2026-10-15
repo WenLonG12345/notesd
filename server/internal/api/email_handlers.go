@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"notes/server/internal/locks"
 	"notes/server/internal/mail"
 )
 
@@ -80,6 +81,11 @@ func (s *Server) emailNote(w http.ResponseWriter, r *http.Request) {
 	}
 	if n.DeletedAt != nil {
 		writeError(w, http.StatusNotFound, "not_found", "note not found")
+		return
+	}
+	if locks.IsLocked(n.Content) {
+		// The server can't read it, and shouldn't mail it if it could (§10.1).
+		writeError(w, http.StatusConflict, "note_locked", "locked notes can't be emailed")
 		return
 	}
 	if n.Revision != req.Revision {

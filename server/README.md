@@ -72,18 +72,22 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | POST | `/auth/password` | `{currentPassword, newPassword}`; signs out other sessions |
 | GET | `/auth/sessions` | signed-in browsers and devices |
 | DELETE | `/auth/sessions/{id}` | revoke one |
-| GET | `/notes?limit=&cursor=&tag=&untagged=` | live notes, newest first, with `preview` (plain text, one line per block, ≤160 chars); `nextCursor` is opaque; `total` counts the matching live notes. `tag` (with or without `#`) keeps notes with that tag or one nested under it; `untagged=true` keeps notes without tags |
+| GET | `/notes?limit=&cursor=&tag=&untagged=` | live notes, newest first, with `preview` (plain text, one line per block, ≤160 chars) and `locked`; `nextCursor` is opaque; `total` counts the matching live notes. `tag` (with or without `#`) keeps notes with that tag or one nested under it; `untagged=true` keeps notes without tags |
 | POST | `/notes` | `{operationId, id, title, content, createdAt?, updatedAt?, conflictOf?}` → 201 |
 | GET | `/notes/{id}` | 410 with the tombstone in `current` if deleted |
 | PUT | `/notes/{id}` | `{operationId, baseRevision, title, content, updatedAt?}`; both fields required |
 | DELETE | `/notes/{id}` | `{operationId, baseRevision}` |
-| POST | `/notes/{id}/email` | `{to: [address, …], revision}` → `{id}` (Resend's). Sends the stored note: HTML rendered from the Markdown plus the Markdown as plain text, subject = title. `revision` must be the server's current one (`409 stale_revision` otherwise: sync first). Up to 10 recipients. `409 email_not_configured` without settings; `502 email_failed` with Resend's `message` when Resend refuses (unverified domain, bad key) |
+| POST | `/notes/{id}/email` | `{to: [address, …], revision}` → `{id}` (Resend's). Sends the stored note: HTML rendered from the Markdown plus the Markdown as plain text, subject = title. `revision` must be the server's current one (`409 stale_revision` otherwise: sync first). Up to 10 recipients. `409 email_not_configured` without settings; `502 email_failed` with Resend's `message` when Resend refuses (unverified domain, bad key); `409 note_locked` for a locked note |
 | GET | `/sync?since=&limit=&generation=` | `{changes, nextCursor, hasMore, generation}` |
-| GET | `/search?q=&limit=&offset=&tag=&untagged=` | `{results: [{id, title, excerpt, updatedAt}]}`; filters as for `/notes` |
+| GET | `/search?q=&limit=&offset=&tag=&untagged=` | `{results: [{id, title, excerpt, updatedAt, locked}]}`; filters as for `/notes` |
 | GET | `/settings/email` | `{configured, from, keyHint}`; the key itself is never returned, `keyHint` is its last 4 characters |
 | PUT | `/settings/email` | `{apiKey?, from}`; `apiKey` (starts with `re_`) may be omitted to keep the saved one. Not checked against Resend: send-only keys can't call anything but sending, so a bad key shows on the first send |
 | DELETE | `/settings/email` | forget the key and sender |
 | GET | `/tags` | `{tags: [{key, name, count}]}` sorted by key; parents of nested tags included, `count` is distinct notes including nested tags |
+| GET | `/locks` | `{keys: [{id, kind, credentialId?, salt, iterations, wrapped, createdAt}]}`: the locked-notes keyring, password entry first |
+| PUT | `/locks/keys/{id}` | `{kind, credentialId?, salt, iterations, wrapped, verifier}`. `id` is `password` or `recovery` for those kinds, any other id for a `passkey`. The first entry must be the password, and its `verifier` is stored (hashed); every later write must send the same verifier (`403 bad_verifier`). `409 no_lock_password` for a recovery or passkey entry first |
+| DELETE | `/locks/keys/{id}` | `{verifier}`; the password entry can't be removed (`409 password_key_required`) |
+| DELETE | `/locks` | `{accountPassword}`: forgets the whole keyring (a forgotten lock password); rate-limited like a password change |
 
 `/healthz` (process up) and `/readyz` (database reachable) sit outside
 `/api/v1`. Every other path serves the web app, falling back to `index.html`.
@@ -110,6 +114,17 @@ rejected.
 `409 generation_mismatch` or `409 cursor_ahead` means the server was
 restored from a backup and the client must run a full reconciliation (§11.4).
 
+**Locked notes** (architecture §10.1). A note whose `content` starts with
+`notesd:locked:v1:` has an encrypted body the server can't read. It must be
+one line of unpadded base64url holding at least a nonce and tag (`400` with
+`field: content` otherwise), so an edit made on the ciphertext as text is
+refused instead of stored. Only its title is indexed and tagged; its preview
+and excerpt are empty and `locked` is true. The keyring holds the key
+wrapped under the lock password, a recovery code and passkeys, never in the
+clear. `verifier` is HMAC-SHA256 of the key with `notesd:verifier:v1`:
+proof that a client holds the key, so a stolen session alone can't replace
+or delete entries.
+
 **Search.** Input is split into words, each quoted as a prefix term, so FTS5
 syntax in user input is inert and never errors. `excerpt` is HTML-escaped
 note text with matches wrapped in `<mark>`.
@@ -122,6 +137,7 @@ internal/database  connection pools, pragmas, migration runner, integrity check
 internal/notes     create/update/delete, revisions, tombstones, idempotency, listing
 internal/sync      change feed
 internal/search    Markdown → plain text and tags, FTS5 query building, search, tag listing, reindex
+internal/locks     locked-note envelopes, keyring
 internal/mail      email settings, note Markdown → HTML email, Resend client
 internal/auth      Argon2id, sessions, setup token, login rate limiting
 internal/api       routing, auth/CSRF middleware, handlers, gzip, logging

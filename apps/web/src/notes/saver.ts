@@ -2,19 +2,23 @@ import { ApiError, NetworkError } from '../api/client'
 import { notes } from '../api/notes'
 import { canonical } from '../editor/markdown'
 import type { MutationResult, Note } from '../api/types'
+import { LockedError, decryptBody, encryptBody, isLocked } from '../locks/crypto'
+import { lockSession } from '../locks/session'
 import type { SaveState } from '../ui/status-pill'
 
 export type Fields = { title: string; content: string }
 
 export type Problem =
   /** Both sides changed the content (or the title) differently. */
-  | { kind: 'conflict'; current: Note }
+  | { kind: 'conflict'; current: Opened }
   /** The note was deleted elsewhere; our edits have nowhere to go. */
   | { kind: 'deleted' }
   /** Network or server failure; retrying with backoff. */
   | { kind: 'offline' }
   /** The server rejected the save for good (e.g. note too large). */
   | { kind: 'rejected'; message: string }
+  /** A locked note has edits, but locked notes were locked again before they could be encrypted. */
+  | { kind: 'unlock' }
 
 export type Snapshot = {
   state: SaveState
@@ -24,13 +28,38 @@ export type Snapshot = {
   updatedAt: number | null
   /** Unreachable-server failures since the last save that landed; Retry doesn't reset it. */
   failures: number
+  /** The body is (to be) encrypted. */
+  locked: boolean
 }
 
-type Pending = { operationId: string; fields: Fields; create: boolean; baseRevision: number }
+type Pending = {
+  operationId: string
+  /** Plain text, as the editor shows it. */
+  fields: Fields
+  /** What goes over the wire: the content encrypted when locked. Fixed once, so retries send the same bytes. */
+  wire: Fields
+  locked: boolean
+  create: boolean
+  baseRevision: number
+}
+
+/** A note from the server with a locked body opened (§10.1). */
+export type Opened = { note: Note; locked: boolean; envelope: string | null }
+
+/**
+ * Decrypts a locked note's body with the session key. Throws LockedError
+ * when locked notes are locked (or the body doesn't open).
+ */
+export async function openNote(note: Note): Promise<Opened> {
+  if (!isLocked(note.content)) return { note, locked: false, envelope: null }
+  const key = lockSession.key()
+  if (!key) throw new LockedError('Locked notes are locked')
+  return { note: { ...note, content: await decryptBody(key, note.content) }, locked: true, envelope: note.content }
+}
 
 type Hooks = {
   /** A save landed: update the grid. */
-  saved?: (id: string, fields: Fields, result: MutationResult) => void
+  saved?: (id: string, fields: Fields, result: MutationResult, locked: boolean) => void
   /** A new note was created by resolving a conflict. */
   copied?: (saver: NoteSaver) => void
 }
@@ -64,6 +93,11 @@ export class NoteSaver {
   private blank: Fields
   /** Last values the server acknowledged: the base for §6.1 merges. */
   private base: Fields
+  /** Whether the body is encrypted, here and as the server last acknowledged it. */
+  private locked: boolean
+  private baseLocked: boolean
+  /** The stored envelope and the text it holds: unchanged text is sent as the same envelope, never re-encrypted. */
+  private sealed: { plain: string; envelope: string } | null
   /** The editor's current values; read lazily so serialization happens per save, not per keystroke. */
   private read: () => Fields
   private dirty = false
@@ -79,12 +113,24 @@ export class NoteSaver {
   private attempts = 0
   private failures = 0
   private waitingForAuth = false
+  private waitingForUnlock = false
   private listeners = new Set<() => void>()
   private remoteListeners = new Set<(fields: Fields) => void>()
   private snapshot: Snapshot
 
   constructor(
-    init: { id: string; fields: Fields; revision?: number; updatedAt?: number; conflictOf?: string; blank?: Fields },
+    init: {
+      id: string
+      /** Plain text: a locked note's body already decrypted. */
+      fields: Fields
+      revision?: number
+      updatedAt?: number
+      conflictOf?: string
+      blank?: Fields
+      locked?: boolean
+      /** The locked body as stored, when the note came from the server. */
+      envelope?: string | null
+    },
     private hooks: Hooks = {},
   ) {
     this.id = init.id
@@ -94,6 +140,9 @@ export class NoteSaver {
     this.updatedAt = init.updatedAt ?? null
     // A note the server doesn't have yet has nothing acknowledged: empty base.
     this.base = this.created ? canonicalFields(init.fields) : { title: '', content: '' }
+    this.locked = init.locked ?? false
+    this.baseLocked = this.created && this.locked
+    this.sealed = init.envelope ? { plain: this.base.content, envelope: init.envelope } : null
     const fields = { ...init.fields }
     this.blank = init.blank ?? { title: '', content: '' }
     this.read = () => fields
@@ -135,6 +184,20 @@ export class NoteSaver {
   /** An editor has this note open; it must not be released. */
   isAttached(): boolean {
     return this.attached > 0
+  }
+
+  /** Whether the body is (to be) encrypted. */
+  isLocked(): boolean {
+    return this.locked
+  }
+
+  /** Locks or unlocks the note: saved like an edit, encrypted with the session key. */
+  setLocked(locked: boolean) {
+    if (this.locked === locked) return
+    this.locked = locked
+    this.dirty = true
+    this.set(this.state === 'saved' ? 'unsaved' : this.state)
+    void this.flush()
   }
 
   /** The editor changed something. */
@@ -206,33 +269,78 @@ export class NoteSaver {
     void this.flush()
   }
 
-  /** Signed in again after a 401. */
+  /** Signed in again after a 401, or locked notes unlocked again. */
   resume() {
-    if (this.waitingForAuth || this.problem?.kind === 'offline') this.retryNow()
+    if (this.waitingForAuth || this.problem?.kind === 'offline' || this.problem?.kind === 'unlock') {
+      this.waitingForUnlock = false
+      if (this.problem?.kind === 'unlock') this.problem = null
+      this.retryNow()
+    }
   }
 
   /** Last-chance save while the page unloads. Fire and forget. */
   flushOnUnload() {
     clearTimeout(this.debounce)
     if (this.blocked() || this.inflight) return
-    const p = this.pending ?? this.nextPending()
+    // A new locked save can't be encrypted synchronously; beforeunload asks the user to stay instead.
+    const p = this.pending ?? (this.locked ? null : this.plainPending())
     if (!p) return
-    if (JSON.stringify(p.fields).length > KEEPALIVE_LIMIT) return
+    if (JSON.stringify(p.wire).length > KEEPALIVE_LIMIT) return
     this.pending = p
     void this.send(p, true).catch(() => undefined)
   }
 
   private blocked(): boolean {
     const k = this.problem?.kind
-    return k === 'conflict' || k === 'deleted' || k === 'rejected' || this.waitingForAuth
+    return k === 'conflict' || k === 'deleted' || k === 'rejected' || this.waitingForAuth || this.waitingForUnlock
   }
 
-  private nextPending(): Pending | null {
+  private unchanged(fields: Fields): boolean {
+    return (
+      this.created &&
+      fields.title === this.base.title &&
+      fields.content === this.base.content &&
+      this.locked === this.baseLocked
+    )
+  }
+
+  /** The next save of an unlocked note, built synchronously (for page unload). */
+  private plainPending(): Pending | null {
     const fields = this.read()
     this.dirty = false
-    if (this.created && fields.title === this.base.title && fields.content === this.base.content) return null
-    if (this.isBlank(fields)) return null
-    return { operationId: crypto.randomUUID(), fields, create: !this.created, baseRevision: this.revision }
+    if (this.unchanged(fields) || this.isBlank(fields)) return null
+    return {
+      operationId: crypto.randomUUID(),
+      fields,
+      wire: fields,
+      locked: false,
+      create: !this.created,
+      baseRevision: this.revision,
+    }
+  }
+
+  /** The next save, its body encrypted if the note is locked; null when there's nothing to send or no key. */
+  private async nextPending(): Promise<Pending | null> {
+    if (!this.locked) return this.plainPending()
+    const key = lockSession.key()
+    if (!key) {
+      this.waitingForUnlock = true
+      this.problem = { kind: 'unlock' }
+      return null
+    }
+    const fields = this.read()
+    this.dirty = false
+    if (this.unchanged(fields) || this.isBlank(fields)) return null
+    const envelope =
+      this.sealed?.plain === fields.content ? this.sealed.envelope : await encryptBody(key, fields.content)
+    return {
+      operationId: crypto.randomUUID(),
+      fields,
+      wire: { title: fields.title, content: envelope },
+      locked: true,
+      create: !this.created,
+      baseRevision: this.revision,
+    }
   }
 
   private send(p: Pending, keepalive = false): Promise<MutationResult> {
@@ -241,19 +349,22 @@ export class NoteSaver {
           {
             operationId: p.operationId,
             id: this.id,
-            ...p.fields,
+            ...p.wire,
             ...(this.conflictOf !== undefined && { conflictOf: this.conflictOf }),
           },
           keepalive,
         )
-      : notes.update(this.id, { operationId: p.operationId, baseRevision: p.baseRevision, ...p.fields }, keepalive)
+      : notes.update(this.id, { operationId: p.operationId, baseRevision: p.baseRevision, ...p.wire }, keepalive)
   }
 
   private async run(): Promise<void> {
     for (;;) {
-      const p = this.pending ?? this.nextPending()
+      // Sequential on purpose, like the request below.
+      // oxlint-disable-next-line no-await-in-loop
+      const p = this.pending ?? (await this.nextPending())
       if (!p) {
-        if (!this.dirty) this.set('saved')
+        if (this.waitingForUnlock) this.set('failed')
+        else if (!this.dirty) this.set('saved')
         return
       }
       this.pending = p
@@ -273,9 +384,11 @@ export class NoteSaver {
       this.created = true
       this.revision = result.revision
       this.base = p.fields
+      this.baseLocked = p.locked
+      this.sealed = p.locked ? { plain: p.fields.content, envelope: p.wire.content } : null
       this.updatedAt = result.updatedAt
       this.problem = null
-      this.hooks.saved?.(this.id, p.fields, result)
+      this.hooks.saved?.(this.id, p.fields, result, p.locked)
       if (!this.dirty) {
         this.set('saved')
         return
@@ -288,7 +401,7 @@ export class NoteSaver {
       this.pending = null
       // The unsent snapshot is the local side of the merge; edits since then are still in read().
       this.dirty = true
-      this.merge(err.current)
+      void this.mergeRemote(err.current)
       return
     }
     if (err instanceof ApiError && err.status === 409 && err.code === 'note_deleted') {
@@ -326,8 +439,24 @@ export class NoteSaver {
     this.set('failed')
   }
 
+  /** Opens the server's version (decrypting a locked body), then merges with it. */
+  private async mergeRemote(current: Note) {
+    let opened: Opened
+    try {
+      opened = await openNote(current)
+    } catch {
+      // Locked again meanwhile (or a body that won't open): wait for an unlock, then retry and conflict again.
+      this.waitingForUnlock = true
+      this.problem = { kind: 'unlock' }
+      this.set('failed')
+      return
+    }
+    this.merge(opened)
+  }
+
   /** §6.1: take each field from whichever side changed it; give up only when both changed it differently. */
-  private merge(current: Note) {
+  private merge(remote: Opened) {
+    const current = remote.note
     // The latest local text, including edits typed after the rejected request.
     const local = this.read()
     const base = this.base
@@ -346,12 +475,15 @@ export class NoteSaver {
       this.set('conflict')
       return
     }
+    // Locking is part of the body: a side that changed it wins, like a field.
+    const locked = this.locked === this.baseLocked ? remote.locked : this.locked
     if (title === null || content === null) {
-      this.problem = { kind: 'conflict', current }
+      this.problem = { kind: 'conflict', current: remote }
       this.set('conflict')
       return
     }
-    this.adopt(current)
+    this.adopt(remote)
+    this.locked = locked
     const merged = { title, content }
     if (merged.title !== local.title || merged.content !== local.content) this.pushRemote(merged)
     this.dirty = true
@@ -359,9 +491,13 @@ export class NoteSaver {
   }
 
   /** Make the server's version our base. */
-  private adopt(current: Note) {
+  private adopt(remote: Opened) {
+    const current = remote.note
     this.revision = current.revision
     this.base = canonicalFields(current)
+    this.baseLocked = remote.locked
+    this.locked = remote.locked
+    this.sealed = remote.envelope ? { plain: this.base.content, envelope: remote.envelope } : null
     this.updatedAt = current.updatedAt
     this.created = true
     this.problem = null
@@ -392,7 +528,7 @@ export class NoteSaver {
     if (problem?.kind !== 'conflict') return
     this.adopt(problem.current)
     this.dirty = false
-    this.pushRemote({ title: problem.current.title, content: problem.current.content })
+    this.pushRemote({ title: problem.current.note.title, content: problem.current.note.content })
     this.set('saved')
   }
 
@@ -409,6 +545,8 @@ export class NoteSaver {
         id: crypto.randomUUID(),
         fields: { title: `${local.title.trim() || 'Untitled'}${suffix}`, content: local.content },
         ...(conflictOf !== undefined && { conflictOf }),
+        // A copy of a locked note stays locked.
+        locked: this.locked,
       },
       this.hooks,
     )
@@ -438,8 +576,10 @@ export class NoteSaver {
     } catch (err) {
       if (err instanceof ApiError && err.code === 'note_deleted') return 'deleted'
       if (err instanceof ApiError && err.code === 'revision_conflict' && err.current) {
-        this.adopt(err.current)
-        this.pushRemote({ title: err.current.title, content: err.current.content })
+        const remote = await openNote(err.current).catch(() => null)
+        if (!remote) throw err
+        this.adopt(remote)
+        this.pushRemote({ title: remote.note.title, content: remote.note.content })
         this.set('saved')
         return 'changed'
       }
@@ -467,6 +607,7 @@ export class NoteSaver {
       created: this.created,
       updatedAt: this.updatedAt,
       failures: this.failures,
+      locked: this.locked,
     }
   }
 }

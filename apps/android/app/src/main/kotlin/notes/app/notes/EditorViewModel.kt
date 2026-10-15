@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onStart
@@ -20,6 +21,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import notes.core.crypto.LockSession
+import notes.core.crypto.LockedException
+import notes.core.crypto.LockedNotes
 import notes.core.db.Note
 import notes.core.db.NoteStore
 import notes.core.db.TagCount
@@ -44,12 +48,18 @@ data class Original(val id: String, val title: String)
  * Sync can change the note while it's open. With no unsaved typing, the change
  * goes straight into the editor ([incoming]). Otherwise the next save passes
  * the stored version the typing grew from, and the store merges the two.
+ *
+ * A locked note (§10.1) is stored encrypted. Its text is in memory only while
+ * [locks] is unlocked: [document] is null otherwise, and [needsUnlock] says
+ * why. Saves encrypt with the session key, reusing the stored envelope when
+ * the text is unchanged, so the server sees no edit.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class EditorViewModel(
     private val store: NoteStore,
     val id: String,
     private val appScope: CoroutineScope,
+    private val locks: LockSession,
     private val startTag: String? = null
 ) : ViewModel() {
     private val _document = MutableStateFlow<Document?>(null)
@@ -79,6 +89,31 @@ class EditorViewModel(
     /** The note was deleted elsewhere; any unsaved typing was kept as a recovered copy. */
     val gone: StateFlow<Boolean> = _gone
 
+    private val _locked = MutableStateFlow(false)
+
+    /** The note's body is (to be) encrypted. */
+    val locked: StateFlow<Boolean> = _locked
+
+    /** Locked, and locked notes are locked: show the unlock prompt instead of the text. */
+    val needsUnlock: StateFlow<Boolean> = combine(_locked, locks.state) { l, s -> l && s != LockSession.State.Unlocked }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private val _unreadable = MutableStateFlow(false)
+
+    /** Locked with a key the keyring no longer has (it was reset): it can't be opened. */
+    val unreadable: StateFlow<Boolean> = _unreadable
+
+    private val _title = MutableStateFlow("")
+
+    /** The stored title, readable even while the note is locked. */
+    val title: StateFlow<String> = _title
+
+    /** The plain text the stored envelope holds: unchanged text is saved as the same envelope. */
+    private var sealed: Pair<String, String>? = null
+
+    /** A locked note's edit that came too late to encrypt; saved on the next unlock. */
+    private var stranded: Document? = null
+
     /** The store had no such note when it was opened: a new note. Set before [document]. */
     var isNew = false
         private set
@@ -100,13 +135,51 @@ class EditorViewModel(
             val note = store.get(id)
             isNew = note == null
             known = note?.let { it.title to it.content }
+            _locked.value = note != null && LockedNotes.isLocked(note.content)
+            _title.value = note?.title.orEmpty()
             _document.value = when {
                 note != null -> parse(note)
                 blankContent.isEmpty() -> Document.forNote("", Document.EMPTY)
                 else -> Document.forNote("", Markdown.parse(blankContent))
             }
             if (note != null) show(note)
+            launch { locks.state.collect { lockChanged(it) } }
             store.changes.conflate().collect { refresh() }
+        }
+    }
+
+    // Saves in flight finish (encrypting) before the key goes.
+    private val unhook = locks.onBeforeLock { saved() }
+
+    override fun onCleared() {
+        unhook()
+    }
+
+    /**
+     * Locks or unlocks the note: saved like an edit. Locking needs the session
+     * unlocked (the screen asks for the password or creates one first).
+     */
+    fun setLocked(doc: Document, locked: Boolean) {
+        if (_locked.value == locked) return
+        _locked.value = locked
+        sealed = null
+        edited()
+        save(doc)
+    }
+
+    private suspend fun lockChanged(state: LockSession.State) {
+        if (!_locked.value) return
+        if (state == LockSession.State.Unlocked) {
+            if (_document.value == null) store.get(id)?.let { _document.value = parse(it) }
+            stranded?.let {
+                stranded = null
+                edited()
+                save(it)
+            }
+        } else {
+            // The plain text leaves memory; the screen shows the unlock prompt.
+            _document.value = null
+            sealed = null
         }
     }
 
@@ -138,11 +211,23 @@ class EditorViewModel(
 
     private suspend fun store(doc: Document, edit: Int) {
         val title = doc.title.orEmpty()
-        val content = withContext(Dispatchers.Default) { Markdown.serialize(doc) }
+        val plain = withContext(Dispatchers.Default) { Markdown.serialize(doc) }
         val basedOn = known
-        if (basedOn == null && title.isBlank() && content.trim() == blankContent.trim()) {
+        if (basedOn == null && title.isBlank() && plain.trim() == blankContent.trim()) {
             if (edit == edits) _status.value = SaveStatus.Blank
             return
+        }
+        val content = if (!_locked.value) {
+            plain
+        } else {
+            val key = locks.key()
+            if (key == null) {
+                // Locked before this save could encrypt: it waits for the next unlock.
+                stranded = doc
+                return
+            }
+            sealed?.takeIf { it.first == plain }?.second
+                ?: withContext(Dispatchers.Default) { LockedNotes.encrypt(key, plain) }
         }
         val note = store.save(id, title, content, basedOn)
         if (note == null) {
@@ -156,10 +241,13 @@ class EditorViewModel(
             return
         }
         val stored = note.title to note.content
+        _title.value = note.title
+        if (_locked.value && note.content == content) sealed = plain to content
         if (stored != (title to content) && edit == edits) {
             // Merged with a sync change: the editor shows the result.
             known = stored
-            parse(note).let {
+            _locked.value = LockedNotes.isLocked(note.content)
+            parse(note)?.let {
                 _document.value = it
                 _incoming.tryEmit(it)
             }
@@ -179,12 +267,13 @@ class EditorViewModel(
         }
         val stored = note.title to note.content
         val before = known
+        _title.value = note.title
         if (before != null && stored != before) {
             known = stored
-            parse(note).let {
-                _document.value = it
-                _incoming.tryEmit(it)
-            }
+            _locked.value = LockedNotes.isLocked(note.content)
+            val doc = parse(note)
+            _document.value = doc
+            if (doc != null) _incoming.tryEmit(doc)
         }
         show(note)
     }
@@ -197,6 +286,23 @@ class EditorViewModel(
         }
     }
 
-    private suspend fun parse(note: Note) =
-        withContext(Dispatchers.Default) { Document.forNote(note.title, Markdown.parse(note.content)) }
+    /** The note as the editor shows it; null for a locked note while locked notes are locked. */
+    private suspend fun parse(note: Note): Document? {
+        if (!LockedNotes.isLocked(note.content)) {
+            _unreadable.value = false
+            return withContext(Dispatchers.Default) { Document.forNote(note.title, Markdown.parse(note.content)) }
+        }
+        val key = locks.key() ?: return null
+        return withContext(Dispatchers.Default) {
+            try {
+                val plain = LockedNotes.decrypt(key, note.content)
+                sealed = plain to note.content
+                _unreadable.value = false
+                Document.forNote(note.title, Markdown.parse(plain))
+            } catch (_: LockedException) {
+                _unreadable.value = true
+                null
+            }
+        }
+    }
 }

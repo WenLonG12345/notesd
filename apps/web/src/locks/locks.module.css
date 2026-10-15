@@ -1,0 +1,32 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.title {
+  margin: 0;
+  font: 400 30px/1.1 var(--font-serif);
+}
+
+.text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Inline in the note pane, under "This note is locked." */
+.inline {
+  width: min(320px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}

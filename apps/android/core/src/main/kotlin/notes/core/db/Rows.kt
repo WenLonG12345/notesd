@@ -3,6 +3,7 @@ package notes.core.db
 import androidx.sqlite.SQLiteStatement
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import notes.core.crypto.LockedNotes
 import notes.core.text.Uuid7
 import notes.core.text.plainText
 import notes.core.text.tags
@@ -48,7 +49,9 @@ private fun Sql.unindexSeq(seq: Long) {
     exec("DELETE FROM note_tags WHERE note_seq = ?", seq)
 }
 
-private fun Sql.insertIndex(seq: Long, title: String, content: String) {
+private fun Sql.insertIndex(seq: Long, title: String, stored: String) {
+    // A locked body is ciphertext: only the title is searchable and tagged, as on the server (§10.1).
+    val content = if (LockedNotes.isLocked(stored)) "" else stored
     exec("INSERT INTO notes_fts (rowid, title, body_text) VALUES (?, ?, ?)", seq, title, plainText(content))
     for (tag in tags(title, content)) {
         exec("INSERT INTO note_tags (note_seq, key, name) VALUES (?, ?, ?)", seq, tag.key, tag.name)

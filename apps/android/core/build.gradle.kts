@@ -46,4 +46,5 @@ tasks.test {
     // Fixtures shared with the web app and the server.
     systemProperty("notes.sharedDir", rootProject.file("../../shared").absolutePath)
     inputs.dir(rootProject.file("../../shared/markdown-fixtures"))
+    inputs.dir(rootProject.file("../../shared/crypto-fixtures"))
 }

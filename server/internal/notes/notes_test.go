@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"notes/server/internal/database"
+	"notes/server/internal/locks"
 	"notes/server/internal/notes"
 	"notes/server/internal/search"
 )
@@ -557,5 +558,51 @@ func TestRebuildIfNeeded(t *testing.T) {
 	}
 	if rebuilt, err := search.RebuildIfNeeded(ctx, db); err != nil || rebuilt {
 		t.Fatalf("second: %v %v", rebuilt, err)
+	}
+}
+
+func TestLockedNotes(t *testing.T) {
+	db, s := setup(t)
+	// 28 bytes of base64url: the smallest well-formed envelope.
+	sealed := locks.Prefix + "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0"
+	create(t, s, "a", "Bank #private", sealed)
+	create(t, s, "b", "Open", "plain #public text")
+
+	items, _, err := s.List(ctx, search.Filter{}, 50, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if want := it.ID == "a"; it.Locked != want {
+			t.Fatalf("%s locked = %v", it.ID, it.Locked)
+		}
+		if it.ID == "a" && it.Preview != "" {
+			t.Fatalf("locked preview = %q", it.Preview)
+		}
+	}
+	// Only the title is indexed and tagged.
+	if got := tagNames(t, db); fmt.Sprint(got) != "map[private:1 public:1]" {
+		t.Fatalf("tags = %v", got)
+	}
+	if res, _ := search.Search(ctx, db, "c2VjcmV0", search.Filter{}, 10, 0); len(res) != 0 {
+		t.Fatalf("ciphertext searchable: %+v", res)
+	}
+	if res, _ := search.Search(ctx, db, "bank", search.Filter{}, 10, 0); len(res) != 1 || !res[0].Locked || res[0].Excerpt != "" {
+		t.Fatalf("title search = %+v", res)
+	}
+
+	// An edit made on the ciphertext as text is refused rather than stored.
+	_, err = s.Update(ctx, notes.UpdateInput{OperationID: "bad", ID: "a", BaseRevision: 1, Title: "Bank", Content: sealed + " typed"})
+	var verr *notes.ValidationError
+	if !errors.As(err, &verr) || verr.Field != "content" {
+		t.Fatalf("broken envelope: %v", err)
+	}
+
+	// Removing the lock is an ordinary update; the body is indexed again.
+	if _, err := s.Update(ctx, notes.UpdateInput{OperationID: "unlock", ID: "a", BaseRevision: 1, Title: "Bank", Content: "PIN #private"}); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := search.Search(ctx, db, "pin", search.Filter{}, 10, 0); len(res) != 1 || res[0].Locked {
+		t.Fatalf("after unlock = %+v", res)
 	}
 }

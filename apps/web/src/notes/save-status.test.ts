@@ -8,6 +8,7 @@ const snap = (s: Partial<Snapshot>): Snapshot => ({
   created: true,
   updatedAt: 1,
   failures: 0,
+  locked: false,
   ...s,
 })
 
