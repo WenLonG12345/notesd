@@ -214,16 +214,23 @@ func export(ctx context.Context, db *database.DB, o options) error {
 			}
 		}
 	}
-	res, err := writeExport(o.out, all, key)
+	store := images.NewStore(db)
+	res, err := writeExport(o.out, all, key, func(id string) (string, []byte, error) {
+		img, data, err := store.Get(ctx, id)
+		return img.ContentType, data, err
+	})
 	if err != nil {
 		return err
 	}
-	fmt.Printf("exported %d notes to %s\n", res.Written, o.out)
+	fmt.Printf("exported %d notes and %d images to %s\n", res.Written, res.Images, o.out)
 	if res.Locked > 0 {
 		fmt.Printf("skipped %d locked notes; --include-locked exports them with the lock password\n", res.Locked)
 	}
 	if res.Unreadable > 0 {
 		fmt.Printf("skipped %d locked notes that the lock password doesn't open (locked under an earlier keyring, or damaged)\n", res.Unreadable)
+	}
+	if res.MissingImages > 0 {
+		fmt.Printf("left %d images as notesd:image/ references: not on the server, or encrypted and not opened\n", res.MissingImages)
 	}
 	return nil
 }

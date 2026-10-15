@@ -85,9 +85,11 @@ time:
 notesd export --out ~/notes-export
 ```
 
-Each note becomes a `.md` file named after its title. Locked notes are left
-out unless you add `--include-locked`, which asks you to confirm and to type
-the lock password, then writes them unencrypted. The command only reads the
+Each note becomes a `.md` file named after its title. Its images go in an
+`images/` folder beside them, linked from the notes, so any Markdown viewer
+shows them. Locked notes are left out unless you add `--include-locked`, which
+asks you to confirm and to type the lock password, then writes them and their
+images unencrypted. The command only reads the
 database, so it's safe to run while the server is up.
 
 ## How it's built

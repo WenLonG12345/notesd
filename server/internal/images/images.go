@@ -165,6 +165,32 @@ func (s *Store) Check(ctx context.Context) ([]string, error) {
 	return bad, nil
 }
 
+// Sniff returns the image type data is, from its leading bytes, or "" if
+// it is none of the plain Types (a decrypted image carries no type).
+func Sniff(data []byte) string {
+	for _, t := range []string{"image/jpeg", "image/png", "image/webp", "image/gif"} {
+		if checkType(t, data) == nil {
+			return t
+		}
+	}
+	return ""
+}
+
+// Ext is the file extension for a plain image type, without the dot.
+func Ext(contentType string) string {
+	switch contentType {
+	case "image/jpeg":
+		return "jpg"
+	case "image/png":
+		return "png"
+	case "image/webp":
+		return "webp"
+	case "image/gif":
+		return "gif"
+	}
+	return ""
+}
+
 // magic holds each image type's leading bytes. WebP is RIFF....WEBP.
 var magic = map[string][][]byte{
 	"image/jpeg": {{0xFF, 0xD8, 0xFF}},

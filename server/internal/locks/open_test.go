@@ -18,10 +18,10 @@ func TestOpenFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	type entry struct {
-		Name, Password, Salt, Key, Kind, Kek, Wrapped, Plaintext, Envelope string
-		Iterations                                                         int
+		Name, Password, Salt, Key, Kind, Kek, Wrapped, Plaintext, Envelope, Plain, Sealed string
+		Iterations                                                                        int
 	}
-	var f struct{ KDF, Wraps, Envelopes, Invalid []entry }
+	var f struct{ KDF, Wraps, Envelopes, Invalid, Images []entry }
 	if err := json.Unmarshal(raw, &f); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,18 @@ func TestOpenFixtures(t *testing.T) {
 			t.Errorf("invalid %s opened: %q", c.Name, got)
 		}
 	}
-	if len(f.KDF) == 0 || len(f.Envelopes) == 0 || len(f.Invalid) == 0 {
+	for _, c := range f.Images {
+		got, err := DecryptImage(b(c.Key), b(c.Sealed))
+		// A null plain is a vector that must not open.
+		if c.Plain == "" {
+			if err == nil {
+				t.Errorf("image %s opened", c.Name)
+			}
+		} else if err != nil || !bytes.Equal(got, b(c.Plain)) {
+			t.Errorf("image %s: %v", c.Name, err)
+		}
+	}
+	if len(f.KDF) == 0 || len(f.Envelopes) == 0 || len(f.Invalid) == 0 || len(f.Images) == 0 {
 		t.Fatal("no fixtures")
 	}
 }
