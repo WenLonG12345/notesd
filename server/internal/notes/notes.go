@@ -68,6 +68,37 @@ type Note struct {
 	UpdatedAt  int64   `json:"updatedAt"`
 	DeletedAt  *int64  `json:"deletedAt"`
 	ConflictOf *string `json:"conflictOf,omitempty"`
+	// A locked note's images as its clients last listed them (§7.6), so a
+	// device that can't read the body still knows them, for a copy it
+	// makes of it. Absent for a plain note, whose content shows them.
+	ImageIDs []string `json:"imageIds,omitempty"`
+}
+
+// queryer is a transaction or a pool.
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// FillImageIDs sets a locked note's ImageIDs from note_images.
+func FillImageIDs(ctx context.Context, q queryer, n *Note) error {
+	if !locks.IsLocked(n.Content) {
+		return nil
+	}
+	rows, err := q.QueryContext(ctx, `SELECT r.image_id FROM note_images r JOIN notes n ON n.seq = r.note_seq
+		WHERE n.id = ? ORDER BY r.image_id`, n.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	n.ImageIDs = nil
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		n.ImageIDs = append(n.ImageIDs, id)
+	}
+	return rows.Err()
 }
 
 // Columns is the SELECT list matching ScanNote.
@@ -170,8 +201,9 @@ type CreateInput struct {
 	UpdatedAt   *int64  `json:"updatedAt,omitempty"`
 	ConflictOf  *string `json:"conflictOf,omitempty"`
 	// The images a locked note shows, which the server can't read from its
-	// ciphertext (§7.6). Ignored for a plain note.
-	ImageIDs []string `json:"imageIds,omitempty"`
+	// ciphertext (§7.6). Ignored for a plain note. Not omitempty: the
+	// request hash must tell absent (nil) from none ([]).
+	ImageIDs []string `json:"imageIds"`
 }
 
 // UpdateInput replaces a note's title and content, provided BaseRevision is
@@ -185,7 +217,7 @@ type UpdateInput struct {
 	UpdatedAt    *int64 `json:"updatedAt,omitempty"`
 	// As CreateInput.ImageIDs; nil (absent) keeps the images recorded, for
 	// a client that sends a locked body it can't read, such as a merge's.
-	ImageIDs []string `json:"imageIds,omitempty"`
+	ImageIDs []string `json:"imageIds"`
 }
 
 // DeleteInput turns a note into a tombstone, provided BaseRevision is still
@@ -287,6 +319,12 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (Result, error) {
 			return Result{}, &ConflictError{Code: CodeRevisionConflict, Current: cur.Note}
 		}
 		if cur.Title == in.Title && cur.Content == in.Content {
+			// The same body may come with its images listed (again): record them.
+			if locks.IsLocked(in.Content) && in.ImageIDs != nil {
+				if err := images.SetRefs(ctx, tx, cur.rowid, in.ImageIDs, now); err != nil {
+					return Result{}, err
+				}
+			}
 			return Result{ID: cur.ID, Status: StatusUnchanged, Revision: cur.Revision,
 				ChangeSeq: cur.ChangeSeq, UpdatedAt: cur.UpdatedAt, HTTPStatus: 200}, nil
 		}
@@ -389,7 +427,10 @@ func (s *Store) Get(ctx context.Context, id string) (Note, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return Note{}, ErrNotFound
 	}
-	return n, err
+	if err != nil {
+		return n, err
+	}
+	return n, FillImageIDs(ctx, s.db.R, &n)
 }
 
 // ListItem is a note summary for list views (§9).
@@ -484,7 +525,11 @@ func loadForUpdate(ctx context.Context, tx *sql.Tx, id string) (storedNote, erro
 	if conflictOf.Valid {
 		sn.ConflictOf = &conflictOf.String
 	}
-	return sn, err
+	if err != nil {
+		return sn, err
+	}
+	// A conflict answers with this note; a device making a copy of it needs its images.
+	return sn, FillImageIDs(ctx, tx, &sn.Note)
 }
 
 // nextChangeSeq allocates the next global change sequence inside the

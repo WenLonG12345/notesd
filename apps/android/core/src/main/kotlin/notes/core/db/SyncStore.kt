@@ -96,6 +96,7 @@ class SyncStore(private val db: Database, private val clock: () -> Long = System
             note.serverRevision == null && current.type == DELETE -> {
                 sql.exec("DELETE FROM sync_outbox WHERE note_id = ?", note.id)
                 sql.exec("DELETE FROM notes WHERE id = ?", note.id)
+                sql.forgetImages(note.id)
                 return@write null
             }
 
@@ -166,6 +167,7 @@ class SyncStore(private val db: Database, private val clock: () -> Long = System
     /** [op] lost to a newer server version: the request recorded nothing, so drop it and reconcile with [current]. */
     suspend fun conflict(op: Operation, current: RemoteNote): List<SyncEvent> = db.write { sql ->
         sql.exec("DELETE FROM sync_outbox WHERE operation_id = ?", op.operationId)
+        sql.rememberRemoteImages(current)
         buildList { reconcile(sql, current, this, fullSync = false) }
     }
 
@@ -176,6 +178,7 @@ class SyncStore(private val db: Database, private val clock: () -> Long = System
         val events = ArrayList<SyncEvent>()
         val fullSync = sql.long("SELECT full_sync FROM sync_state WHERE id = 1") == 1L
         for (remote in page.changes) {
+            sql.rememberRemoteImages(remote)
             reconcile(sql, remote, events, fullSync)
             if (fullSync) sql.exec("UPDATE notes SET full_sync_seen = 1 WHERE id = ?", remote.id)
         }
@@ -208,6 +211,7 @@ class SyncStore(private val db: Database, private val clock: () -> Long = System
                 // Deleted here, and the server doesn't have it either: nothing left to do.
                 sql.unindex(note.id)
                 sql.exec("DELETE FROM notes WHERE id = ?", note.id)
+                sql.forgetImages(note.id)
                 continue
             }
             sql.exec(
@@ -476,4 +480,9 @@ class SyncStore(private val db: Database, private val clock: () -> Long = System
         outboxJson.decodeFromString(st.getText(4)),
         st.getLong(5) == 1L
     )
+}
+
+/** A locked body from the server comes with its images: kept, so a copy this device makes of it lists them. */
+private fun Sql.rememberRemoteImages(remote: RemoteNote) {
+    if (remote.deletedAt == null) rememberImages(remote.id, remote.content, remote.imageIds ?: emptyList())
 }

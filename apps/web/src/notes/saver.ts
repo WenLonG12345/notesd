@@ -355,7 +355,8 @@ export class NoteSaver {
     // A new locked save can't be encrypted synchronously; beforeunload asks the user to stay instead.
     const p = this.pending ?? (this.locked ? null : this.plainPending())
     if (!p) return
-    if (JSON.stringify(p.wire).length > KEEPALIVE_LIMIT) return
+    // The whole body counts, the image list too.
+    if (JSON.stringify({ ...p.wire, imageIds: p.imageIds }).length > KEEPALIVE_LIMIT) return
     this.pending = p
     void this.send(p, true).catch(() => undefined)
   }

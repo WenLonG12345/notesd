@@ -142,3 +142,46 @@ func TestImageIDsAreValidated(t *testing.T) {
 		}
 	}
 }
+
+func TestLockedImageIDsRoundTrip(t *testing.T) {
+	db, s := setup(t)
+	a, b := img('a'), img('b')
+	if _, err := s.Create(ctx, notes.CreateInput{OperationID: "op-1", ID: "n1", Title: "T", Content: sealedBody, ImageIDs: []string{b, a}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Absent and empty mean different things, so one operation id can't carry both.
+	in := notes.UpdateInput{OperationID: "op-2", ID: "n1", BaseRevision: 1, Title: "T2", Content: sealedBody}
+	if _, err := s.Update(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	in.ImageIDs = []string{}
+	if _, err := s.Update(ctx, in); !errors.Is(err, notes.ErrOperationReuse) {
+		t.Fatalf("reused with [] instead of absent: %v", err)
+	}
+
+	// The same body listing its images again records them, without a new revision.
+	r, err := s.Update(ctx, notes.UpdateInput{OperationID: "op-3", ID: "n1", BaseRevision: 2, Title: "T2", Content: sealedBody, ImageIDs: []string{a}})
+	if err != nil || r.Status != notes.StatusUnchanged {
+		t.Fatalf("unchanged body: %+v %v", r, err)
+	}
+	if got := shown(t, db, "n1"); !slices.Equal(got, []string{a}) {
+		t.Fatalf("shows %q", got)
+	}
+
+	// Devices that can't read the body get the list with the note.
+	n, err := s.Get(ctx, "n1")
+	if err != nil || !slices.Equal(n.ImageIDs, []string{a}) {
+		t.Fatalf("Get: %q %v", n.ImageIDs, err)
+	}
+	// And a conflict's current note carries it too.
+	_, err = s.Update(ctx, notes.UpdateInput{OperationID: "op-4", ID: "n1", BaseRevision: 1, Title: "old", Content: sealedBody})
+	var c *notes.ConflictError
+	if !errors.As(err, &c) || !slices.Equal(c.Current.ImageIDs, []string{a}) {
+		t.Fatalf("conflict: %v", err)
+	}
+	create(t, s, "p", "Plain", imgMD(b))
+	if p, _ := s.Get(ctx, "p"); p.ImageIDs != nil {
+		t.Fatalf("a plain note lists %q", p.ImageIDs)
+	}
+}

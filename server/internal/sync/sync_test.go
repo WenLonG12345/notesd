@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"strings"
 	gosync "sync"
 	"testing"
 
 	"notes/server/internal/database"
+	"notes/server/internal/locks"
 	"notes/server/internal/notes"
 	notesync "notes/server/internal/sync"
 )
@@ -245,4 +247,21 @@ func ids(p notesync.Page) string {
 		s += n.ID
 	}
 	return s
+}
+
+func TestLockedNotesCarryTheirImageIDs(t *testing.T) {
+	db, s := setup(t)
+	id := strings.Repeat("a", 64)
+	if _, err := s.Create(ctx, notes.CreateInput{OperationID: "c-l", ID: "l", Title: "L",
+		Content: locks.Prefix + "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0", ImageIDs: []string{id}}); err != nil {
+		t.Fatal(err)
+	}
+	mustCreate(t, s, "p")
+	page, err := notesync.Changes(ctx, db, 0, 10, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Changes) != 2 || len(page.Changes[0].ImageIDs) != 1 || page.Changes[0].ImageIDs[0] != id || page.Changes[1].ImageIDs != nil {
+		t.Fatalf("changes: %+v", page.Changes)
+	}
 }

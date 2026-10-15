@@ -3,14 +3,18 @@ package images
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/text"
+
+	"notes/server/internal/locks"
 )
 
 // Grace is how long an image no note shows is kept before it is deleted:
@@ -147,23 +151,61 @@ func (s *Store) Collect(ctx context.Context, cutoff time.Time, dryRun bool) (n i
 	}
 }
 
-// Missing lists the images notes show that aren't stored, for `notesd check`.
+// Missing lists the images live notes show that aren't stored, for
+// `notesd check`. Plain notes' are read from their content, not from
+// note_images, which may still await its rebuild (check doesn't run it);
+// locked notes' only the record has.
 func (s *Store) Missing(ctx context.Context) ([]string, error) {
-	rows, err := s.db.R.QueryContext(ctx, `SELECT DISTINCT r.image_id FROM note_images r
-		WHERE NOT EXISTS (SELECT 1 FROM images i WHERE i.id = r.image_id) ORDER BY r.image_id`)
+	shown := map[string]bool{}
+	err := s.db.ReadTx(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT content FROM notes WHERE deleted_at IS NULL`)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var content string
+			if err := rows.Scan(&content); err != nil {
+				rows.Close()
+				return err
+			}
+			if !locks.IsLocked(content) {
+				for _, id := range Refs(content) {
+					shown[id] = true
+				}
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		rows, err = tx.QueryContext(ctx, `SELECT r.image_id FROM note_images r JOIN notes n ON n.seq = r.note_seq
+			WHERE n.deleted_at IS NULL AND n.content LIKE ? || '%'`, locks.Prefix)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			shown[id] = true
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+	var missing []string
+	for id := range shown {
+		if _, err := s.Info(ctx, id); errors.Is(err, ErrNotFound) {
+			missing = append(missing, id)
+		} else if err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
 	}
-	return ids, rows.Err()
+	slices.Sort(missing)
+	return missing, nil
 }
 
 // ReleaseUntracked starts the Grace of plain images from before references

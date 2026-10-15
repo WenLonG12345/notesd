@@ -175,9 +175,23 @@ func TestCollectInBatches(t *testing.T) {
 func TestMissing(t *testing.T) {
 	c := newCollector(t)
 	stored := c.put(1)
-	gone := strings.Repeat("0", 64)
-	c.note(1, stored, gone)
-	if got, err := c.store.Missing(ctx); err != nil || !slices.Equal(got, []string{gone}) {
+	gone, goneLocked, onlyRecorded := strings.Repeat("0", 64), strings.Repeat("1", 64), strings.Repeat("2", 64)
+	ref := func(id string) string { return "![](notesd:image/" + id + "?w=4&h=3)\n" }
+	add := func(seq int64, content string) {
+		t.Helper()
+		if _, err := c.db.W.ExecContext(ctx, `INSERT INTO notes (seq, id, title, content, revision, change_seq, created_at, updated_at)
+			VALUES (?, ?, '', ?, 1, ?, 0, 0)`, seq, "n"+string(rune('0'+seq)), content, seq); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A plain note is read from its content, even before the backfill has recorded it.
+	add(1, ref(stored)+ref(gone))
+	// A locked note only has its record.
+	add(2, "notesd:locked:v1:c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0")
+	c.note(2, stored, goneLocked)
+	// A stale record for a plain note isn't what it shows.
+	c.note(1, onlyRecorded)
+	if got, err := c.store.Missing(ctx); err != nil || !slices.Equal(got, []string{gone, goneLocked}) {
 		t.Fatalf("Missing = %q, %v", got, err)
 	}
 }

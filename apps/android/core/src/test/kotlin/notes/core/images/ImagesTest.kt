@@ -123,6 +123,29 @@ class ImagesTest {
     }
 
     @Test
+    fun `a conflicted copy of a body from another device lists that body's images`() = runBlocking<Unit> {
+        val a = client()
+        val b = client()
+        val key = ByteArray(32) { it.toByte() }
+        val (x, y, z) = listOf("a", "b", "c").map { it.repeat(64) }
+        fun sealed(id: String) = LockedNotes.encrypt(key, ImageRef(id, 1, 1).markdown() + "\n")
+        val base = sealed(x)
+        a.notes.save("n", "Secret", base, imageIds = listOf(x))
+        assertEquals(SyncOutcome.Done, a.sync())
+        assertEquals(SyncOutcome.Done, b.sync())
+
+        // b changes the body; a learns it from sync, which a can't read.
+        b.notes.save("n", "Secret", sealed(y), imageIds = listOf(y))
+        assertEquals(SyncOutcome.Done, b.sync())
+        assertEquals(SyncOutcome.Done, a.sync())
+        // a's editor, still on the old body, saves its own: the synced one becomes the copy.
+        a.notes.save("n", "Secret", sealed(z), basedOn = "Secret" to base, imageIds = listOf(z))
+        assertEquals(SyncOutcome.Done, a.sync())
+        assertEquals(listOf(y), a.listed("POST /api/v1/notes"), "the copy lists the synced body's images")
+        assertEquals(listOf(z), a.listed("PUT /api/v1/notes/n"))
+    }
+
+    @Test
     fun `an image added while a note goes up still reaches the server before its own note`() = runBlocking<Unit> {
         val a = client()
         val b = client()

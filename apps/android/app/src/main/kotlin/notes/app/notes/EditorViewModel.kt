@@ -307,7 +307,8 @@ class EditorViewModel(
                 ?: withContext(Dispatchers.Default) { LockedNotes.encrypt(key, plain) }
         }
         // The server can't read a locked body's images: the save lists them (§7.6).
-        val imageIds = if (_locked.value) ImageRef.ids(plain) else null
+        // From the body being saved, not the lock flag, which may have changed while it encrypted.
+        val imageIds = if (LockedNotes.isLocked(content)) ImageRef.ids(plain) else null
         val note = store.save(id, title, content, basedOn, imageIds)
         if (note == null) {
             if (basedOn != null && basedOn != (title to content)) {

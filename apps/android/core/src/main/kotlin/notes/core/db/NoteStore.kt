@@ -278,6 +278,7 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
             if (current == null || current.deletedAt != null) return@write
             val sent = sql.long("SELECT count(*) FROM sync_outbox WHERE note_id = ? AND sent = 1", id) > 0
             sql.unindex(id)
+            sql.forgetImages(id)
             if (current.serverRevision == null && !sent) {
                 sql.exec("DELETE FROM sync_outbox WHERE note_id = ?", id)
                 sql.exec("DELETE FROM notes WHERE id = ?", id)

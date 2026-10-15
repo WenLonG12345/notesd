@@ -92,7 +92,9 @@ data class RemoteNote(
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
     val deletedAt: Long? = null,
-    val conflictOf: String? = null
+    val conflictOf: String? = null,
+    /** A locked note's images as the server records them (§7.6); absent for a plain note. */
+    val imageIds: List<String>? = null
 )
 
 /** The answer to a create, update or delete. */

@@ -169,10 +169,13 @@ internal fun copyTitle(title: String, suffix: String) = title.trim().ifEmpty { "
 internal const val CONFLICTED = " (Conflicted copy)"
 internal const val RECOVERED = " (Recovered copy)"
 
+/** How many recent locked bodies per note keep their images: saved, stored, and one a conflict copies. */
+private const val BODIES_KEPT = 3
+
 /**
  * Records that the locked body [content] of [noteId] shows [imageIds], so
- * whatever later sends that body (a save, a merge, a copy) lists them. Only
- * the newest body per note is kept: older ones are never sent again.
+ * whatever later sends that body (a save, a merge, a copy) lists them. The
+ * few newest bodies per note are kept; older ones are never sent again.
  */
 internal fun Sql.rememberImages(noteId: String, content: String, imageIds: List<String>?) {
     if (imageIds == null || !LockedNotes.isLocked(content)) return
@@ -182,13 +185,25 @@ internal fun Sql.rememberImages(noteId: String, content: String, imageIds: List<
         ImageRef.sha256(content.toByteArray()),
         outboxJson.encodeToString(imageIds)
     )
+    exec(
+        """
+        DELETE FROM locked_images WHERE note_id = ? AND rowid NOT IN
+            (SELECT rowid FROM locked_images WHERE note_id = ? ORDER BY rowid DESC LIMIT ?)
+        """,
+        noteId,
+        noteId,
+        BODIES_KEPT.toLong()
+    )
 }
 
-/** The images in a locked body this device encrypted; null for a plain body or one from elsewhere. */
+/** A note gone from this device: its bodies' images aren't needed. */
+internal fun Sql.forgetImages(noteId: String) = exec("DELETE FROM locked_images WHERE note_id = ?", noteId)
+
+/** The images in a locked body this device encrypted or synced; null for a plain body or an unknown one. */
 internal fun Sql.lockedImageIds(content: String): List<String>? {
     if (!LockedNotes.isLocked(content)) return null
     return one(
-        "SELECT image_ids FROM locked_images WHERE content_sha = ? LIMIT 1",
+        "SELECT image_ids FROM locked_images WHERE content_sha = ? ORDER BY rowid DESC LIMIT 1",
         ImageRef.sha256(content.toByteArray())
     ) { outboxJson.decodeFromString<List<String>>(it.getText(0)) }
 }

@@ -130,8 +130,12 @@ or delete entries.
 **Images** (architecture §7.6). Notes reference them as
 `![alt](notesd:image/<sha256>?w=<px>&h=<px>)`. The server tracks which notes show
 which images (`note_images`): plain notes' from their content, locked notes'
-from the `imageIds` their clients send. An image no note has shown for 30 days
-is deleted, every 6 hours or by `notesd gc-images`.
+from the `imageIds` their clients send, which notes and sync changes return
+for locked notes. An image is deleted 30 days after the last note showing it
+stops (or 30 days after upload, if no note ever does), every 6 hours or by
+`notesd gc-images`. On a database upgraded from before references were
+tracked, encrypted images are kept until a locked note's save lists them and
+a later one drops them: `gc-images` doesn't remove those by itself.
 
 **Search.** Input is split into words, each quoted as a prefix term, so FTS5
 syntax in user input is inert and never errors. `excerpt` is HTML-escaped
