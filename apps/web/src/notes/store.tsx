@@ -375,9 +375,10 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       if (Date.now() - loadedAt.current > STALE_MS) {
         void fetchPage(true)
         fetchTags()
-        // A lock password changed or reset elsewhere shows up here too.
-        void lockSession.load(true).catch(() => undefined)
       }
+      // Every time, not only when the list is stale: a reset elsewhere must lock this
+      // tab before anything new is locked with the forgotten key. It's one small request.
+      void lockSession.load(true).catch(() => undefined)
     }
     const onOnline = () => {
       for (const s of all()) s.resume()

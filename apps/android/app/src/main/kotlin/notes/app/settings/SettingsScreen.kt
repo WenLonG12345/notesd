@@ -524,7 +524,15 @@ private fun LockedNotesCard(locks: LockSession, state: LockSession.State, finger
         if (!resetting) {
             if (state == LockSession.State.Unlocked) {
                 Divider()
-                Action("Lock now", t.link, enabled = !busy) { scope.launch { locks.lock() } }
+                Action("Lock now", t.link, enabled = !busy) {
+                    message = null
+                    scope.launch {
+                        if (!locks.lock()) {
+                            message =
+                                "An open note couldn't be saved, so locked notes are still unlocked. Try again."
+                        }
+                    }
+                }
             }
             if (canFingerprint) {
                 Divider()

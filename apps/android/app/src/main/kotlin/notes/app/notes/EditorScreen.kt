@@ -157,6 +157,9 @@ fun EditorScreen(
 
     /** Locked from this screen: the fingerprint isn't asked for straight back. */
     var lockedHere by remember { mutableStateOf(false) }
+
+    /** Lock now couldn't save this note, so the key stayed: notes are still unlocked. */
+    var lockFailed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var editor by remember { mutableStateOf<NoteEditText?>(null) }
     var state by remember { mutableStateOf(FormatState()) }
@@ -190,7 +193,9 @@ fun EditorScreen(
         onDispose { if (locked) window?.let(SecureWindows::release) }
     }
     // Only the prompt straight after "Lock now" is skipped; later relocks ask again.
-    LaunchedEffect(needsUnlock) { if (!needsUnlock) lockedHere = false }
+    LaunchedEffect(needsUnlock) {
+        if (!needsUnlock) lockedHere = false else lockFailed = false
+    }
 
     fun setLocked(on: Boolean) {
         val doc = editor?.document() ?: return
@@ -253,7 +258,14 @@ fun EditorScreen(
                         // Typing from the last moments saves (encrypted) before the key goes.
                         save()
                         lockedHere = true
-                        scope.launch { locks.lock() }
+                        lockFailed = false
+                        scope.launch {
+                            if (!locks.lock()) {
+                                // Still unlocked: a later lock (idle, leaving the app) asks for the fingerprint again.
+                                lockedHere = false
+                                lockFailed = true
+                            }
+                        }
                     })
                 }
                 IconAction(Icons.Undo, "Undo", { editor?.undo() }, enabled = state.canUndo)
@@ -269,6 +281,13 @@ fun EditorScreen(
                 Modifier.weight(1f),
                 fingerprint = fingerprint,
                 promptFingerprint = !lockedHere
+            )
+        }
+        if (lockFailed && !needsUnlock) {
+            Banner(
+                "This note couldn't be saved, so locked notes are still unlocked. Try Lock now again.",
+                BannerKind.Error,
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
         }
         original?.let { o ->

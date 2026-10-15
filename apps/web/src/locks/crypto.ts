@@ -14,6 +14,14 @@ const TAG = 16
 export type WrapKind = 'password' | 'recovery' | 'passkey'
 
 /** The body failed to decrypt: wrong key, tampering, or not an envelope at all. */
+/** Another device changed locked notes (a new password, a reset) while a change here was on its way. */
+export class KeyringChangedError extends Error {
+  constructor(message = 'Locked notes were changed on another device meanwhile. Try again.') {
+    super(message)
+    this.name = 'KeyringChangedError'
+  }
+}
+
 export class LockedError extends Error {
   constructor(message = 'Could not open the locked note') {
     super(message)

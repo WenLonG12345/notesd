@@ -280,7 +280,93 @@ async function changePasswordElsewhere(server: TestServer, next: string) {
   })
 }
 
+/** Another device resets locked notes and makes a new lock password: a new key, not ours. */
+async function resetElsewhere(s: Session, next: string) {
+  await s.server.api('DELETE', '/locks', { accountPassword: s.password })
+  const raw = randomBytes(32)
+  const salt = randomBytes(16)
+  await s.server.api('PUT', '/locks/keys/password', {
+    kind: 'password',
+    salt: toBase64Url(salt),
+    iterations: 10_000,
+    wrapped: await wrap(await passwordKek(next, salt, 10_000), raw, 'password'),
+    verifier: await verifier(raw),
+  })
+}
+
 describe('locked notes, when things happen meanwhile', () => {
+  it('coming back to the tab fetches the keyring, even with a fresh list: a reset elsewhere locks it', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    await resetElsewhere(s, 'someone else')
+    act(() => void window.dispatchEvent(new Event('focus')))
+    await waitFor(() => expect(lockSession.key()).toBeNull())
+  })
+
+  it('an unlock still deriving when a reset lands doesn’t take the forgotten key', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    await screen.findByText('This note is locked.')
+
+    // Hold the first derivation (the old password entry's) until the new keyring is in.
+    const real = crypto.subtle.deriveKey.bind(crypto.subtle)
+    let started!: () => void
+    const deriving = new Promise<void>((r) => (started = r))
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const spy = vi.spyOn(crypto.subtle, 'deriveKey').mockImplementationOnce(async (...args) => {
+      started()
+      await gate
+      return real(...args)
+    })
+    try {
+      await act(async () => {
+        const unlock = lockSession.unlock(LOCK_PASSWORD)
+        await deriving
+        await resetElsewhere(s, 'someone else')
+        await lockSession.load(true)
+        release()
+        // Tried against the new keyring, the old password is wrong.
+        await expect(unlock).rejects.toThrow()
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    expect(lockSession.key()).toBeNull()
+    expect(lockSession.getStatus()).toBe('locked')
+  })
+
+  it('a password change answered after a newer keyring arrived isn’t installed over it', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    await screen.findByText('This note is locked.')
+
+    // The server takes the change, then another device resets and starts over,
+    // and this tab fetches that, all before the change's answer is read.
+    const real = globalThis.fetch
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const res = await real(input, init)
+      if (init?.method === 'PUT' && String(input).endsWith('/api/v1/locks/keys/password')) {
+        spy.mockImplementation(real)
+        await resetElsewhere(s, 'someone else')
+        await lockSession.load(true)
+      }
+      return res
+    })
+    try {
+      await act(async () => {
+        await expect(lockSession.changePassword(LOCK_PASSWORD, 'brand new pass')).rejects.toThrow(/another device/)
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    expect(lockSession.key()).toBeNull()
+    const { keys } = (await s.server.api<{ keys: LockKey[] }>('GET', '/locks')).body
+    await waitFor(() => expect(lockSession.keys()).toEqual(keys))
+  })
+
   it('Lock now during a password change keeps notes locked', async () => {
     const s = await seeded()
     await lockOpenNote(s)

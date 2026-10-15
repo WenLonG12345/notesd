@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { locks as api } from '../api/locks'
 import type { LockKey } from '../api/types'
 import {
+  KeyringChangedError,
   LockedError,
   kdfCost,
   importKey,
@@ -110,6 +111,7 @@ class LockSession {
   /** First use: a new locked-notes key, wrapped under the lock password. */
   async setup(password: string): Promise<void> {
     const at = this.at()
+    const from = this.passwordWrap()
     const raw = randomBytes(32)
     const salt = randomBytes(16)
     const kek = await passwordKek(password, salt, kdfCost.password)
@@ -121,8 +123,8 @@ class LockSession {
       wrapped: await wrap(kek, raw, 'password'),
       verifier: proof,
     })
-    if (!this.changed(at, () => [key])) return
-    await this.adopt(raw, proof, at)
+    if (!this.changed(at, () => [key], { from, ours: key.wrapped })) return
+    if (!(await this.adopt(raw, proof, at, key.wrapped))) throw new KeyringChangedError()
   }
 
   /** Asks for one of the keyring's passkeys. Throws PasskeyError when dismissed or unsupported. */
@@ -130,11 +132,13 @@ class LockSession {
     const at = this.at()
     await this.load()
     const passkeys = this.keyring.filter((k) => k.kind === 'passkey')
+    const from = this.passwordWrap()
     const { credentialId, secret } = await signInWithPasskey(passkeys)
     const entry = passkeys.find((k) => k.credentialId === credentialId)
     if (!entry) throw new LockedError('That passkey can’t unlock notes')
     const raw = await unwrapRaw(await passkeyKek(secret, fromBase64Url(entry.salt)), entry.wrapped, 'passkey')
-    await this.adopt(raw, await verifierOf(raw), at)
+    // Reset meanwhile, this passkey's key may be the forgotten one.
+    if (!(await this.adopt(raw, await verifierOf(raw), at, from))) throw new LockedError('That passkey can’t unlock notes')
   }
 
   /**
@@ -146,6 +150,7 @@ class LockSession {
   async addPasskey(password: string, username: string): Promise<void> {
     const at = this.at()
     await this.load(true)
+    const from = this.passwordWrap()
     const raw = await this.unwrapWithPassword(password)
     const salt = randomBytes(32)
     const { credentialId, secret } = await createPasskey(username, salt)
@@ -158,8 +163,8 @@ class LockSession {
       wrapped: await wrap(await passkeyKek(secret, salt), raw, 'passkey'),
       verifier: proof,
     })
-    if (!this.changed(at, (keys) => [...keys, key])) return
-    await this.adopt(raw, proof, at)
+    if (!this.changed(at, (keys) => [...keys, key], { from, ours: from })) return
+    await this.adopt(raw, proof, at, from)
   }
 
   /** Stops a passkey unlocking notes. Needs the key in memory (its verifier). */
@@ -167,6 +172,7 @@ class LockSession {
     if (!this.proof) throw new LockedError('Unlock locked notes first')
     const at = this.at()
     await api.remove(id, this.proof)
+    // Right on any keyring, however new.
     if (this.changed(at, (keys) => keys.filter((k) => k.id !== id))) this.set(this.status)
   }
 
@@ -176,24 +182,31 @@ class LockSession {
   async unlock(password: string): Promise<void> {
     const at = this.at()
     await this.load()
-    let raw
+    const from = this.passwordWrap()
     try {
-      raw = await this.unwrapWithPassword(password)
+      if (await this.unlockWith(password, at)) return
     } catch (err) {
       if (!(err instanceof LockedError) || at.account !== this.account) throw err
       // The password may have changed on another device since the keyring was fetched.
-      const before = this.passwordWrap()
       await this.load(true)
-      if (this.passwordWrap() === before) throw err
-      raw = await this.unwrapWithPassword(password)
+      if (this.passwordWrap() === from) throw err
     }
-    await this.adopt(raw, await verifierOf(raw), at)
+    // Once more, against the keyring that landed meanwhile (a new password, or a reset).
+    if (!(await this.unlockWith(password, at))) throw new KeyringChangedError()
+  }
+
+  /** Unwraps the key with [password] and adopts it; false if another keyring landed meanwhile. */
+  private async unlockWith(password: string, at: { epoch: number }): Promise<boolean> {
+    const from = this.passwordWrap()
+    const raw = await this.unwrapWithPassword(password)
+    return this.adopt(raw, await verifierOf(raw), at, from)
   }
 
   /** Re-wraps the same key under a new password: no note changes. */
   async changePassword(current: string, next: string): Promise<void> {
     const at = this.at()
     await this.load(true)
+    const from = this.passwordWrap()
     const raw = await this.unwrapWithPassword(current)
     const salt = randomBytes(16)
     const kek = await passwordKek(next, salt, kdfCost.password)
@@ -205,14 +218,15 @@ class LockSession {
       wrapped: await wrap(kek, raw, 'password'),
       verifier: proof,
     })
-    if (!this.changed(at, (keys) => [key, ...keys.filter((k) => k.id !== 'password')])) return
-    await this.adopt(raw, proof, at)
+    if (!this.changed(at, (keys) => [key, ...keys.filter((k) => k.id !== 'password')], { from, ours: key.wrapped })) return
+    if (!(await this.adopt(raw, proof, at, key.wrapped))) throw new KeyringChangedError()
   }
 
   /** Forgets the keyring for good, after a forgotten lock password. */
   async reset(accountPassword: string): Promise<void> {
     const at = this.at()
     await api.reset(accountPassword)
+    // The server's keyring is empty now, whatever was fetched meanwhile.
     if (!this.changed(at, () => [])) return
     this.epoch++
     this.drop()
@@ -256,33 +270,61 @@ class LockSession {
     return this.keyring.find((k) => k.kind === 'password')?.wrapped ?? null
   }
 
-  /** Where slow work started, to tell whether a lock or sign-out came since. */
+  /** Where slow work started, to tell whether a lock, sign-out or newer keyring came since. */
   private at() {
     return { epoch: this.epoch, account: this.account }
   }
 
-  /** Installs a keyring change made here, unless the account was signed out meanwhile. False if it was. */
-  private changed(at: { account: number }, next: (keys: LockKey[]) => LockKey[]): boolean {
+  /**
+   * Installs a keyring change made here. False, quietly, if the account
+   * signed out meanwhile. A change made against the password entry [from]
+   * is stale if a keyring fetched since has another one (another device
+   * changed or reset it), unless that's [ours], this change's own: then it's
+   * dropped, the keyring fetched again, and KeyringChangedError thrown.
+   */
+  private changed(
+    at: { account: number },
+    next: (keys: LockKey[]) => LockKey[],
+    basis?: { from: string | null; ours: string | null },
+  ): boolean {
     if (at.account !== this.account) return false
+    const now = this.passwordWrap()
+    if (basis && now !== basis.from && now !== basis.ours) {
+      void this.load(true).catch(() => undefined)
+      throw new KeyringChangedError()
+    }
     this.loadSeq++
     this.keyring = next(this.keyring)
     return true
   }
 
-  /** Takes the key into memory, unless notes were locked (or the account signed out) since [at]. */
-  private async adopt(raw: Uint8Array<ArrayBuffer>, proof: string, at: { epoch: number }) {
+  /**
+   * Takes the key into memory, unless notes were locked (or the account
+   * signed out) since [at]: then it's dropped quietly. [from] is the password
+   * entry the keyring had when the key was unwrapped; if another has landed
+   * since (a reset, a new password), the key may be a forgotten one, so it's
+   * dropped and false comes back.
+   */
+  private async adopt(
+    raw: Uint8Array<ArrayBuffer>,
+    proof: string,
+    at: { epoch: number },
+    from: string | null,
+  ): Promise<boolean> {
     if (at.epoch !== this.epoch) {
       raw.fill(0)
-      return
+      return true
     }
     const key = await importKey(raw)
     raw.fill(0)
-    if (at.epoch !== this.epoch) return
+    if (at.epoch !== this.epoch) return true
+    if (this.passwordWrap() !== from) return false
     this.cryptoKey = key
     this.boundTo = this.passwordWrap()
     this.proof = proof
     this.armTimers()
     this.set('unlocked')
+    return true
   }
 
   private drop() {
