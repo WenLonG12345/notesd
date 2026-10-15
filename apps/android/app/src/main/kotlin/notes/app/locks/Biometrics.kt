@@ -23,7 +23,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 sealed interface BiometricResult {
     data class Ok(val data: ByteArray) : BiometricResult
 
-    /** Dismissed, or "Use password" chosen. */
+    /** Dismissed by the user: "Not now" or "Use password", back, or a tap outside. */
     data object Cancelled : BiometricResult
 
     /** The key is gone: fingerprints were added or removed, or the screen lock was turned off. */
@@ -59,18 +59,13 @@ class KeystoreBiometrics(private val context: Context) : Biometrics {
         } catch (_: GeneralSecurityException) {
             return BiometricResult.Failed
         }
-        val ready = prompt(
+        return prompt(
             activity,
             cipher,
             "Unlock with fingerprint?",
             subtitle = "Open locked notes with your fingerprint instead of the lock password.",
             negative = "Not now"
-        ) ?: return BiometricResult.Cancelled
-        return try {
-            BiometricResult.Ok(ready.iv + ready.doFinal(data))
-        } catch (_: GeneralSecurityException) {
-            BiometricResult.Failed
-        }
+        ) { ready -> BiometricResult.Ok(ready.iv + ready.doFinal(data)) }
     }
 
     override suspend fun open(activity: FragmentActivity, sealed: ByteArray): BiometricResult {
@@ -86,11 +81,8 @@ class KeystoreBiometrics(private val context: Context) : Biometrics {
         } catch (_: GeneralSecurityException) {
             return BiometricResult.Failed
         }
-        val ready = prompt(activity, cipher, "Unlock locked notes") ?: return BiometricResult.Cancelled
-        return try {
+        return prompt(activity, cipher, "Unlock locked notes") { ready ->
             BiometricResult.Ok(ready.doFinal(sealed, IV_BYTES, sealed.size - IV_BYTES))
-        } catch (_: GeneralSecurityException) {
-            BiometricResult.Failed
         }
     }
 
@@ -119,24 +111,41 @@ class KeystoreBiometrics(private val context: Context) : Biometrics {
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE).apply { init(spec) }.generateKey()
     }
 
-    /** The cipher, unlocked by a biometric; null when dismissed or failed for good. */
+    /**
+     * [use] on the cipher once a biometric unlocks it. Cancelled only when the
+     * user dismissed the prompt (its button, back, a tap outside); any other
+     * error (locked out, too many tries, the system cancelling it) is Failed,
+     * so it isn't taken for a choice.
+     */
     private suspend fun prompt(
         activity: FragmentActivity,
         cipher: Cipher,
         title: String,
         subtitle: String? = null,
-        negative: String = "Use password"
-    ): Cipher? = suspendCancellableCoroutine { cont ->
+        negative: String = "Use password",
+        use: (Cipher) -> BiometricResult
+    ): BiometricResult = suspendCancellableCoroutine { cont ->
         val prompt = BiometricPrompt(
             activity,
             ContextCompat.getMainExecutor(activity),
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    if (cont.isActive) cont.resume(result.cryptoObject?.cipher)
+                    if (!cont.isActive) return
+                    val ready = result.cryptoObject?.cipher
+                    cont.resume(
+                        try {
+                            ready?.let(use) ?: BiometricResult.Failed
+                        } catch (_: GeneralSecurityException) {
+                            BiometricResult.Failed
+                        }
+                    )
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    if (cont.isActive) cont.resume(null)
+                    if (!cont.isActive) return
+                    val dismissed = errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
+                        errorCode == BiometricPrompt.ERROR_USER_CANCELED
+                    cont.resume(if (dismissed) BiometricResult.Cancelled else BiometricResult.Failed)
                 }
             }
         )

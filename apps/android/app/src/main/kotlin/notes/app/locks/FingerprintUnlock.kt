@@ -54,6 +54,7 @@ class FingerprintUnlock(
     fun offer(activity: FragmentActivity) {
         if (_enabled.value || prefs.getBoolean(DECLINED, false) || !available()) return
         scope.launch {
+            // Only a choice is remembered: a failure (locked out, interrupted) offers again next time.
             if (enable(activity) == Outcome.Cancelled) prefs.edit { putBoolean(DECLINED, true) }
         }
     }

@@ -34,12 +34,17 @@ class TestSealer : Sealer {
 object FakeBiometrics : Biometrics {
     var sealer = TestSealer()
     var cancelNext = false
+
+    /** An error that isn't the user's choice: locked out, or the system cancelled the prompt. */
+    var failNext = false
     var invalidated = false
 
     override fun available() = true
 
     override suspend fun seal(activity: FragmentActivity, data: ByteArray): BiometricResult = when {
         cancelNext -> BiometricResult.Cancelled.also { cancelNext = false }
+
+        failNext -> BiometricResult.Failed.also { failNext = false }
 
         else -> {
             invalidated = false

@@ -98,6 +98,7 @@ class LockedNoteFlowTest {
         scenario?.close()
         graph.database.close()
         FakeBiometrics.cancelNext = false
+        FakeBiometrics.failNext = false
         FakeBiometrics.invalidated = false
     }
 
@@ -201,6 +202,21 @@ class LockedNoteFlowTest {
         compose.waitForIdle()
         // Asked again, the fake would have matched.
         assertEquals(false, graph.fingerprint.enabled.value)
+    }
+
+    @Test
+    fun `a fingerprint prompt that failed rather than being declined is offered again`() {
+        FakeBiometrics.failNext = true
+        openBank()
+        unlock(PASSWORD)
+        compose.waitUntil(5_000) { graph.locks.state.value == LockSession.State.Unlocked && !FakeBiometrics.failNext }
+        compose.waitForIdle()
+        assertEquals(false, graph.fingerprint.enabled.value)
+
+        onMain { graph.locks.lock() }
+        compose.waitUntilExactlyOneExists(hasText("This note is locked."))
+        unlock(PASSWORD)
+        compose.waitUntil(5_000) { graph.fingerprint.enabled.value }
     }
 
     @Test
