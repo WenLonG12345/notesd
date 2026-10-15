@@ -1,6 +1,8 @@
 # notesd for Android
 
-The native Android client: offline-first, with its own SQLite database and full-text index, a native rich-text editor, and background sync with notesd. Design and protocol are in [`docs/architecture.md`](../../docs/architecture.md); the build plan is in [`docs/android-app-plan.md`](../../docs/android-app-plan.md).
+The native Android client: offline-first, with its own SQLite database and full-text index, a native rich-text editor, and background sync with notesd. Design and protocol are in [`docs/architecture.md`](../../docs/architecture.md).
+
+This README is for working on the app. To install and use it, see [`docs/android.md`](../../docs/android.md); release builds and signing are in [`docs/releasing.md`](../../docs/releasing.md).
 
 ## Setup
 
@@ -15,6 +17,7 @@ Run from the repository root:
 | Task | What it does |
 | --- | --- |
 | `mise run build:android` | Debug APK in `app/build/outputs/apk/debug` |
+| `mise run release:android` | Release APK in `server/bin`, signed when `NOTESD_KEYSTORE` is set |
 | `mise run test:android` | All JVM and Robolectric tests, including sync against a real server |
 | `mise run lint:android` | ktlint and Android lint (warnings fail the build) |
 | `mise run screenshots:android` | Renders every screen to `app/build/screenshots` (light, dark, 200% text, two-pane, foldable) |

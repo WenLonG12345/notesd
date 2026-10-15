@@ -3,14 +3,15 @@
 The browser client for [notesd](../../server/README.md): React 19,
 TypeScript, Vite 8 and Tiptap 3. It builds into the server's
 `internal/web/dist` and is embedded in the Go binary, so a deployment is just
-that one binary; there is no separate frontend process. The plan it follows
-is [docs/web-app-plan.md](../../docs/web-app-plan.md), and the design is the
-prototype in [design-system/](../../design-system/).
+that one binary; there is no separate frontend process. The design is the
+prototype in [design-system/](../../design-system/). For using the web app,
+see [docs/web.md](../../docs/web.md).
 
 ## Dev loop
 
 From the repo root, `mise run dev` starts the API server (rebuilt on Go
-changes) and Vite at http://localhost:5173. See the root README.
+changes) and Vite at http://localhost:5173. See
+[docs/development.md](../../docs/development.md).
 
 Vite proxies `/api`, `/healthz` and `/readyz` to `http://127.0.0.1:8080`.
 Set `NOTESD_SERVER` to point it elsewhere. The proxy keeps the browser's

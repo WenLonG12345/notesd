@@ -1,15 +1,19 @@
-# notesd
+# notesd server
 
 The backend from [docs/architecture.md](../docs/architecture.md): one Go binary
 serving the JSON API, the sync feed, full-text search and the embedded web
-app, backed by one SQLite database. Roadmap step 2 (backend foundation)
-and the server half of step 3 (the web app, in [apps/web](../apps/web/README.md)).
+app ([apps/web](../apps/web/README.md)), backed by one SQLite database.
+
+This README is the developer and API reference. To install and run notesd,
+see [docs/hosting.md](../docs/hosting.md) and
+[docs/operations.md](../docs/operations.md).
 
 ## Build and test
 
-Requires the toolchain in the root `mise.toml` (see the root README). No
-cgo: the SQLite driver is `modernc.org/sqlite` (pure Go, FTS5 included), so
-cross-compiling for a Raspberry Pi is a plain `GOARCH` switch.
+Requires the toolchain in the root `mise.toml` (see
+[docs/development.md](../docs/development.md)). No cgo: the SQLite driver is
+`modernc.org/sqlite` (pure Go, FTS5 included), so cross-compiling for a
+Raspberry Pi is a plain `GOARCH` switch.
 
 | Task (`mise run …`) | What it does |
 | --- | --- |
@@ -24,49 +28,25 @@ The web app is embedded at compile time, so a plain `go build` embeds
 whatever is in `internal/web/dist`. That directory is build output and is
 gitignored except for a `.gitkeep` (`//go:embed` needs the directory to
 exist). A binary built without the web app still works; web pages show a
-"web app not built" placeholder with status 503. For the dev loop, see the
-root README.
+"web app not built" placeholder with status 503.
 
-## Run
+## Commands and configuration
 
-```bash
-./bin/notesd --data-dir /var/lib/notesd --listen 127.0.0.1:8080 \
-    --public-url https://notes.example.com
-```
+The commands (`serve`, the default, plus `create-owner`, `reset-password`,
+`reindex`, `check` and `version`) and every user-facing flag are documented
+in [docs/hosting.md](../docs/hosting.md#configuration) and
+[docs/operations.md](../docs/operations.md#maintenance-commands). Notes for
+working on them:
 
-On first start with no account, the server logs a **setup link**
-(`setup_url`) and the **setup token** in it. Open the link to create the
-owner account in the web app, or paste the token into its onboarding (or
-`POST /api/v1/auth/setup`). The token changes on every start unless
-`--setup-token` sets it, e.g. so Docker users never need the log. The link
-uses `--public-url` when set, otherwise the listen address. Alternatively create it from the shell, which needs access to the
-data directory and so is trusted:
-
-```bash
-NOTESD_PASSWORD='…' notesd create-owner --username me --data-dir /var/lib/notesd
-```
-
-| Command | Purpose |
-| --- | --- |
-| `serve` (default) | Run the server |
-| `create-owner --username NAME` | Create the owner account |
-| `reset-password` | Set a new password and sign out every session |
-| `reindex` | Rebuild the search index and tags from the notes table (also done automatically at startup when a migration asks for it) |
-| `check` | `PRAGMA integrity_check`; never modifies the database |
-| `version` | Print the version |
-
-| Flag | Env | Default |
-| --- | --- | --- |
-| `--data-dir` | `NOTESD_DATA_DIR` | `./data` |
-| `--listen` | `NOTESD_LISTEN` | `127.0.0.1:8080` |
-| `--public-url` | `NOTESD_PUBLIC_URL` | unset; an `https://` URL makes cookies `Secure` |
-| `--log-level` | `NOTESD_LOG_LEVEL` | `info` |
-| `--log-format` | `NOTESD_LOG_FORMAT` | `text` (`json` also available) |
-| `--setup-token` | `NOTESD_SETUP_TOKEN` | generated and logged |
-| `--resend-url` | `NOTESD_RESEND_URL` | `https://api.resend.com` (tests point it at a fake) |
-
-Passwords for CLI commands come from `NOTESD_PASSWORD` or the first line of
-stdin. On memory-constrained hosts, set `GOMEMLIMIT` (e.g. `GOMEMLIMIT=64MiB`).
+- `reindex` also runs automatically at startup when a migration asks for it.
+- Passwords for CLI commands come from `NOTESD_PASSWORD` or the first line
+  of stdin.
+- `--resend-url` / `NOTESD_RESEND_URL` (default `https://api.resend.com`)
+  exists so tests can point email at a fake.
+- The setup link (`setup_url` in the log) carries the token in its
+  fragment, so it never reaches proxy logs. It uses `--public-url` when set,
+  otherwise the listen address. The web app's onboarding and
+  `POST /api/v1/auth/setup` both accept the token.
 
 ## API
 
@@ -173,5 +153,8 @@ migrations         numbered SQL files, tracked with PRAGMA user_version
 - **Plain-text extraction rules** are pinned by
   `shared/markdown-fixtures/plaintext.json`, which the iOS and Android
   extractors should also be tested against.
-- **Not yet built:** `backup` (step 6), YAML config file (flags and env only
-  for now), OpenAPI document in `shared/api/`.
+- **Login rate limiting keys on the TCP peer address** (`clientKey` in
+  `internal/api`). `X-Forwarded-For` is ignored because there's no trusted
+  proxy setting yet, so behind a reverse proxy all clients share one limit.
+- **Not yet built:** `backup` (step 6), and the OpenAPI document in
+  `shared/api/`. Configuration is flags and environment variables only.

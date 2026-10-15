@@ -454,9 +454,9 @@ data/
 ./notesd --data-dir /var/lib/notesd --listen 127.0.0.1:8080
 ```
 
-Configuration is flags and environment variables (`NOTESD_DATA_DIR`, `NOTESD_LISTEN`, `NOTESD_PUBLIC_URL`, `NOTESD_LOG_LEVEL`, `NOTESD_LOG_FORMAT`, `NOTESD_SETUP_TOKEN`); a config file is not planned unless the option count grows. Subcommands: `create-owner`, `reset-password`, `reindex` (rebuild the search index), `check` (integrity check), `version`; `backup` is still to be built (§11.4). Targets: Linux x86-64 and ARM64 (including Raspberry Pi 5), small VPS installs and home servers. Docker images are optional.
+Configuration is flags and environment variables (`NOTESD_DATA_DIR`, `NOTESD_LISTEN`, `NOTESD_PUBLIC_URL`, `NOTESD_LOG_LEVEL`, `NOTESD_LOG_FORMAT`, `NOTESD_SETUP_TOKEN`, and `NOTESD_RESEND_URL` for tests); a config file is not planned unless the option count grows. Subcommands: `create-owner`, `reset-password`, `reindex` (rebuild the search index), `check` (integrity check), `version`; `backup` is still to be built (§11.4). Targets: Linux x86-64 and ARM64 (including Raspberry Pi 5), small VPS installs and home servers. Docker images are optional.
 
-WAL mode is enabled with a busy timeout for brief write contention. The development toolchain and build tasks are defined in the root `mise.toml` (`mise run build` produces the binary with the web app embedded).
+WAL mode is enabled with a busy timeout for brief write contention. The development toolchain and build tasks are defined in the root `mise.toml` (`mise run build` produces the binary with the web app embedded). Installation, HTTPS and systemd are covered for users in `docs/hosting.md`; releases (server binaries and the signed APK) in `docs/releasing.md`.
 
 ### 11.2 Process supervision
 
@@ -547,14 +547,15 @@ A monorepo, because server and clients share protocol definitions, test fixtures
 
 ```text
 notes/
-├── server/           cmd/notesd, internal/{api,auth,database,notes,sync,search,web}, migrations, go.mod
+├── server/           cmd/notesd, internal/{api,auth,database,mail,notes,sync,search,web}, migrations, go.mod
 ├── apps/
 │   ├── ios/          App, Editor, Database, Search, Sync
 │   ├── android/      core/ (document model, Markdown codec, database, search, API client, sync; plain Kotlin), app/ (Compose UI, editor, accounts, WorkManager)
 │   └── web/          src/{api,auth,notes,editor,settings,ui,styles}, test/, package.json
 ├── shared/           markdown-fixtures (plaintext, roundtrip), sync-fixtures, api
 ├── design-system/    the visual prototype the web app follows
-├── docs/             architecture (this document)
+├── docs/             user guides (hosting, android, web, operations), development, releasing, architecture (this document)
+├── .github/          CI and release workflows
 ├── scripts/          dev helpers
 ├── mise.toml         pinned toolchain and build/test tasks
 └── pnpm-workspace.yaml
