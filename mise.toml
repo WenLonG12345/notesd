@@ -89,6 +89,31 @@ description = "Debug APK in apps/android/app/build/outputs/apk/debug"
 dir = "apps/android"
 run = "./gradlew :app:assembleDebug"
 
+[tasks."release:android"]
+description = "Release APK in server/bin, signed when NOTESD_KEYSTORE is set (docs/releasing.md)"
+dir = "apps/android"
+run = """
+set -e
+version=$(git describe --tags --match 'v[0-9]*' 2>/dev/null || echo v0.1.0-dev)
+version=${version#v}
+# vX.Y.Z → XXYYZZ99; vX.Y.Z-rcN → XXYYZZNN, so release candidates sort before the release.
+base=${version%%-*}
+IFS=. read -r major minor patch <<EOF
+$base
+EOF
+case "$version" in
+  *-rc*) suffix=$(printf '%s' "${version#*-rc}" | sed 's/[^0-9].*//') ;;
+  *) suffix=99 ;;
+esac
+code=$(( ((major * 100 + minor) * 100 + patch) * 100 + ${suffix:-0} ))
+./gradlew :app:assembleRelease -Pnotes.versionName="$version" -Pnotes.versionCode="$code"
+mkdir -p ../../server/bin
+signed=app/build/outputs/apk/release/app-release.apk
+[ -f "$signed" ] || signed=app/build/outputs/apk/release/app-release-unsigned.apk
+cp "$signed" "../../server/bin/notesd-$version.apk"
+echo "server/bin/notesd-$version.apk (versionCode $code)"
+"""
+
 [tasks."build:web"]
 description = "Build the web app into server/internal/web/dist"
 dir = "apps/web"

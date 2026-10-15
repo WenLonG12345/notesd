@@ -39,13 +39,28 @@ android {
         applicationId = "notes.app"
         minSdk = 28
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        // `mise run release:android` passes both, derived from the git tag (docs/releasing.md).
+        versionCode = providers.gradleProperty("notes.versionCode").map(String::toInt).getOrElse(1)
+        versionName = providers.gradleProperty("notes.versionName").getOrElse("0.1.0")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Release signing comes from the environment; without it the release APK is built unsigned.
+    val keystore = providers.environmentVariable("NOTESD_KEYSTORE").orNull
+    val releaseSigning = keystore?.let { path ->
+        // PKCS12 (keytool's default since Java 9) has one password for the store and its keys.
+        val password = providers.environmentVariable("NOTESD_KEYSTORE_PASSWORD").get()
+        signingConfigs.create("release") {
+            storeFile = file(path)
+            storePassword = password
+            keyAlias = providers.environmentVariable("NOTESD_KEY_ALIAS").get()
+            keyPassword = password
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = releaseSigning
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

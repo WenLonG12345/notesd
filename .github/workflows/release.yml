@@ -1,0 +1,51 @@
+# Builds and publishes a release when a v* tag is pushed (docs/releasing.md).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe needs the tags
+      - uses: android-actions/setup-android@v3
+      - uses: jdx/mise-action@v2
+
+      - name: Check
+        run: mise run check && mise run test:android
+
+      - name: Server binaries
+        run: mise run release
+
+      - name: Android APK
+        env:
+          NOTESD_KEYSTORE_BASE64: ${{ secrets.NOTESD_KEYSTORE_BASE64 }}
+          NOTESD_KEYSTORE_PASSWORD: ${{ secrets.NOTESD_KEYSTORE_PASSWORD }}
+          NOTESD_KEY_ALIAS: ${{ secrets.NOTESD_KEY_ALIAS }}
+        run: |
+          if [ -z "$NOTESD_KEYSTORE_BASE64" ]; then
+            echo "::error::NOTESD_KEYSTORE_BASE64 is not set; refusing to publish an unsigned APK"
+            exit 1
+          fi
+          export NOTESD_KEYSTORE="$RUNNER_TEMP/release.jks"
+          echo "$NOTESD_KEYSTORE_BASE64" | base64 -d > "$NOTESD_KEYSTORE"
+          mise run release:android
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd server/bin
+          rm -f notesd-dev
+          sha256sum notesd-* > SHA256SUMS
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes $prerelease \
+            notesd-* SHA256SUMS
