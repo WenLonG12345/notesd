@@ -64,7 +64,8 @@ class LockedNoteFlowTest {
 
     /**
      * Turns the paused main looper until [done]. compose.waitUntil doesn't before an
-     * activity exists or once it's stopped.
+     * activity exists or once it's stopped, nor for the graph's main-scope coroutines
+     * (the fingerprint offer), which resume through the looper.
      */
     private fun pumpUntil(done: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 5_000
@@ -177,7 +178,8 @@ class LockedNoteFlowTest {
         openBank()
         unlock(PASSWORD)
         // The fake fingerprint matches as soon as it's asked for.
-        compose.waitUntil(5_000) { graph.fingerprint.enabled.value }
+        pumpUntil { graph.fingerprint.enabled.value }
+        compose.waitUntilExactlyOneExists(hasContentDescription("Lock now"))
 
         onMain { graph.locks.lock() }
         assertEquals(LockSession.State.Locked, graph.locks.state.value)
@@ -191,7 +193,7 @@ class LockedNoteFlowTest {
         FakeBiometrics.cancelNext = true
         openBank()
         unlock(PASSWORD)
-        compose.waitUntil(5_000) { graph.locks.state.value == LockSession.State.Unlocked && !FakeBiometrics.cancelNext }
+        pumpUntil { graph.locks.state.value == LockSession.State.Unlocked && !FakeBiometrics.cancelNext }
         compose.waitForIdle()
         assertEquals(false, graph.fingerprint.enabled.value)
 
@@ -209,14 +211,14 @@ class LockedNoteFlowTest {
         FakeBiometrics.failNext = true
         openBank()
         unlock(PASSWORD)
-        compose.waitUntil(5_000) { graph.locks.state.value == LockSession.State.Unlocked && !FakeBiometrics.failNext }
+        pumpUntil { graph.locks.state.value == LockSession.State.Unlocked && !FakeBiometrics.failNext }
         compose.waitForIdle()
         assertEquals(false, graph.fingerprint.enabled.value)
 
         onMain { graph.locks.lock() }
         compose.waitUntilExactlyOneExists(hasText("This note is locked."))
         unlock(PASSWORD)
-        compose.waitUntil(5_000) { graph.fingerprint.enabled.value }
+        pumpUntil { graph.fingerprint.enabled.value }
     }
 
     @Test
