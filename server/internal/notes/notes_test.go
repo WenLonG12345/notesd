@@ -598,6 +598,12 @@ func TestLockedNotes(t *testing.T) {
 	if res, _ := search.Search(ctx, db, "bank", search.Filter{}, 10, 0); len(res) != 1 || !res[0].Locked || res[0].Excerpt != "" {
 		t.Fatalf("title search = %+v", res)
 	}
+	if ids := listIDs(t, s, search.Filter{Locked: true}); fmt.Sprint(ids) != "[a]" {
+		t.Fatalf("locked = %v", ids)
+	}
+	if n, err := s.Count(ctx, search.Filter{Locked: true}); err != nil || n != 1 {
+		t.Fatalf("locked count = %d %v", n, err)
+	}
 
 	// An edit made on the ciphertext as text is refused rather than stored.
 	_, err = s.Update(ctx, notes.UpdateInput{OperationID: "bad", ID: "a", BaseRevision: 1, Title: "Bank", Content: sealed + " typed"})
@@ -612,6 +618,9 @@ func TestLockedNotes(t *testing.T) {
 	}
 	if res, _ := search.Search(ctx, db, "pin", search.Filter{}, 10, 0); len(res) != 1 || res[0].Locked {
 		t.Fatalf("after unlock = %+v", res)
+	}
+	if ids := listIDs(t, s, search.Filter{Locked: true}); len(ids) != 0 {
+		t.Fatalf("locked after unlock = %v", ids)
 	}
 }
 

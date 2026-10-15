@@ -113,12 +113,13 @@ and marks them with a decoration: they stay plain, editable text.
 ⌘-click (Ctrl+click elsewhere) shows the notes with that tag. Typing `#`
 and a letter suggests existing tags; a name with spaces is inserted closed.
 
-The tag tree (All notes, Untagged, tags with counts) comes from `GET /tags`
-and is refetched after saves. From 1100px wide it's a sidebar beside the list,
-which can be hidden; narrower it's a screen of its own at `/tags`, reached
-from the list's "‹ Tags", in the list's place. Settings open from it. The
-list last shown is remembered per browser. Choosing a tag (or Untagged) reloads the list and scopes search
-through the server's `tag` and `untagged` filters. A new note made while a
+The sidebar (All notes, Untagged, Locked when there are locked notes, and the
+tag tree with counts) comes from `GET /filters` and is refetched after saves.
+From 1100px wide it sits beside the list and can be hidden; narrower it's a
+screen of its own at `/tags`, reached from the list's "‹", in the list's
+place. Settings open from it. The list last shown is remembered per browser.
+Choosing a tag, Untagged or Locked reloads the list and scopes search
+through the server's `tag`, `untagged` and `locked` filters. A new note made while a
 tag is selected starts with that tag, and is still dropped if nobody types.
 Renaming and deleting tags aren't built yet.
 

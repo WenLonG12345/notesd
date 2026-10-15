@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -113,6 +114,11 @@ class TagsViewModel(store: NoteStore, private val filter: MutableStateFlow<NoteF
         store.changes.onStart { emit(Unit) }.mapLatest { store.tags() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Hides the Locked row while there are none. */
+    val lockedCount: StateFlow<Int> =
+        store.changes.onStart { emit(Unit) }.mapLatest { store.lockedCount() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     val selected: StateFlow<NoteFilter?> = filter
 
     fun show(f: NoteFilter?) {
@@ -121,7 +127,7 @@ class TagsViewModel(store: NoteStore, private val filter: MutableStateFlow<NoteF
 }
 
 /**
- * Where the list can point: All notes, Untagged and the tag tree, with
+ * Where the list can point: All notes, Untagged, Locked and the tag tree, with
  * settings in the header. A screen of its own on narrower windows; [docked]
  * beside the list on wide ones.
  */
@@ -136,6 +142,7 @@ fun TagsPane(
 ) {
     val t = LocalTokens.current
     val tags by vm.tags.collectAsStateWithLifecycle()
+    val lockedCount by vm.lockedCount.collectAsStateWithLifecycle()
     val filter by vm.selected.collectAsStateWithLifecycle()
     val expanded by state.expanded.collectAsStateWithLifecycle()
     val tree = remember(tags) { buildTagTree(tags) }
@@ -172,17 +179,19 @@ fun TagsPane(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     BrandMark(if (docked) 22.dp else 26.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        "Tags",
-                        style = if (docked) Type.title else Type.display,
-                        color = t.ink,
-                        modifier = Modifier.weight(1f).semantics { heading() }
-                    )
+                    Spacer(Modifier.weight(1f))
                     SettingsButton(onSettings)
                 }
             }
-            tagRows(tree, filter, expanded, onExpand = state::setExpanded, onFilter = onShow)
+            // Kept while selected, so the last note unlocked doesn't pull the row from under the list.
+            tagRows(
+                tree,
+                filter,
+                showLocked = lockedCount > 0 || filter == NoteFilter.Locked,
+                expanded = expanded,
+                onExpand = state::setExpanded,
+                onFilter = onShow
+            )
             if (tree.isEmpty()) {
                 item(key = "tags:hint", contentType = "hint") {
                     Text(
@@ -222,10 +231,11 @@ private fun SettingsButton(onClick: () -> Unit) {
     }
 }
 
-/** All notes, Untagged and the tag tree, as list items. */
+/** All notes, Untagged, Locked and the tag tree, as list items. */
 private fun LazyListScope.tagRows(
     tree: List<TagNode>,
     filter: NoteFilter?,
+    showLocked: Boolean,
     expanded: Set<String>,
     onExpand: (String, Boolean) -> Unit,
     onFilter: (NoteFilter?) -> Unit
@@ -243,6 +253,30 @@ private fun LazyListScope.tagRows(
             { onFilter(NoteFilter.Untagged) },
             null,
             Modifier.animateItem()
+        )
+    }
+    if (showLocked) {
+        item(key = "tags:locked", contentType = "tag") {
+            TagRow(
+                "Locked",
+                null,
+                0,
+                filter == NoteFilter.Locked,
+                null,
+                { onFilter(NoteFilter.Locked) },
+                null,
+                Modifier.animateItem(),
+                icon = Icons.Lock
+            )
+        }
+    }
+    item(key = "tags:section", contentType = "section") {
+        Text(
+            "Tags",
+            style = Type.small,
+            fontWeight = FontWeight.SemiBold,
+            color = LocalTokens.current.ink3,
+            modifier = Modifier.animateItem().padding(start = 62.dp, top = 16.dp, bottom = 4.dp).semantics { heading() }
         )
     }
     for ((node, depth) in visibleRows(tree, expanded)) {
@@ -280,7 +314,8 @@ private fun TagRow(
     onClick: () -> Unit,
     onExpand: (() -> Unit)?,
     modifier: Modifier = Modifier,
-    description: String? = null
+    description: String? = null,
+    icon: ImageVector? = null
 ) {
     val t = LocalTokens.current
     val shape = RoundedCornerShape(12.dp)
@@ -323,8 +358,9 @@ private fun TagRow(
                 ),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (count != null) {
-                Icon(Icons.Hash, null, Modifier.size(15.dp), tint = t.ink3)
+            val glyph = icon ?: if (count != null) Icons.Hash else null
+            if (glyph != null) {
+                Icon(glyph, null, Modifier.size(15.dp), tint = t.ink3)
                 Spacer(Modifier.width(8.dp))
             }
             Text(

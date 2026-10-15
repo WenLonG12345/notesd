@@ -198,6 +198,7 @@ fun NotesListScreen(
     val scope = when (val f = state.filter) {
         null -> null
         NoteFilter.Untagged -> "Untagged"
+        NoteFilter.Locked -> "Locked"
         is NoteFilter.Tag -> "#${f.name}"
     }
 
@@ -261,10 +262,10 @@ fun NotesListScreen(
                             Empty(
                                 kicker = scope,
                                 title = "Nothing here yet",
-                                text = if (state.filter == NoteFilter.Untagged) {
-                                    "Every note has a tag."
-                                } else {
-                                    "Notes you write while $scope is open start with the tag."
+                                text = when (state.filter) {
+                                    NoteFilter.Untagged -> "Every note has a tag."
+                                    NoteFilter.Locked -> "Lock a note from its menu to keep it here."
+                                    else -> "Notes you write while $scope is open start with the tag."
                                 },
                                 action = "Write a note",
                                 onAction = onNew
@@ -407,7 +408,7 @@ private fun TopBar(collapsed: Boolean, title: String, onTags: (() -> Unit)?, mod
                     .clearAndSetSemantics { },
                 textAlign = TextAlign.Center
             )
-            if (onTags != null) BackLink("Tags", onTags, Modifier.align(Alignment.CenterStart))
+            if (onTags != null) BackLink(null, onTags, Modifier.align(Alignment.CenterStart), description = "Sidebar")
         }
     }
 }

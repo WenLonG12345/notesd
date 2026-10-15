@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"notes/server/internal/database"
+	"notes/server/internal/locks"
 )
 
 // Tag is a #tag found in a note (§7.5). Key identifies it: Name lowercased.
@@ -130,11 +131,12 @@ func numeric(name string) bool {
 	return strings.Trim(name, "0123456789-_/") == ""
 }
 
-// Filter narrows a listing or search to one tag, with its nested tags, or to
-// notes without tags. The zero value matches every note.
+// Filter narrows a listing or search to one tag, with its nested tags, to
+// notes without tags, or to locked notes. The zero value matches every note.
 type Filter struct {
 	Tag      string // a key, see TagKey
 	Untagged bool
+	Locked   bool
 }
 
 // SQL is a condition on the notes row aliased n, with its arguments.
@@ -142,6 +144,8 @@ func (f Filter) SQL() (string, []any) {
 	switch {
 	case f.Untagged:
 		return `NOT EXISTS (SELECT 1 FROM note_tags t WHERE t.note_seq = n.seq)`, nil
+	case f.Locked:
+		return `substr(n.content, 1, ?) = ?`, []any{len(locks.Prefix), locks.Prefix}
 	case f.Tag != "":
 		// '0' sorts right after '/', so the range holds exactly the nested keys.
 		return `EXISTS (SELECT 1 FROM note_tags t WHERE t.note_seq = n.seq

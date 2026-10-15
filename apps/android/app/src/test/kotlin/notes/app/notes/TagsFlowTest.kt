@@ -21,6 +21,7 @@ import notes.app.NotesApp
 import notes.app.TestNotesApp
 import notes.app.editor.NoteEditText
 import notes.app.runOffMain
+import notes.core.crypto.LockedNotes
 import notes.core.db.NoteFilter
 import org.junit.After
 import org.junit.Before
@@ -65,9 +66,9 @@ class TagsFlowTest {
 
     private fun tag(description: String) = hasContentDescription(description)
 
-    /** From the list, back to the tags screen under it. */
+    /** From the list, back to the sidebar screen under it. */
     private fun toTags() {
-        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithContentDescription("Sidebar").performClick()
         compose.waitUntilExactlyOneExists(tag("#work, 1 note"))
     }
 
@@ -107,9 +108,22 @@ class TagsFlowTest {
         toTags()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.waitUntilExactlyOneExists(hasText("Appearance", ignoreCase = true))
-        compose.onNodeWithText("Tags").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.waitUntilExactlyOneExists(tag("#work, 1 note"))
+    }
+
+    @Test
+    fun `a Locked row, once there are locked notes, shows only them`() {
+        launch()
+        toTags()
+        compose.onNodeWithText("Locked").assertDoesNotExist()
+
+        runBlocking { graph.store.save("e", "Bank", LockedNotes.encrypt(LockedNotes.newKey(), "PIN\n")) }
+        compose.waitUntilExactlyOneExists(hasText("Locked"))
+        compose.onNodeWithText("Locked").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Bank"))
+        compose.onNodeWithText("Standup").assertDoesNotExist()
+        assertEquals(NoteFilter.Locked, graph.listFilter.value)
     }
 
     @Test

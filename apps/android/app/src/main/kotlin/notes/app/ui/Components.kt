@@ -492,9 +492,9 @@ fun Backdrop(modifier: Modifier = Modifier) {
     }
 }
 
-/** The tinted "‹ Label" back link at the top of a screen, named after where it goes. */
+/** The tinted "‹ Label" back link at the top of a screen, named after where it goes; just "‹" without a [label]. */
 @Composable
-fun BackLink(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun BackLink(label: String?, onClick: () -> Unit, modifier: Modifier = Modifier, description: String = "Back") {
     val t = LocalTokens.current
     val interaction = remember { MutableInteractionSource() }
     Row(
@@ -503,11 +503,11 @@ fun BackLink(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) 
             .pressScale(interaction, 0.94f)
             .clip(RoundedCornerShape(14.dp))
             .clickable(interaction, ripple(), role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = "Back" }
+            .semantics(mergeDescendants = true) { contentDescription = description }
             .padding(start = 6.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(Icons.Back, null, Modifier.size(22.dp), tint = t.tint)
-        Text(label, style = Type.body.copy(fontSize = 16.sp), color = t.tint)
+        if (label != null) Text(label, style = Type.body.copy(fontSize = 16.sp), color = t.tint)
     }
 }

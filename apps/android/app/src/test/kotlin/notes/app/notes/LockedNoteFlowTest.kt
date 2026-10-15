@@ -225,8 +225,8 @@ class LockedNoteFlowTest {
     fun `fingerprint unlock, once turned on in Settings, opens locked notes`() {
         scenario = ActivityScenario.launch(MainActivity::class.java)
         compose.waitUntilExactlyOneExists(hasText("Locked"))
-        // Settings is on the tags screen, behind the list.
-        compose.onNodeWithContentDescription("Back").performClick()
+        // Settings is on the sidebar screen, behind the list.
+        compose.onNodeWithContentDescription("Sidebar").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNode(hasText("Unlock with fingerprint")).performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasText("Unlock locked notes"))

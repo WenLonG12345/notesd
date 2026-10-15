@@ -324,7 +324,8 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
                                 val from = backStack.getOrNull(backStack.lastIndexOf(SettingsKey) - 1)
                                 SettingsScreen(
                                     graph,
-                                    backLabel = if (from == TagsKey) "Tags" else "Notes",
+                                    // The sidebar screen has no name to go back to.
+                                    backLabel = if (from == TagsKey) null else "Notes",
                                     onBack = { pop() },
                                     onConnect = { backStack += OnboardingKey() },
                                     onSignIn = { backStack += OnboardingKey(signInAgain = true) }

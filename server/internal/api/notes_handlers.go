@@ -9,7 +9,7 @@ import (
 	notesync "notes/server/internal/sync"
 )
 
-// GET /api/v1/notes?limit=50&cursor=...&tag=...|untagged=true
+// GET /api/v1/notes?limit=50&cursor=...&tag=...|untagged=true|locked=true
 func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
 	limit, err := queryInt(r, "limit", notes.DefaultListSize)
 	if err != nil {
@@ -160,7 +160,7 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, page)
 }
 
-// GET /api/v1/search?q=...&limit=30&offset=0&tag=...|untagged=true
+// GET /api/v1/search?q=...&limit=30&offset=0&tag=...|untagged=true|locked=true
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if len(q) > 500 {
@@ -192,12 +192,18 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }
 
-// GET /api/v1/tags
-func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
+// GET /api/v1/filters — what the list can be narrowed to: every tag, and how
+// many notes are locked (none hides the Locked view).
+func (s *Server) listFilters(w http.ResponseWriter, r *http.Request) {
 	tags, err := search.ListTags(r.Context(), s.db)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tags": tags})
+	locked, err := s.notes.Count(r.Context(), search.Filter{Locked: true})
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tags": tags, "locked": locked})
 }

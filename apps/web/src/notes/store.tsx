@@ -7,8 +7,8 @@ import { preview as previewOf } from './plaintext'
 import { NoteSaver, timing, type Fields } from './saver'
 import { hasTag, tags, tagText } from './tags'
 
-/** What the list shows: every note, one tag (by key, with its nested tags), or notes without tags. */
-export type ListFilter = { tag: string; name: string } | { untagged: true } | null
+/** What the list shows: every note, one tag (by key, with its nested tags), notes without tags, or locked notes. */
+export type ListFilter = { tag: string; name: string } | { untagged: true } | { locked: true } | null
 
 const FILTER_KEY = 'notes.filter'
 
@@ -18,6 +18,7 @@ function savedFilter(): ListFilter {
     const f = JSON.parse(localStorage.getItem(FILTER_KEY) ?? 'null') as ListFilter
     if (f && 'tag' in f && typeof f.tag === 'string' && typeof f.name === 'string') return { tag: f.tag, name: f.name }
     if (f && 'untagged' in f && f.untagged === true) return { untagged: true }
+    if (f && 'locked' in f && f.locked === true) return { locked: true }
   } catch {
     // Starts on All notes.
   }
@@ -34,6 +35,7 @@ function saveFilter(filter: ListFilter) {
 
 function matches(filter: ListFilter, fields: Fields, locked: boolean): boolean {
   if (!filter) return true
+  if ('locked' in filter) return locked
   // A locked body is ciphertext on the server: only the title's tags count (§10.1).
   const noteTags = tags(fields.title, locked ? '' : fields.content)
   return 'tag' in filter ? hasTag(noteTags, filter.tag) : noteTags.length === 0
@@ -56,6 +58,8 @@ export type DeleteOutcome = 'deleted' | 'undone' | 'changed' | 'failed'
 type NotesContextValue = Omit<ListState, 'hidden'> & {
   /** Every tag in live notes, refreshed after saves. */
   tags: TagCount[]
+  /** Live locked notes, refreshed with the tags. */
+  lockedCount: number
   filter: ListFilter
   /** Shows another slice of the notes, loading it from the start. */
   setFilter: (filter: ListFilter) => void
@@ -81,8 +85,8 @@ const NotesContext = createContext<NotesContextValue | null>(null)
 /** Other devices may have changed things; refetch on focus after this long. */
 const STALE_MS = 30_000
 
-/** Saves come in bursts while typing; refetch tags once they settle. */
-const TAGS_DEBOUNCE_MS = 500
+/** Saves come in bursts while typing; refetch the filters once they settle. */
+const FILTERS_DEBOUNCE_MS = 500
 
 type PendingDelete = { timer: ReturnType<typeof setTimeout>; resolve: (outcome: DeleteOutcome) => void }
 
@@ -99,6 +103,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   })
   const [filter, setFilterState] = useState<ListFilter>(savedFilter)
   const [tagList, setTagList] = useState<TagCount[]>([])
+  const [lockedCount, setLockedCount] = useState(0)
   const filterRef = useRef<ListFilter>(filter)
   /** Bumped per filter change: pages for an earlier filter are dropped. */
   const generation = useRef(0)
@@ -153,9 +158,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     void fetchPage(true)
   }, [fetchPage])
 
-  const fetchTags = useCallback((signal?: AbortSignal) => {
-    api.tags(signal).then(
-      ({ tags: all }) => setTagList(all),
+  const fetchFilters = useCallback((signal?: AbortSignal) => {
+    api.filters(signal).then(
+      ({ tags: all, locked }) => {
+        setTagList(all)
+        setLockedCount(locked)
+      },
       () => undefined, // the list shows connection problems
     )
   }, [])
@@ -328,12 +336,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const { version: savedVersion } = list
   useEffect(() => {
     const controller = new AbortController()
-    const timer = setTimeout(() => fetchTags(controller.signal), savedVersion === 0 ? 0 : TAGS_DEBOUNCE_MS)
+    const timer = setTimeout(() => fetchFilters(controller.signal), savedVersion === 0 ? 0 : FILTERS_DEBOUNCE_MS)
     return () => {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [savedVersion, fetchTags])
+  }, [savedVersion, fetchFilters])
 
   // Locked notes (§10.1): the keyring is fetched up front, edits to locked
   // notes are saved before the key goes, unlocking sends what waited, and
@@ -374,7 +382,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       for (const s of all()) s.resume()
       if (Date.now() - loadedAt.current > STALE_MS) {
         void fetchPage(true)
-        fetchTags()
+        fetchFilters()
       }
       // Every time, not only when the list is stale: a reset elsewhere must lock this
       // tab before anything new is locked with the forgotten key. It's one small request.
@@ -383,7 +391,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     const onOnline = () => {
       for (const s of all()) s.resume()
       void fetchPage(true)
-      fetchTags()
+      fetchFilters()
       void lockSession.load(true).catch(() => undefined)
     }
     const onHidden = () => {
@@ -405,7 +413,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onHidden)
       window.removeEventListener('beforeunload', onUnload)
     }
-  }, [fetchPage, fetchTags, commit])
+  }, [fetchPage, fetchFilters, commit])
 
   // Signing out unmounts the notes: deletes waiting on undo go through.
   useEffect(
@@ -422,6 +430,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     () => ({
       items: visible,
       tags: tagList,
+      lockedCount,
       filter,
       setFilter,
       status,
@@ -431,7 +440,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       loadMore: () => void fetchPage(false),
       refresh: () => {
         void fetchPage(true)
-        fetchTags()
+        fetchFilters()
       },
       saverFor,
       existingSaver,
@@ -442,7 +451,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       remove,
       undoRemove,
     }),
-    [visible, tagList, filter, setFilter, status, hasMore, total, version, fetchPage, fetchTags, saverFor, existingSaver, newDraft, release, removed, touch, remove, undoRemove],
+    [visible, tagList, lockedCount, filter, setFilter, status, hasMore, total, version, fetchPage, fetchFilters, saverFor, existingSaver, newDraft, release, removed, touch, remove, undoRemove],
   )
   return <NotesContext value={value}>{children}</NotesContext>
 }

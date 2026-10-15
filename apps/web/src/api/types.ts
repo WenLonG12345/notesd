@@ -33,8 +33,8 @@ export type TagCount = {
   count: number
 }
 
-/** Narrows listing and search to a tag key (with its nested tags) or to untagged notes. */
-export type NoteFilter = { tag: string } | { untagged: true } | null
+/** Narrows listing and search to a tag key (with its nested tags), to untagged notes or to locked ones. */
+export type NoteFilter = { tag: string } | { untagged: true } | { locked: true } | null
 
 export type SearchResult = {
   id: string

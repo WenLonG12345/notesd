@@ -13,7 +13,7 @@ type Props = {
   onSelect: (id: string) => void
   onNew: () => void
   /**
-   * The way to the tags: a back link when they're a screen of their own, a
+   * The way to the sidebar: a back link when it's a screen of its own, a
    * button when the docked sidebar is hidden, nothing when it's showing.
    */
   tags: 'back' | 'show' | null
@@ -24,7 +24,7 @@ type Props = {
 export function NoteList({ selectedId, query, onQuery, onSelect, onNew, tags, onTags, mobile }: Props) {
   const { items, status, hasMore, total, loadMore, refresh, version, filter, setFilter } = useNotes()
   const search = useSearch(query, filter, version)
-  const scope = !filter ? null : 'tag' in filter ? `#${filter.name}` : 'Untagged'
+  const scope = !filter ? null : 'tag' in filter ? `#${filter.name}` : 'locked' in filter ? 'Locked' : 'Untagged'
   const searching = query.trim() !== ''
   const n = search.results.length
 
@@ -40,11 +40,10 @@ export function NoteList({ selectedId, query, onQuery, onSelect, onNew, tags, on
     <aside className={styles.list} aria-label="Notes">
       <div className={styles.header}>
         {tags === 'back' && (
-          <button type="button" className={styles.back} onClick={onTags}>
+          <button type="button" className={styles.back} onClick={onTags} aria-label="Sidebar" title="Sidebar">
             <span className={styles.chevron} aria-hidden="true">
               ‹
             </span>
-            Tags
           </button>
         )}
         <div className={styles.titleRow}>
@@ -61,7 +60,7 @@ export function NoteList({ selectedId, query, onQuery, onSelect, onNew, tags, on
             <h1 className={styles.heading}>Notes</h1>
           )}
           {tags === 'show' && (
-            <button type="button" className={styles.showTags} onClick={onTags} aria-label="Show tags" title="Show tags">
+            <button type="button" className={styles.showTags} onClick={onTags} aria-label="Show sidebar" title="Show sidebar">
               <SidebarIcon />
             </button>
           )}

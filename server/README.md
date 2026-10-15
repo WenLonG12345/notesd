@@ -72,18 +72,18 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | POST | `/auth/password` | `{currentPassword, newPassword}`; signs out other sessions |
 | GET | `/auth/sessions` | signed-in browsers and devices |
 | DELETE | `/auth/sessions/{id}` | revoke one |
-| GET | `/notes?limit=&cursor=&tag=&untagged=` | live notes, newest first, with `preview` (plain text, one line per block, ≤160 chars) and `locked`; `nextCursor` is opaque; `total` counts the matching live notes. `tag` (with or without `#`) keeps notes with that tag or one nested under it; `untagged=true` keeps notes without tags |
+| GET | `/notes?limit=&cursor=&tag=&untagged=&locked=` | live notes, newest first, with `preview` (plain text, one line per block, ≤160 chars) and `locked`; `nextCursor` is opaque; `total` counts the matching live notes. `tag` (with or without `#`) keeps notes with that tag or one nested under it; `untagged=true` keeps notes without tags; `locked=true` keeps locked notes; at most one of the three |
 | POST | `/notes` | `{operationId, id, title, content, createdAt?, updatedAt?, conflictOf?, imageIds?}` → 201. `imageIds` lists a locked note's images (up to 1000); a plain note's are read from its content |
 | GET | `/notes/{id}` | 410 with the tombstone in `current` if deleted |
 | PUT | `/notes/{id}` | `{operationId, baseRevision, title, content, updatedAt?, imageIds?}`; both fields required. For a locked note, absent `imageIds` keeps the images recorded |
 | DELETE | `/notes/{id}` | `{operationId, baseRevision}` |
 | POST | `/notes/{id}/email` | `{to: [address, …], revision}` → `{id}` (Resend's). Sends the stored note: HTML rendered from the Markdown plus the Markdown as plain text, subject = title. `revision` must be the server's current one (`409 stale_revision` otherwise: sync first). Up to 10 recipients. `409 email_not_configured` without settings; `502 email_failed` with Resend's `message` when Resend refuses (unverified domain, bad key); `409 note_locked` for a locked note |
 | GET | `/sync?since=&limit=&generation=` | `{changes, nextCursor, hasMore, generation}` |
-| GET | `/search?q=&limit=&offset=&tag=&untagged=` | `{results: [{id, title, excerpt, updatedAt, locked}]}`; filters as for `/notes` |
+| GET | `/search?q=&limit=&offset=&tag=&untagged=&locked=` | `{results: [{id, title, excerpt, updatedAt, locked}]}`; filters as for `/notes` |
 | GET | `/settings/email` | `{configured, from, keyHint}`; the key itself is never returned, `keyHint` is its last 4 characters |
 | PUT | `/settings/email` | `{apiKey?, from}`; `apiKey` (starts with `re_`) may be omitted to keep the saved one. Not checked against Resend: send-only keys can't call anything but sending, so a bad key shows on the first send |
 | DELETE | `/settings/email` | forget the key and sender |
-| GET | `/tags` | `{tags: [{key, name, count}]}` sorted by key; parents of nested tags included, `count` is distinct notes including nested tags |
+| GET | `/filters` | `{tags: [{key, name, count}], locked}`: `tags` sorted by key, parents of nested tags included, `count` is distinct notes including nested tags; `locked` counts live locked notes |
 | GET | `/locks` | `{keys: [{id, kind, credentialId?, salt, iterations, wrapped, createdAt}]}`: the locked-notes keyring, password entry first |
 | PUT | `/locks/keys/{id}` | `{kind, credentialId?, salt, iterations, wrapped, verifier}`. `id` is `password` or `recovery` for those kinds; a `passkey` takes any other id of 1–64 characters `[A-Za-z0-9_-]` (`400` otherwise). `salt`, `wrapped`, `credentialId` and `verifier` are unpadded base64url. The first entry must be the password, and its `verifier` is stored (hashed); every later write must send the same verifier (`403 bad_verifier`). `409 no_lock_password` for a recovery or passkey entry first |
 | DELETE | `/locks/keys/{id}` | `{verifier}`; the password entry can't be removed (`409 password_key_required`) |

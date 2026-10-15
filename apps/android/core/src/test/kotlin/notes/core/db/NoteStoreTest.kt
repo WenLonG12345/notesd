@@ -306,11 +306,16 @@ class NoteStoreTest {
         assertEquals(emptyList(), store.search("1234"))
         assertEquals(listOf("private"), store.tags().map { it.key })
         assertTrue(store.search("bank").single().locked)
+        store.save("b", "Open", "plain\n")
+        assertEquals(listOf("a"), store.list(NoteFilter.Locked).map { it.id })
+        assertEquals(1, store.lockedCount())
 
         // Unlocking is an ordinary edit: the body is indexed again.
         store.save("a", "Bank #private", "PIN 1234 #money\n")
         assertEquals(listOf("a"), store.search("1234").map { it.id })
         assertEquals(listOf("money", "private"), store.tags().map { it.key })
+        assertEquals(emptyList(), store.list(NoteFilter.Locked))
+        assertEquals(0, store.lockedCount())
     }
 
     @Test

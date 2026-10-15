@@ -499,7 +499,7 @@ func TestTagsOverHTTP(t *testing.T) {
 		}
 	}
 
-	r := c.do("GET", "/api/v1/tags", nil)
+	r := c.do("GET", "/api/v1/filters", nil)
 	tags := r.body["tags"].([]any)
 	if r.status != 200 || len(tags) != 2 {
 		t.Fatalf("tags: %d %s", r.status, r.raw)

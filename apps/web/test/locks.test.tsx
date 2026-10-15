@@ -58,6 +58,8 @@ async function lockOpenNote({ user }: Session) {
   await saved()
 }
 
+const sidebar = () => screen.getByRole('navigation', { name: 'Sidebar' })
+
 async function seeded() {
   let id = ''
   const session = await signedIn({ seed: async (s) => void (id = await createNote(s, 'Bank', 'PIN 1234 #money')) })
@@ -79,8 +81,27 @@ describe('locked notes', () => {
     expect(item).toMatchObject({ title: 'Bank', locked: true, preview: '' })
     expect(within(list()).getByRole('link', { name: /^Bank/ }).textContent).toContain('Locked')
     // The body's tag went with the body.
-    expect((await s.server.api<{ tags: unknown[] }>('GET', '/tags')).body.tags).toEqual([])
+    expect((await s.server.api<{ tags: unknown[] }>('GET', '/filters')).body.tags).toEqual([])
     expect((await s.server.api<{ results: unknown[] }>('GET', '/search?q=1234')).body.results).toEqual([])
+  })
+
+  it('a Locked row in the sidebar, once there are locked notes, shows only them', async () => {
+    let id = ''
+    const s = await signedIn({
+      seed: async (server) => {
+        await createNote(server, 'Groceries', 'milk\n')
+        id = await createNote(server, 'Bank', 'PIN 1234\n')
+      },
+    })
+    await waitFor(() => expect(noteTitle()).toBe('Bank'))
+    expect(within(sidebar()).queryByRole('button', { name: 'Locked' })).toBeNull()
+
+    await lockOpenNote(s)
+    await s.user.click(await within(sidebar()).findByRole('button', { name: 'Locked' }, { timeout: 3000 }))
+
+    expect(await within(list()).findByRole('heading', { name: /Locked/ })).toBeTruthy()
+    await waitFor(() => expect(within(list()).queryByRole('link', { name: /^Groceries/ })).toBeNull())
+    expect(within(list()).getByRole('link', { name: /^Bank/ }).getAttribute('href')).toBe(`/notes/${id}`)
   })
 
   it('locks again on request; opens with the lock password; edits stay encrypted', async () => {

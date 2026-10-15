@@ -149,17 +149,22 @@ func queryInt(r *http.Request, name string, def int64) (int64, error) {
 	return n, nil
 }
 
-// queryFilter reads ?tag= (a tag name, with or without #) or ?untagged=true.
+// queryFilter reads one of ?tag= (a tag name, with or without #),
+// ?untagged=true or ?locked=true.
 func queryFilter(r *http.Request) (search.Filter, error) {
 	q := r.URL.Query()
 	untagged := q.Get("untagged") == "true"
+	locked := q.Get("locked") == "true"
 	tag := q.Get("tag")
+	if untagged && locked {
+		return search.Filter{}, &notes.ValidationError{Field: "locked", Message: "locked can't be combined with untagged"}
+	}
 	if tag == "" {
-		return search.Filter{Untagged: untagged}, nil
+		return search.Filter{Untagged: untagged, Locked: locked}, nil
 	}
 	key := search.TagKey(tag)
-	if key == "" || untagged {
-		return search.Filter{}, &notes.ValidationError{Field: "tag", Message: "tag must be a tag name, without untagged"}
+	if key == "" || untagged || locked {
+		return search.Filter{}, &notes.ValidationError{Field: "tag", Message: "tag must be a tag name, without untagged or locked"}
 	}
 	return search.Filter{Tag: key}, nil
 }
