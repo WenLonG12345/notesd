@@ -16,10 +16,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/text"
 	"golang.org/x/term"
 
 	"notes/server/internal/database"
@@ -118,8 +114,6 @@ func writeExport(dir string, all []notes.Note, key []byte, get getImage) (export
 // appImageRef is an app image's destination as the apps write it (§7.6).
 var appImageRef = regexp.MustCompile(`\]\(notesd:image/([0-9a-f]{64})\?w=[1-9]\d{0,5}&h=[1-9]\d{0,5}\)`)
 
-var exportMD = goldmark.New(goldmark.WithExtensions(extension.GFM))
-
 // exportImages writes the app images content shows to dir/images (once
 // each, tracked in written) and points their references at the files. A
 // locked image is decrypted with key; one that can't be had or opened keeps
@@ -127,17 +121,11 @@ var exportMD = goldmark.New(goldmark.WithExtensions(extension.GFM))
 func exportImages(dir, content string, key []byte, get getImage, written map[string]string, res *exported) (string, error) {
 	// Only real images: the same text inside code is left alone.
 	shown := map[string]bool{}
-	doc := exportMD.Parser().Parse(text.NewReader([]byte(content)))
-	err := ast.Walk(doc, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if img, ok := node.(*ast.Image); ok && entering {
-			if m := appImageRef.FindStringSubmatch("](" + string(img.Destination) + ")"); m != nil {
-				shown[m[1]] = true
-			}
-		}
-		return ast.WalkContinue, nil
-	})
-	if err != nil || len(shown) == 0 {
-		return content, err
+	for _, id := range images.Refs(content) {
+		shown[id] = true
+	}
+	if len(shown) == 0 {
+		return content, nil
 	}
 	for id := range shown {
 		if _, done := written[id]; done {

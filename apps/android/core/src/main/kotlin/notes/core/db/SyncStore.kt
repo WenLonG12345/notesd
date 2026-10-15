@@ -39,6 +39,7 @@ class Operation internal constructor(
     val createdAt get() = payload.createdAt
     val updatedAt get() = payload.updatedAt
     val conflictOf get() = payload.conflictOf
+    val imageIds get() = payload.imageIds
 }
 
 /**

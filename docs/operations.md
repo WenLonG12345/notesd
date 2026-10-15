@@ -20,9 +20,10 @@ sudo -u notesd notesd check --data-dir /var/lib/notesd
 
 | Command | What it does |
 | --- | --- |
-| `check` | Runs SQLite's integrity check and prints `ok`. Never changes the database. |
+| `check` | Runs SQLite's integrity check, re-hashes every image and prints `ok`, with a warning for each image a note shows that isn't stored. Never changes the database. |
 | `export --out DIR` | Writes every note to DIR (new or empty) as a Markdown file named after its title, and the images they show to DIR/images, with the notes' references pointed there. Locked notes are skipped unless `--include-locked` is given: it asks you to confirm, then for the lock password, typed at the terminal every time, and writes them, and their images, decrypted. An image that isn't stored or can't be opened keeps its `notesd:image/` reference. Never changes the database. |
-| `reindex` | Rebuilds the search index and tags from the notes. Try it if search results look wrong. |
+| `gc-images [--dry-run]` | Deletes images no note has shown for 30 days. The server already does this every 6 hours; `--dry-run` only reports what it would delete. |
+| `reindex` | Rebuilds the search index, tags and image references from the notes. Try it if search results look wrong. |
 | `reset-password` | Sets a new password (from `NOTESD_PASSWORD` or stdin) and signs out every session. For when you've forgotten it. |
 | `create-owner --username NAME` | Creates the account, if there isn't one yet. |
 | `version` | Prints the version. |

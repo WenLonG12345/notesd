@@ -8,8 +8,16 @@ const path = (id: string) => `/notes/${encodeURIComponent(id)}`
 const filterParams = (filter: NoteFilter) =>
   !filter ? '' : 'tag' in filter ? `&tag=${encodeURIComponent(filter.tag)}` : '&untagged=true'
 
-export type CreateNote = { operationId: string; id: string; title: string; content: string; conflictOf?: string }
-export type UpdateNote = { operationId: string; baseRevision: number; title: string; content: string }
+/** imageIds lists a locked note's images (§7.6); the server reads a plain note's from its content. */
+export type CreateNote = {
+  operationId: string
+  id: string
+  title: string
+  content: string
+  conflictOf?: string
+  imageIds?: string[]
+}
+export type UpdateNote = { operationId: string; baseRevision: number; title: string; content: string; imageIds?: string[] }
 
 export const notes = {
   list: (filter: NoteFilter, cursor?: string, signal?: AbortSignal) =>

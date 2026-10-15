@@ -135,11 +135,16 @@ describe('images', () => {
     const blob = await s.server.bytes('GET', `/images/${sealed}`)
     expect(blob.type).toBe('application/vnd.notesd.locked')
     expect(await openImage(key, new Uint8Array(blob.data))).toEqual(PNG)
+    // The server can't read the ciphertext, so the save lists the image, and only that one.
+    const saves = s.server.sent('PUT', `/notes/${s.id}`) as { imageIds?: string[] }[]
+    expect(saves.at(-1)?.imageIds).toEqual([sealed])
     // Shown decrypted, not from the server.
     await waitFor(() => expect(shown()[0]?.getAttribute('src')).toMatch(/^blob:/))
 
     await chooseLock(s, 'Remove lock')
     await waitFor(async () => expect((await getNote(s.server, s.id)).content).toBe(`![](notesd:image/${plain}?w=640&h=480)\n`))
+    // A plain note's images are read from its content.
+    expect((s.server.sent('PUT', `/notes/${s.id}`).at(-1) as { imageIds?: string[] }).imageIds).toBeUndefined()
   })
 
   it('a picture added to a locked note is uploaded encrypted', async () => {

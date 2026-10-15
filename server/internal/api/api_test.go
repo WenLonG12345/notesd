@@ -32,6 +32,7 @@ type env struct {
 	t    *testing.T
 	srv  *httptest.Server
 	auth *auth.Service
+	db   *database.DB
 }
 
 func newEnv(t *testing.T) *env {
@@ -54,7 +55,7 @@ func newEnvWith(t *testing.T, cfg api.Config) *env {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := httptest.NewServer(api.New(db, notes.NewStore(db), a, log, cfg).Handler())
 	t.Cleanup(srv.Close)
-	return &env{t: t, srv: srv, auth: a}
+	return &env{t: t, srv: srv, auth: a, db: db}
 }
 
 // client is an HTTP client with an optional cookie jar, bearer token and

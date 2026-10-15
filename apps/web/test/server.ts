@@ -15,6 +15,8 @@ export type TestServer = {
   setOrigin: (origin: string) => void
   /** The next matching browser request reaches the server, but its response is lost. */
   loseNextResponse: (match: (method: string, path: string) => boolean) => void
+  /** The JSON bodies the browser sent, oldest first. */
+  sent: (method: string, path: string) => unknown[]
   /** Calls the API as a separate client (its own cookie jar). */
   api: <T = unknown>(method: string, path: string, body?: unknown) => Promise<{ status: number; body: T }>
   /** Like api, for endpoints that take or return bytes (images). */
@@ -54,6 +56,8 @@ export async function startServer({ resendUrl }: { resendUrl?: string } = {}): P
     loseNextResponse: (match) => {
       browser.lose = match
     },
+    sent: (method, path) =>
+      browser.log.filter((r) => r.method === method && r.path === `/api/v1${path}`).map((r) => r.body),
     async api(method, path, body) {
       const res = await other(`/api/v1${path}`, {
         method,
@@ -155,13 +159,17 @@ type CookieFetch = typeof fetch & {
   offline?: boolean
   origin?: string
   lose?: ((method: string, path: string) => boolean) | undefined
+  log: { method: string; path: string; body: unknown }[]
 }
 
 function cookieFetch(base: string): CookieFetch {
   const jar = new Map<string, string>()
-  const fn: CookieFetch = async (input, init = {}) => {
+  const fn = (async (input, init = {}) => {
     const url = new URL(String(input), base)
     if (fn.offline) throw new TypeError('Failed to fetch')
+    if (typeof init.body === 'string') {
+      fn.log.push({ method: init.method ?? 'GET', path: url.pathname, body: JSON.parse(init.body) as unknown })
+    }
     const headers = new Headers(init.headers)
     // Same-origin browser requests carry Origin on mutations.
     headers.set('Origin', fn.origin ?? base)
@@ -186,6 +194,7 @@ function cookieFetch(base: string): CookieFetch {
       else jar.set(name, pair.slice(eq + 1).trim())
     }
     return res
-  }
+  }) as CookieFetch
+  fn.log = []
   return fn
 }

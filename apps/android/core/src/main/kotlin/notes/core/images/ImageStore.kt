@@ -82,9 +82,9 @@ class ImageStore(
      * won't open with [key]: a locked note must not point at plain images.
      */
     suspend fun reseal(markdown: String, locked: Boolean, key: ByteArray): String? {
-        val moved = move(REFERENCE.findAll(markdown).map { it.groupValues[1] }.toSet(), locked, key) ?: return null
+        val moved = move(ImageRef.ids(markdown).toSet(), locked, key) ?: return null
         if (moved.isEmpty()) return markdown
-        return REFERENCE.replace(markdown) { m ->
+        return ImageRef.REFERENCE.replace(markdown) { m ->
             val next = moved[m.groupValues[1]] ?: return@replace m.value
             m.value.replace(m.groupValues[1], next)
         }
@@ -178,9 +178,6 @@ class ImageStore(
     }
 
     companion object {
-        /** An image reference's destination in Markdown, capturing the id. */
-        private val REFERENCE = Regex("notesd:image/([0-9a-f]{64})\\?w=[1-9]\\d{0,5}&h=[1-9]\\d{0,5}\\)")
-
         /** The image type of decrypted bytes, from their magic numbers. */
         fun sniff(b: ByteArray): String? {
             fun at(i: Int) = if (i < b.size) b[i].toInt() and 0xff else -1

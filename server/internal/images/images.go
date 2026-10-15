@@ -1,7 +1,8 @@
 // Package images stores the images notes reference (architecture §7.6):
 // content-addressed blobs, kept in SQLite with the notes so one backup
-// holds both. The server never reads references out of notes (it can't in
-// locked ones) and never deletes an image.
+// holds both. Which notes show which images is tracked in note_images:
+// plain notes' references are read from their content, locked notes' are
+// listed by their clients. An image no note has shown for Grace is deleted.
 package images
 
 import (
@@ -71,6 +72,9 @@ type Store struct {
 // NewStore returns a Store using the system clock.
 func NewStore(db *database.DB) *Store { return &Store{db: db, now: time.Now} }
 
+// SetClock overrides the clock, for tests.
+func (s *Store) SetClock(now func() time.Time) { s.now = now }
+
 // Put stores data as image id. created is false when the image already
 // existed, which makes a retried upload harmless.
 func (s *Store) Put(ctx context.Context, id, contentType string, data []byte) (img Image, created bool, err error) {
@@ -87,9 +91,9 @@ func (s *Store) Put(ctx context.Context, id, contentType string, data []byte) (i
 	img = Image{ID: id, ContentType: contentType, Size: int64(len(data)), CreatedAt: s.now().UnixMilli()}
 	err = s.db.WriteTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx,
-			`INSERT INTO images (id, content_type, size, data, created_at) VALUES (?, ?, ?, ?, ?)
+			`INSERT INTO images (id, content_type, size, data, created_at, released_at) VALUES (?, ?, ?, ?, ?, ?)
 			 ON CONFLICT (id) DO NOTHING`,
-			img.ID, img.ContentType, img.Size, data, img.CreatedAt)
+			img.ID, img.ContentType, img.Size, data, img.CreatedAt, img.CreatedAt)
 		if err != nil {
 			return err
 		}
@@ -99,6 +103,11 @@ func (s *Store) Put(ctx context.Context, id, contentType string, data []byte) (i
 		}
 		if created = n == 1; created {
 			return nil
+		}
+		// Uploaded again for a note about to show it: restart its Grace, so
+		// it isn't deleted before that note is saved.
+		if _, err := tx.ExecContext(ctx, `UPDATE images SET released_at = ? WHERE id = ?`, img.CreatedAt, id); err != nil {
+			return err
 		}
 		// Same bytes, so the same image; keep the stored metadata.
 		return tx.QueryRowContext(ctx,

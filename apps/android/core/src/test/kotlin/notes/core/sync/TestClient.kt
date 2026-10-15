@@ -37,6 +37,9 @@ class TestClient(private val server: TestServer, private val pageSize: Int = 100
         private set
     val events = ArrayList<SyncEvent>()
 
+    /** The JSON bodies of note requests that went out, as "METHOD path" to body. */
+    val sentNotes = ArrayList<Pair<String, String>>()
+
     /** Every request fails as if there were no network. */
     var offline = false
 
@@ -72,6 +75,11 @@ class TestClient(private val server: TestServer, private val pageSize: Int = 100
                 Fault.Kind.FailBefore -> throw IOException("connection dropped")
                 Fault.Kind.Before -> fault.action()
                 else -> Unit
+            }
+            val path = request.url.encodedPath
+            if (path.startsWith("/api/v1/notes") && request.body?.contentType()?.subtype == "json") {
+                val body = okio.Buffer().also { request.body!!.writeTo(it) }.readUtf8()
+                sentNotes += "${request.method} $path" to body
             }
             val response = chain.proceed(request)
             if (fault?.kind == Fault.Kind.LoseResponse) {

@@ -11,6 +11,10 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import notes.core.api.ApiResult
 import notes.core.api.LOCKED_IMAGE
 import notes.core.crypto.LockedNotes
@@ -52,6 +56,39 @@ class ImagesTest {
         )) {
             assertNull(ImageRef.parse(other), other)
         }
+    }
+
+    /** The image ids the last [request] ("POST /api/v1/notes", ...) listed; null if it listed none. */
+    private fun TestClient.listed(request: String): List<String>? {
+        val body = sentNotes.last { it.first == request }.second
+        return Json.parseToJsonElement(body).jsonObject["imageIds"]?.jsonArray?.map { it.jsonPrimitive.content }
+    }
+
+    @Test
+    fun `a locked note's saves list its images, and so does a conflicted copy sync makes`() = runBlocking<Unit> {
+        val a = client()
+        val b = client()
+        val key = ByteArray(32) { it.toByte() }
+        val (x, y, z) = listOf("a", "b", "c").map { it.repeat(64) }
+        fun sealed(id: String) = LockedNotes.encrypt(key, ImageRef(id, 1, 1).markdown() + "\n")
+
+        a.save("p", "Plain", ImageRef(x, 1, 1).markdown() + "\n")
+        a.notes.save("n", "Secret", sealed(x), imageIds = listOf(x))
+        assertEquals(SyncOutcome.Done, a.sync())
+        assertEquals(listOf(x), a.listed("POST /api/v1/notes"))
+        // A plain note's images the server reads from its content.
+        val plain = a.sentNotes.first { it.second.contains("\"Plain\"") }.second
+        assertNull(Json.parseToJsonElement(plain).jsonObject["imageIds"])
+        assertEquals(SyncOutcome.Done, b.sync())
+
+        // Both change the body: b's becomes a copy, which sync uploads without being able to read it.
+        a.notes.save("n", "Secret", sealed(y), imageIds = listOf(y))
+        b.notes.save("n", "Secret", sealed(z), imageIds = listOf(z))
+        assertEquals(SyncOutcome.Done, a.sync())
+        assertEquals(listOf(y), a.listed("PUT /api/v1/notes/n"))
+        assertEquals(SyncOutcome.Done, b.sync())
+        val copy = b.notes.list().single { it.title == "Secret (Conflicted copy)" }
+        assertEquals(listOf(z), b.listed("POST /api/v1/notes"), "the copy ${copy.id} lists its images")
     }
 
     @Test

@@ -33,6 +33,17 @@ data class ImageRef(val id: String, val width: Int, val height: Int) {
             return written.replace(Regex("\\\\(.)"), "$1")
         }
 
+        /** An image reference's destination in Markdown, from its "](": the id is group 1. */
+        internal val REFERENCE = Regex("\\]\\(notesd:image/([0-9a-f]{64})\\?w=[1-9]\\d{0,5}&h=[1-9]\\d{0,5}\\)")
+
+        /**
+         * The images [markdown] shows, each once: what a locked note's save
+         * lists, since the server can't read them from the ciphertext. One
+         * written inside code counts too, which only keeps that image longer.
+         */
+        fun ids(markdown: String): List<String> =
+            REFERENCE.findAll(markdown).map { it.groupValues[1] }.distinct().toList()
+
         fun sha256(bytes: ByteArray): String =
             MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     }

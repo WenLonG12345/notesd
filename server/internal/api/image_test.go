@@ -195,3 +195,39 @@ func TestEmailInlinesImages(t *testing.T) {
 		t.Fatalf("attachment: %v", a)
 	}
 }
+
+func TestLockedNoteImageIDs(t *testing.T) {
+	e := newEnv(t)
+	e.setupOwner()
+	c, _ := e.deviceClient()
+	sealed := "notesd:locked:v1:c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0"
+	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	shows := func() []string {
+		t.Helper()
+		rows, err := e.db.R.Query(`SELECT image_id FROM note_images ORDER BY image_id`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var ids []string
+		for rows.Next() {
+			var id string
+			_ = rows.Scan(&id)
+			ids = append(ids, id)
+		}
+		return ids
+	}
+
+	r := c.do("POST", "/api/v1/notes", map[string]any{"operationId": "op-1", "id": "n1", "title": "T", "content": sealed, "imageIds": []string{a}})
+	if r.status != 201 || strings.Join(shows(), ",") != a {
+		t.Fatalf("create: %d %s, shows %q", r.status, r.raw, shows())
+	}
+	r = c.do("PUT", "/api/v1/notes/n1", map[string]any{"operationId": "op-2", "baseRevision": 1, "title": "T", "content": strings.Replace(sealed, "c2Vj", "d2Vj", 1), "imageIds": []string{b}})
+	if r.status != 200 || strings.Join(shows(), ",") != b {
+		t.Fatalf("update: %d %s, shows %q", r.status, r.raw, shows())
+	}
+	r = c.do("PUT", "/api/v1/notes/n1", map[string]any{"operationId": "op-3", "baseRevision": 2, "title": "T", "content": sealed, "imageIds": []string{"nope"}})
+	if r.status != 400 || r.body["field"] != "imageIds" {
+		t.Fatalf("bad id: %d %s", r.status, r.raw)
+	}
+}

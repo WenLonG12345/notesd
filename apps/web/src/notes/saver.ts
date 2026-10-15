@@ -2,6 +2,7 @@ import { ApiError, NetworkError } from '../api/client'
 import { notes } from '../api/notes'
 import { canonical } from '../editor/markdown'
 import type { MutationResult, Note } from '../api/types'
+import { imageIds } from '../images/ref'
 import { LockedError, decryptBody, encryptBody, isLocked } from '../locks/crypto'
 import { lockSession } from '../locks/session'
 import type { SaveState } from '../ui/status-pill'
@@ -42,6 +43,8 @@ type Pending = {
   fields: Fields
   /** What goes over the wire: the content encrypted when locked. Fixed once, so retries send the same bytes. */
   wire: Fields
+  /** A locked note's images, which the server can't read from the ciphertext (§7.6). */
+  imageIds?: string[]
   locked: boolean
   create: boolean
   baseRevision: number
@@ -389,6 +392,7 @@ export class NoteSaver {
       operationId: crypto.randomUUID(),
       fields,
       wire: { title: fields.title, content: envelope },
+      imageIds: imageIds(fields.content),
       locked: true,
       create: !this.created,
       baseRevision: this.revision,
@@ -402,11 +406,21 @@ export class NoteSaver {
             operationId: p.operationId,
             id: this.id,
             ...p.wire,
+            ...(p.imageIds && { imageIds: p.imageIds }),
             ...(this.conflictOf !== undefined && { conflictOf: this.conflictOf }),
           },
           keepalive,
         )
-      : notes.update(this.id, { operationId: p.operationId, baseRevision: p.baseRevision, ...p.wire }, keepalive)
+      : notes.update(
+          this.id,
+          {
+            operationId: p.operationId,
+            baseRevision: p.baseRevision,
+            ...p.wire,
+            ...(p.imageIds && { imageIds: p.imageIds }),
+          },
+          keepalive,
+        )
   }
 
   private async run(): Promise<void> {

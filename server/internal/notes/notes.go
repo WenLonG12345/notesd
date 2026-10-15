@@ -31,6 +31,7 @@ import (
 	"unicode/utf8"
 
 	"notes/server/internal/database"
+	"notes/server/internal/images"
 	"notes/server/internal/locks"
 	"notes/server/internal/search"
 )
@@ -168,6 +169,9 @@ type CreateInput struct {
 	CreatedAt   *int64  `json:"createdAt,omitempty"`
 	UpdatedAt   *int64  `json:"updatedAt,omitempty"`
 	ConflictOf  *string `json:"conflictOf,omitempty"`
+	// The images a locked note shows, which the server can't read from its
+	// ciphertext (§7.6). Ignored for a plain note.
+	ImageIDs []string `json:"imageIds,omitempty"`
 }
 
 // UpdateInput replaces a note's title and content, provided BaseRevision is
@@ -179,6 +183,9 @@ type UpdateInput struct {
 	Title        string `json:"title"`
 	Content      string `json:"content"`
 	UpdatedAt    *int64 `json:"updatedAt,omitempty"`
+	// As CreateInput.ImageIDs; nil (absent) keeps the images recorded, for
+	// a client that sends a locked body it can't read, such as a merge's.
+	ImageIDs []string `json:"imageIds,omitempty"`
 }
 
 // DeleteInput turns a note into a tombstone, provided BaseRevision is still
@@ -204,6 +211,9 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (Result, error) {
 		if err := validateID("conflictOf", *in.ConflictOf); err != nil {
 			return Result{}, err
 		}
+	}
+	if err := validateImageIDs(in.ImageIDs); err != nil {
+		return Result{}, err
 	}
 	now := s.now().UnixMilli()
 	created := s.clientTime(in.CreatedAt, now)
@@ -236,6 +246,9 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (Result, error) {
 		if err := search.IndexNote(ctx, tx, rowid, in.Title, in.Content); err != nil {
 			return Result{}, err
 		}
+		if err := images.SetRefs(ctx, tx, rowid, shownImages(in.Content, in.ImageIDs), now); err != nil {
+			return Result{}, err
+		}
 		return Result{ID: in.ID, Status: StatusCreated, Revision: 1, ChangeSeq: seq,
 			UpdatedAt: updated, HTTPStatus: 201}, nil
 	})
@@ -253,6 +266,9 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (Result, error) {
 		return Result{}, &ValidationError{"baseRevision", "must be a positive revision"}
 	}
 	if err := validateText(in.Title, in.Content); err != nil {
+		return Result{}, err
+	}
+	if err := validateImageIDs(in.ImageIDs); err != nil {
 		return Result{}, err
 	}
 	now := s.now().UnixMilli()
@@ -290,6 +306,11 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (Result, error) {
 		}
 		if err := search.IndexNote(ctx, tx, cur.rowid, in.Title, in.Content); err != nil {
 			return Result{}, err
+		}
+		if !locks.IsLocked(in.Content) || in.ImageIDs != nil {
+			if err := images.SetRefs(ctx, tx, cur.rowid, shownImages(in.Content, in.ImageIDs), now); err != nil {
+				return Result{}, err
+			}
 		}
 		locking = locks.IsLocked(in.Content) && !locks.IsLocked(cur.Content)
 		return Result{ID: cur.ID, Status: StatusUpdated, Revision: rev, ChangeSeq: seq,
@@ -349,6 +370,9 @@ func (s *Store) Delete(ctx context.Context, in DeleteInput) (Result, error) {
 			return Result{}, err
 		}
 		if err := search.UnindexNote(ctx, tx, cur.rowid); err != nil {
+			return Result{}, err
+		}
+		if err := images.SetRefs(ctx, tx, cur.rowid, nil, now); err != nil {
 			return Result{}, err
 		}
 		return Result{ID: cur.ID, Status: StatusDeleted, Revision: rev, ChangeSeq: seq,
@@ -526,6 +550,27 @@ func (s *Store) apply(ctx context.Context, opID, reqHash string, fn func(*sql.Tx
 // hashRequest fingerprints a mutation by its kind and decoded input, so a
 // reused operation ID with a different payload is detected regardless of
 // JSON formatting.
+// shownImages is the images a note shows: read from a plain note's
+// content, as its client listed them for a locked one.
+func shownImages(content string, listed []string) []string {
+	if locks.IsLocked(content) {
+		return listed
+	}
+	return images.Refs(content)
+}
+
+func validateImageIDs(ids []string) error {
+	if len(ids) > images.MaxRefs {
+		return &ValidationError{"imageIds", fmt.Sprintf("at most %d images", images.MaxRefs)}
+	}
+	for _, id := range ids {
+		if !images.ValidID(id) {
+			return &ValidationError{"imageIds", "each must be 64 lowercase hex characters"}
+		}
+	}
+	return nil
+}
+
 func hashRequest(kind string, input any) string {
 	b, _ := json.Marshal(struct {
 		Kind  string `json:"kind"`

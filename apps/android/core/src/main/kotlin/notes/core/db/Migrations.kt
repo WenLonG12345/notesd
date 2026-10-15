@@ -17,7 +17,8 @@ internal object Migrations {
             "0003_tags.sql",
             "0004_lock_keys.sql",
             "0005_reindex_locked.sql",
-            "0006_pending_images.sql"
+            "0006_pending_images.sql",
+            "0007_locked_images.sql"
         )
 
     fun apply(conn: SQLiteConnection) {

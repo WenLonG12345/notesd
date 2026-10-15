@@ -64,16 +64,18 @@ func (s *Server) createNote(w http.ResponseWriter, r *http.Request) {
 
 // PUT /api/v1/notes/{id}
 //
-//	{"operationId": "...", "baseRevision": 5, "title": "...", "content": "...", "updatedAt": 0}
+//	{"operationId": "...", "baseRevision": 5, "title": "...", "content": "...", "updatedAt": 0, "imageIds": [...]}
 //
 // Title and content are both required: a PUT replaces the whole document.
+// imageIds lists a locked note's images (§7.6); a plain note's are read from its content.
 func (s *Server) updateNote(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		OperationID  string  `json:"operationId"`
-		BaseRevision int64   `json:"baseRevision"`
-		Title        *string `json:"title"`
-		Content      *string `json:"content"`
-		UpdatedAt    *int64  `json:"updatedAt"`
+		OperationID  string   `json:"operationId"`
+		BaseRevision int64    `json:"baseRevision"`
+		Title        *string  `json:"title"`
+		Content      *string  `json:"content"`
+		UpdatedAt    *int64   `json:"updatedAt"`
+		ImageIDs     []string `json:"imageIds"`
 	}
 	if err := decode(w, r, &req); err != nil {
 		s.writeErr(w, r, err)
@@ -90,6 +92,7 @@ func (s *Server) updateNote(w http.ResponseWriter, r *http.Request) {
 		Title:        *req.Title,
 		Content:      *req.Content,
 		UpdatedAt:    req.UpdatedAt,
+		ImageIDs:     req.ImageIDs,
 	})
 	s.writeMutation(w, r, res, err)
 }

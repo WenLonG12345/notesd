@@ -59,9 +59,9 @@ The Android app won't send your password over plain HTTP outside your local netw
   stay readable, and locked notes can't be searched by their text or emailed.
 - **Text from before locking.** When you lock a note, the server scrubs the
   previous text from its database. Backups made earlier still hold it.
-- **Images.** A locked note's images are encrypted too. Images from before
-  locking, and images you remove from any note, stay on the server: nothing
-  deletes images yet.
+- **Images.** A locked note's images are encrypted too. Their plain copies
+  from before locking, like images you remove from any note, stay on the
+  server for 30 days before they're deleted.
 - **Forgotten passwords.** If you forget the lock password and have no
   passkey or fingerprint set up, those notes can't be recovered.
 

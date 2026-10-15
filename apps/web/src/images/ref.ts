@@ -13,6 +13,17 @@ export function parseRef(src: string): ImageRef | null {
   return { id: m[1], w: Number(m[2]), h: Number(m[3]) }
 }
 
+const REFS = /\]\(notesd:image\/([0-9a-f]{64})\?w=[1-9]\d{0,5}&h=[1-9]\d{0,5}\)/g
+
+/**
+ * The images a note's Markdown shows, each once: what a locked note's save
+ * lists, since the server can't read them from its ciphertext (§7.6). One
+ * written inside code counts too, which only keeps that image longer.
+ */
+export function imageIds(markdown: string): string[] {
+  return [...new Set(Array.from(markdown.matchAll(REFS), (m) => m[1] as string))]
+}
+
 export function refURL({ id, w, h }: ImageRef): string {
   return `notesd:image/${id}?w=${w}&h=${h}`
 }

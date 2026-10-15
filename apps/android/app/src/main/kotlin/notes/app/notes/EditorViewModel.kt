@@ -289,11 +289,13 @@ class EditorViewModel(
             sealed?.takeIf { it.first == plain }?.second
                 ?: withContext(Dispatchers.Default) { LockedNotes.encrypt(key, plain) }
         }
-        val note = store.save(id, title, content, basedOn)
+        // The server can't read a locked body's images: the save lists them (§7.6).
+        val imageIds = if (_locked.value) ImageRef.ids(plain) else null
+        val note = store.save(id, title, content, basedOn, imageIds)
         if (note == null) {
             if (basedOn != null && basedOn != (title to content)) {
                 // Deleted elsewhere while typed into here: keep the typing.
-                store.recover(title, content)
+                store.recover(title, content, imageIds)
                 _gone.value = true
             } else if (edit == edits) {
                 _status.value = SaveStatus.Blank

@@ -172,9 +172,19 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
      *
      * Returns the stored note, or null when nothing was stored (blank draft,
      * deleted note).
+     *
+     * [imageIds] are the images a locked [content] shows (§7.6), read from
+     * the text before it was encrypted; the server can't read them itself.
      */
-    suspend fun save(id: String, title: String, content: String, basedOn: Pair<String, String>? = null): Note? {
+    suspend fun save(
+        id: String,
+        title: String,
+        content: String,
+        basedOn: Pair<String, String>? = null,
+        imageIds: List<String>? = null
+    ): Note? {
         val saved = db.write { sql ->
+            sql.rememberImages(id, content, imageIds)
             val current = sql.note(id)
             when {
                 current == null -> if (title.isBlank() && content.isBlank()) null else create(sql, id, title, content)
@@ -251,8 +261,8 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
      * Keeps text whose note was deleted elsewhere while it was being edited:
      * a new "(Recovered copy)" note, as sync makes for edits it finds. Returns its id.
      */
-    suspend fun recover(title: String, content: String): String {
-        val id = db.write { it.insertCopy(copyTitle(title, RECOVERED), content, null, clock()) }
+    suspend fun recover(title: String, content: String, imageIds: List<String>? = null): String {
+        val id = db.write { it.insertCopy(copyTitle(title, RECOVERED), content, null, clock(), imageIds) }
         _localEdits.tryEmit(Unit)
         return id
     }
@@ -302,6 +312,7 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
             sql.exec("DELETE FROM sync_outbox")
             sql.exec("DELETE FROM lock_keys")
             sql.exec("DELETE FROM pending_images")
+            sql.exec("DELETE FROM locked_images")
             sql.exec(
                 """
                 UPDATE sync_state SET cursor = 0, generation = NULL, last_sync_at = NULL, last_error = NULL,

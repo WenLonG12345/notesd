@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import notes.core.api.ApiClient
@@ -155,6 +157,7 @@ class SyncEngine(
                 op.createdAt?.let { put("createdAt", it) }
                 op.updatedAt?.let { put("updatedAt", it) }
                 op.conflictOf?.let { put("conflictOf", it) }
+                op.imageIds?.let { ids -> put("imageIds", JsonArray(ids.map { JsonPrimitive(it) })) }
             }
         )
 
@@ -166,6 +169,7 @@ class SyncEngine(
                 put("title", op.title)
                 put("content", op.content)
                 op.updatedAt?.let { put("updatedAt", it) }
+                op.imageIds?.let { ids -> put("imageIds", JsonArray(ids.map { JsonPrimitive(it) })) }
             }
         )
 
