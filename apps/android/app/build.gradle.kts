@@ -1,3 +1,6 @@
+import java.time.Duration
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -80,6 +83,13 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
+            // A hung test fails the run instead of stalling it; the log names each test as it starts,
+            // so the last one started without finishing is the culprit.
+            it.timeout.set(Duration.ofMinutes(20))
+            it.testLogging {
+                events("started", "passed", "skipped", "failed")
+                exceptionFormat = TestExceptionFormat.FULL
+            }
             it.dependsOn(hostSqliteNatives)
             it.systemProperty("java.library.path", hostSqliteNatives.get().destinationDir.absolutePath)
             // Fixtures shared with the web app and the server.
