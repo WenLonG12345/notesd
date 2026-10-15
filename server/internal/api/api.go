@@ -97,7 +97,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /api/v1/sync", gzipped(s.authed(s.sync)))
 	mux.Handle("GET /api/v1/search", gzipped(s.authed(s.search)))
-	mux.Handle("GET /api/v1/tags", gzipped(s.authed(s.listTags)))
+	mux.Handle("GET /api/v1/filters", gzipped(s.authed(s.listFilters)))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")

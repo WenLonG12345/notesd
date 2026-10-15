@@ -192,8 +192,9 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }
 
-// GET /api/v1/tags — with the locked notes' count, for the sidebar's Locked row.
-func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
+// GET /api/v1/filters — what the list can be narrowed to: every tag, and how
+// many notes are locked (none hides the Locked view).
+func (s *Server) listFilters(w http.ResponseWriter, r *http.Request) {
 	tags, err := search.ListTags(r.Context(), s.db)
 	if err != nil {
 		s.writeErr(w, r, err)

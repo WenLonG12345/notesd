@@ -43,5 +43,5 @@ export const notes = {
   /** Emails the server's copy, which must be at revision (409 stale_revision otherwise). */
   email: (id: string, to: string[], revision: number) =>
     request<{ id: string }>('POST', `${path(id)}/email`, { to, revision }),
-  tags: (signal?: AbortSignal) => request<{ tags: TagCount[]; locked: number }>('GET', '/tags', undefined, { ...(signal && { signal }) }),
+  filters: (signal?: AbortSignal) => request<{ tags: TagCount[]; locked: number }>('GET', '/filters', undefined, { ...(signal && { signal }) }),
 }

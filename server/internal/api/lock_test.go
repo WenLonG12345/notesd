@@ -129,8 +129,8 @@ func TestLockedNoteOverHTTP(t *testing.T) {
 	if r := c.do("GET", "/api/v1/search?q=bank&locked=true", nil); len(r.body["results"].([]any)) != 1 {
 		t.Fatalf("search locked: %s", r.raw)
 	}
-	if r := c.do("GET", "/api/v1/tags", nil); r.body["locked"] != 1.0 {
-		t.Fatalf("tags locked count: %s", r.raw)
+	if r := c.do("GET", "/api/v1/filters", nil); r.body["locked"] != 1.0 {
+		t.Fatalf("filters locked count: %s", r.raw)
 	}
 	for _, q := range []string{"locked=true&untagged=true", "locked=true&tag=home"} {
 		if r := c.do("GET", "/api/v1/notes?"+q, nil); r.status != 400 {

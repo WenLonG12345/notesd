@@ -85,8 +85,8 @@ const NotesContext = createContext<NotesContextValue | null>(null)
 /** Other devices may have changed things; refetch on focus after this long. */
 const STALE_MS = 30_000
 
-/** Saves come in bursts while typing; refetch tags once they settle. */
-const TAGS_DEBOUNCE_MS = 500
+/** Saves come in bursts while typing; refetch the filters once they settle. */
+const FILTERS_DEBOUNCE_MS = 500
 
 type PendingDelete = { timer: ReturnType<typeof setTimeout>; resolve: (outcome: DeleteOutcome) => void }
 
@@ -158,8 +158,8 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     void fetchPage(true)
   }, [fetchPage])
 
-  const fetchTags = useCallback((signal?: AbortSignal) => {
-    api.tags(signal).then(
+  const fetchFilters = useCallback((signal?: AbortSignal) => {
+    api.filters(signal).then(
       ({ tags: all, locked }) => {
         setTagList(all)
         setLockedCount(locked)
@@ -336,12 +336,12 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const { version: savedVersion } = list
   useEffect(() => {
     const controller = new AbortController()
-    const timer = setTimeout(() => fetchTags(controller.signal), savedVersion === 0 ? 0 : TAGS_DEBOUNCE_MS)
+    const timer = setTimeout(() => fetchFilters(controller.signal), savedVersion === 0 ? 0 : FILTERS_DEBOUNCE_MS)
     return () => {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [savedVersion, fetchTags])
+  }, [savedVersion, fetchFilters])
 
   // Locked notes (§10.1): the keyring is fetched up front, edits to locked
   // notes are saved before the key goes, unlocking sends what waited, and
@@ -382,7 +382,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       for (const s of all()) s.resume()
       if (Date.now() - loadedAt.current > STALE_MS) {
         void fetchPage(true)
-        fetchTags()
+        fetchFilters()
       }
       // Every time, not only when the list is stale: a reset elsewhere must lock this
       // tab before anything new is locked with the forgotten key. It's one small request.
@@ -391,7 +391,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
     const onOnline = () => {
       for (const s of all()) s.resume()
       void fetchPage(true)
-      fetchTags()
+      fetchFilters()
       void lockSession.load(true).catch(() => undefined)
     }
     const onHidden = () => {
@@ -413,7 +413,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onHidden)
       window.removeEventListener('beforeunload', onUnload)
     }
-  }, [fetchPage, fetchTags, commit])
+  }, [fetchPage, fetchFilters, commit])
 
   // Signing out unmounts the notes: deletes waiting on undo go through.
   useEffect(
@@ -440,7 +440,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       loadMore: () => void fetchPage(false),
       refresh: () => {
         void fetchPage(true)
-        fetchTags()
+        fetchFilters()
       },
       saverFor,
       existingSaver,
@@ -451,7 +451,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       remove,
       undoRemove,
     }),
-    [visible, tagList, lockedCount, filter, setFilter, status, hasMore, total, version, fetchPage, fetchTags, saverFor, existingSaver, newDraft, release, removed, touch, remove, undoRemove],
+    [visible, tagList, lockedCount, filter, setFilter, status, hasMore, total, version, fetchPage, fetchFilters, saverFor, existingSaver, newDraft, release, removed, touch, remove, undoRemove],
   )
   return <NotesContext value={value}>{children}</NotesContext>
 }

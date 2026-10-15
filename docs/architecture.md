@@ -434,7 +434,7 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 | `POST` | `/api/v1/auth/password` | Change the password; signs out every other session |
 | `GET` | `/api/v1/auth/sessions` | List signed-in browsers and devices |
 | `DELETE` | `/api/v1/auth/sessions/:id` | Revoke a session |
-| `GET` | `/api/v1/notes` | List notes (paginated), with `total`; `?tag=` or `?untagged=true` filters |
+| `GET` | `/api/v1/notes` | List notes (paginated), with `total`; `?tag=`, `?untagged=true` or `?locked=true` filters |
 | `GET` | `/api/v1/notes/:id` | Retrieve a note (`410` with the tombstone if deleted) |
 | `POST` | `/api/v1/notes` | Create a note; a locked one lists its images in `imageIds` (§7.6) |
 | `PUT` | `/api/v1/notes/:id` | Update a note; as for create, `imageIds` absent keeps a locked note's recorded images |
@@ -443,7 +443,7 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 | `GET` `PUT` `DELETE` | `/api/v1/settings/email` | The Resend API key (write-only) and sender |
 | `GET` | `/api/v1/sync` | Download changes |
 | `GET` | `/api/v1/search` | Search notes; same filters as listing |
-| `GET` | `/api/v1/tags` | Tags in live notes, with counts |
+| `GET` | `/api/v1/filters` | What the list can filter by: tags in live notes with counts, and the locked notes' count |
 | `PUT` | `/api/v1/images/:sha256` | Upload an image (raw body); idempotent, the hash must match (§7.6) |
 | `GET` | `/api/v1/images/:sha256` | Download an image, cached as immutable |
 | `GET` | `/api/v1/locks` | The locked-notes keyring (§10.1) |

@@ -83,7 +83,7 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | GET | `/settings/email` | `{configured, from, keyHint}`; the key itself is never returned, `keyHint` is its last 4 characters |
 | PUT | `/settings/email` | `{apiKey?, from}`; `apiKey` (starts with `re_`) may be omitted to keep the saved one. Not checked against Resend: send-only keys can't call anything but sending, so a bad key shows on the first send |
 | DELETE | `/settings/email` | forget the key and sender |
-| GET | `/tags` | `{tags: [{key, name, count}], locked}` sorted by key; `locked` counts live locked notes; parents of nested tags included, `count` is distinct notes including nested tags |
+| GET | `/filters` | `{tags: [{key, name, count}], locked}`: `tags` sorted by key, parents of nested tags included, `count` is distinct notes including nested tags; `locked` counts live locked notes |
 | GET | `/locks` | `{keys: [{id, kind, credentialId?, salt, iterations, wrapped, createdAt}]}`: the locked-notes keyring, password entry first |
 | PUT | `/locks/keys/{id}` | `{kind, credentialId?, salt, iterations, wrapped, verifier}`. `id` is `password` or `recovery` for those kinds; a `passkey` takes any other id of 1–64 characters `[A-Za-z0-9_-]` (`400` otherwise). `salt`, `wrapped`, `credentialId` and `verifier` are unpadded base64url. The first entry must be the password, and its `verifier` is stored (hashed); every later write must send the same verifier (`403 bad_verifier`). `409 no_lock_password` for a recovery or passkey entry first |
 | DELETE | `/locks/keys/{id}` | `{verifier}`; the password entry can't be removed (`409 password_key_required`) |
