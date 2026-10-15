@@ -16,7 +16,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import kotlinx.coroutines.runBlocking
 import notes.app.editor.NoteEditText
 import notes.core.api.RemoteNote
 import notes.core.api.SyncPage
@@ -94,7 +93,7 @@ class MainActivityTest {
 
     @Test
     fun `stored notes are listed and searchable`() {
-        runBlocking {
+        compose.runOffMain {
             graph.store.save("a", "Groceries", "- Oat milk\n")
             graph.store.save("b", "Trip", "Lisbon\n")
         }
@@ -109,7 +108,7 @@ class MainActivityTest {
     // Sync changing a note while it's open, simulated by applying feed pages as the engine would.
 
     private fun remote(id: String, title: String, content: String, revision: Long, deleted: Boolean = false) =
-        runBlocking {
+        compose.runOffMain {
             graph.sync.store.applyPage(
                 SyncPage(
                     listOf(

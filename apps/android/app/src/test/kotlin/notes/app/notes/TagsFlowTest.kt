@@ -19,6 +19,7 @@ import kotlinx.coroutines.runBlocking
 import notes.app.MainActivity
 import notes.app.NotesApp
 import notes.app.TestNotesApp
+import notes.app.runOffMain
 import notes.app.editor.NoteEditText
 import notes.core.db.NoteFilter
 import org.junit.After
@@ -134,14 +135,14 @@ class TagsFlowTest {
         }
         compose.onNodeWithContentDescription("Back").performClick()
         compose.waitUntilExactlyOneExists(hasText("Standup"))
-        assertEquals(4, runBlocking { graph.store.list().size })
+        assertEquals(4, compose.runOffMain { graph.store.list().size })
 
         compose.onNodeWithContentDescription("New note").performClick()
         val second = editor()
         compose.runOnUiThread { second.text!!.insert(0, "Retro") }
         compose.onNodeWithContentDescription("Back").performClick()
         compose.waitUntilExactlyOneExists(hasText("Retro"))
-        val work = runBlocking { graph.store.list(NoteFilter.Tag("work", "work")) }
+        val work = compose.runOffMain { graph.store.list(NoteFilter.Tag("work", "work")) }
         assertEquals(setOf("Retro", "Standup"), work.map { it.title }.toSet())
     }
 
