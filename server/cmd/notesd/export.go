@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,6 +15,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"golang.org/x/term"
+
 	"notes/server/internal/database"
 	"notes/server/internal/locks"
 	"notes/server/internal/notes"
@@ -20,14 +24,16 @@ import (
 
 const maxFileNameBytes = 100
 
-// exportNotes writes every live note to dir as Markdown, one file each.
-// Locked notes are skipped: the server holds only their ciphertext.
-func exportNotes(ctx context.Context, db *database.DB, dir string) (written, locked int, err error) {
-	if err := prepareExportDir(dir); err != nil {
-		return 0, 0, err
-	}
+// exported counts what an export wrote and what it left out.
+type exported struct {
+	Written    int
+	Locked     int // skipped: no key given
+	Unreadable int // locked, but the key didn't open them
+}
+
+func liveNotes(ctx context.Context, db *database.DB) ([]notes.Note, error) {
 	var all []notes.Note
-	err = db.ReadTx(ctx, func(tx *sql.Tx) error {
+	err := db.ReadTx(ctx, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, `SELECT `+notes.Columns+` FROM notes
 			WHERE deleted_at IS NULL ORDER BY created_at, id`)
 		if err != nil {
@@ -44,36 +50,56 @@ func exportNotes(ctx context.Context, db *database.DB, dir string) (written, loc
 		return rows.Err()
 	})
 	if err != nil {
-		return 0, 0, fmt.Errorf("read notes: %w", err)
+		return nil, fmt.Errorf("read notes: %w", err)
 	}
+	return all, nil
+}
 
+// writeExport writes each note to dir as Markdown, one file each. Locked
+// notes are decrypted with key, or skipped without one.
+func writeExport(dir string, all []notes.Note, key []byte) (exported, error) {
+	var res exported
+	if err := checkExportDir(dir); err != nil {
+		return res, err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return res, err
+	}
 	// Keyed case-insensitively: macOS and Windows filesystems are.
 	taken := map[string]bool{}
 	for _, n := range all {
-		if locks.IsLocked(n.Content) {
-			locked++
-			continue
+		content := n.Content
+		if locks.IsLocked(content) {
+			if key == nil {
+				res.Locked++
+				continue
+			}
+			plain, err := locks.Decrypt(key, content)
+			if err != nil {
+				res.Unreadable++
+				continue
+			}
+			content = plain
 		}
-		name := uniqueName(fileName(n.Title), taken)
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte(markdown(n.Title, n.Content)), 0o600); err != nil {
-			return written, locked, err
+		path := filepath.Join(dir, uniqueName(fileName(n.Title), taken))
+		if err := os.WriteFile(path, []byte(markdown(n.Title, content)), 0o600); err != nil {
+			return res, err
 		}
 		t := time.UnixMilli(n.UpdatedAt)
 		if err := os.Chtimes(path, t, t); err != nil {
-			return written, locked, err
+			return res, err
 		}
-		written++
+		res.Written++
 	}
-	return written, locked, nil
+	return res, nil
 }
 
-// prepareExportDir creates dir, or accepts it if it exists and is empty, so
-// an export never overwrites files or mixes with an earlier one.
-func prepareExportDir(dir string) error {
+// checkExportDir accepts a missing or empty dir, so an export never
+// overwrites files or mixes with an earlier one.
+func checkExportDir(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
-		return os.MkdirAll(dir, 0o700)
+		return nil
 	}
 	if err != nil {
 		return err
@@ -82,6 +108,45 @@ func prepareExportDir(dir string) error {
 		return fmt.Errorf("%s is not empty; export into a new or empty directory", dir)
 	}
 	return nil
+}
+
+// askLockPassword has the owner confirm that locked notes will be written as
+// plain text, then reads the lock password. Typed every time, never from the
+// environment, so a script or a leaked variable can't decrypt the notes.
+func askLockPassword(dir string, locked int, stdin *os.File, stderr io.Writer) (string, error) {
+	fd := int(stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return "", errors.New("--include-locked needs a terminal to type the lock password at")
+	}
+	fmt.Fprintf(stderr, "%d locked notes, currently encrypted, will be written to %s as plain text.\n"+
+		"Anyone who can read that folder can read them. Continue? [y/N] ", locked, dir)
+	answer, err := bufio.NewReader(stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
+		return "", errors.New("export cancelled; nothing was written")
+	}
+	fmt.Fprint(stderr, "lock password: ")
+	raw, err := term.ReadPassword(fd)
+	fmt.Fprintln(stderr)
+	if err != nil {
+		return "", fmt.Errorf("read lock password: %w", err)
+	}
+	return string(raw), nil
+}
+
+// lockKey opens the locked-notes key with the lock password.
+func lockKey(ctx context.Context, db *database.DB, password string) ([]byte, error) {
+	keys, err := locks.NewStore(db).List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	key, err := locks.UnlockWithPassword(keys, password)
+	if errors.Is(err, locks.ErrNoPassword) {
+		return nil, errors.New("there is no lock password on this server to open locked notes with")
+	}
+	return key, err
 }
 
 // markdown matches the web app's Copy as Markdown: the title as a heading, then the body.

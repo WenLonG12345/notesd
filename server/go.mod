@@ -5,6 +5,8 @@ go 1.23
 require (
 	github.com/yuin/goldmark v1.8.6
 	golang.org/x/crypto v0.31.0
+	golang.org/x/term v0.27.0
+	golang.org/x/text v0.21.0
 	modernc.org/sqlite v1.34.4
 )
 

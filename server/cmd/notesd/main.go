@@ -9,13 +9,15 @@
 //	notesd reset-password
 //	notesd reindex                  rebuild the search index
 //	notesd check                    run an integrity check
-//	notesd export --out DIR         write every note to DIR as Markdown
+//	notesd export --out DIR [--include-locked]
+//	                                write every note to DIR as Markdown
 //	notesd version
 //
 // Flags may also be set through environment variables: NOTESD_DATA_DIR,
 // NOTESD_LISTEN, NOTESD_PUBLIC_URL, NOTESD_LOG_LEVEL, NOTESD_LOG_FORMAT,
 // NOTESD_SETUP_TOKEN, NOTESD_RESEND_URL. Commands that take a password read it from
 // NOTESD_PASSWORD or, failing that, from the first line of standard input.
+// export --include-locked asks for the lock password at the terminal, every time.
 package main
 
 import (
@@ -39,6 +41,7 @@ import (
 	"notes/server/internal/api"
 	"notes/server/internal/auth"
 	"notes/server/internal/database"
+	"notes/server/internal/locks"
 	"notes/server/internal/notes"
 	"notes/server/internal/search"
 )
@@ -63,6 +66,7 @@ type options struct {
 	resendURL  string
 	username   string
 	out        string
+	locked     bool
 }
 
 func run(args []string) error {
@@ -86,6 +90,7 @@ func run(args []string) error {
 		fs.StringVar(&o.username, "username", "", "owner username")
 	case "export":
 		fs.StringVar(&o.out, "out", "", "directory to write the Markdown files to (new or empty)")
+		fs.BoolVar(&o.locked, "include-locked", false, "decrypt locked notes with the lock password and export them as plain text")
 	case "reset-password", "reindex", "check":
 	case "version":
 		fmt.Println("notesd", version)
@@ -166,14 +171,48 @@ func run(args []string) error {
 		}
 		fmt.Println("ok")
 	case "export":
-		n, locked, err := exportNotes(ctx, db, o.out)
-		if err != nil {
-			return err
+		return export(ctx, db, o)
+	}
+	return nil
+}
+
+func export(ctx context.Context, db *database.DB, o options) error {
+	// Before any prompt: a refused folder shouldn't cost the password.
+	if err := checkExportDir(o.out); err != nil {
+		return err
+	}
+	all, err := liveNotes(ctx, db)
+	if err != nil {
+		return err
+	}
+	var key []byte
+	if o.locked {
+		locked := 0
+		for _, n := range all {
+			if locks.IsLocked(n.Content) {
+				locked++
+			}
 		}
-		fmt.Printf("exported %d notes to %s\n", n, o.out)
 		if locked > 0 {
-			fmt.Printf("skipped %d locked notes (only their encrypted form is on the server)\n", locked)
+			pw, err := askLockPassword(o.out, locked, os.Stdin, os.Stderr)
+			if err != nil {
+				return err
+			}
+			if key, err = lockKey(ctx, db, pw); err != nil {
+				return err
+			}
 		}
+	}
+	res, err := writeExport(o.out, all, key)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("exported %d notes to %s\n", res.Written, o.out)
+	if res.Locked > 0 {
+		fmt.Printf("skipped %d locked notes; --include-locked exports them with the lock password\n", res.Locked)
+	}
+	if res.Unreadable > 0 {
+		fmt.Printf("skipped %d locked notes that the lock password doesn't open (locked under an earlier keyring, or damaged)\n", res.Unreadable)
 	}
 	return nil
 }

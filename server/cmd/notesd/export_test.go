@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,8 +17,11 @@ import (
 	"notes/server/internal/notes"
 )
 
-func TestExportNotes(t *testing.T) {
-	ctx := context.Background()
+var ctx = context.Background()
+
+// newDB returns a fresh database and a function that adds a note, each a second after the last.
+func newDB(t *testing.T) (*database.DB, func(id, title, content string)) {
+	t.Helper()
 	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "notes.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -23,7 +29,7 @@ func TestExportNotes(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 	s := notes.NewStore(db)
 	at := int64(1_700_000_000_000)
-	create := func(id, title, content string) {
+	return db, func(id, title, content string) {
 		t.Helper()
 		at += 1000
 		ts := at
@@ -31,6 +37,11 @@ func TestExportNotes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func TestExportNotes(t *testing.T) {
+	db, create := newDB(t)
+	s := notes.NewStore(db)
 	create("a", "Groceries", "- milk #home\n")
 	create("b", "groceries", "second\n")
 	create("c", "  ", "no title\n")
@@ -42,12 +53,16 @@ func TestExportNotes(t *testing.T) {
 	}
 
 	dir := filepath.Join(t.TempDir(), "out")
-	written, locked, err := exportNotes(ctx, db, dir)
+	all, err := liveNotes(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if written != 4 || locked != 1 {
-		t.Fatalf("written, locked = %d, %d", written, locked)
+	res, err := writeExport(dir, all, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != (exported{Written: 4, Locked: 1}) {
+		t.Fatalf("result = %+v", res)
 	}
 
 	entries, _ := os.ReadDir(dir)
@@ -74,7 +89,7 @@ func TestExportNotes(t *testing.T) {
 		t.Errorf("mtime = %v", info.ModTime())
 	}
 
-	if _, _, err := exportNotes(ctx, db, dir); err == nil || !strings.Contains(err.Error(), "not empty") {
+	if _, err := writeExport(dir, all, nil); err == nil || !strings.Contains(err.Error(), "not empty") {
 		t.Fatalf("second export into the same dir: %v", err)
 	}
 }
@@ -94,5 +109,100 @@ func TestFileName(t *testing.T) {
 		if got := fileName(title); got != want {
 			t.Errorf("fileName(%q) = %q, want %q", title, got, want)
 		}
+	}
+}
+
+// The shared crypto fixtures: a keyring whose password entry opens with
+// fixturePassword, and envelopes sealed with the key it holds.
+const fixturePassword = "correct horse battery staple"
+
+type cryptoFixtures struct {
+	KDF []struct {
+		Password, Salt string
+		Iterations     int
+	}
+	Wraps     []struct{ Kind, Wrapped string }
+	Envelopes []struct{ Name, Plaintext, Envelope string }
+	Invalid   []struct{ Name, Envelope string }
+}
+
+func loadCryptoFixtures(t *testing.T) cryptoFixtures {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "shared", "crypto-fixtures", "locked.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f cryptoFixtures
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	if f.KDF[0].Password != fixturePassword || f.Wraps[0].Kind != "password" {
+		t.Fatal("fixtures changed shape")
+	}
+	return f
+}
+
+func TestExportLockedNotes(t *testing.T) {
+	f := loadCryptoFixtures(t)
+	db, create := newDB(t)
+	envelope := func(name string) string {
+		for _, e := range f.Envelopes {
+			if e.Name == name {
+				return e.Envelope
+			}
+		}
+		for _, e := range f.Invalid {
+			if e.Name == name {
+				return e.Envelope
+			}
+		}
+		t.Fatalf("no fixture %q", name)
+		return ""
+	}
+	create("a", "Bank", envelope("markdown"))
+	create("b", "Broken", envelope("tampered tag"))
+	create("c", "Open", "plain\n")
+	all, err := liveNotes(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdin, _, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdin.Close()
+
+	// The password is typed, so a pipe is refused.
+	if _, err := askLockPassword("out", 2, stdin, io.Discard); err == nil || !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("not a terminal: %v", err)
+	}
+
+	if _, err := lockKey(ctx, db, fixturePassword); err == nil || !strings.Contains(err.Error(), "no lock password") {
+		t.Fatalf("no keyring: %v", err)
+	}
+	k := f.KDF[0]
+	if _, err := db.W.ExecContext(ctx, `INSERT INTO lock_keys (id, kind, salt, iterations, wrapped, created_at)
+		VALUES ('password', 'password', ?, ?, ?, 0)`, k.Salt, k.Iterations, f.Wraps[0].Wrapped); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lockKey(ctx, db, "wrong"); !errors.Is(err, locks.ErrWrongPassword) {
+		t.Fatalf("wrong password: %v", err)
+	}
+	key, err := lockKey(ctx, db, fixturePassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Join(t.TempDir(), "out")
+	res, err := writeExport(dir, all, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != (exported{Written: 2, Unreadable: 1}) {
+		t.Fatalf("result = %+v", res)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "Bank.md"))
+	if want := "# Bank\n\n" + f.Envelopes[1].Plaintext; f.Envelopes[1].Name != "markdown" || string(got) != want {
+		t.Fatalf("Bank.md = %q, want %q", got, want)
 	}
 }
