@@ -6,12 +6,13 @@ your account.
 
 ## What you need
 
-- A Linux machine that stays on: a VPS, a home server or a Raspberry Pi
+- A Linux or Mac machine that stays on: a VPS, a home server or a Raspberry Pi
   with a 64-bit OS. One process with no other services, so a small machine
-  is enough. macOS on Apple silicon works too, for trying it out.
+  is enough.
 - One of the following:
-  - **A domain name** pointing at the machine, for access from anywhere.
-    You'll put HTTPS in front of notesd (step 4).
+  - **A domain name**, for access from anywhere. You'll need HTTPS in
+    front of notesd (step 4): either the domain points at the machine and a
+    reverse proxy handles TLS, or a tunnel does it for you.
   - **A private network only:** your home LAN, or a VPN such as Tailscale or
     WireGuard. HTTPS is optional there (see [Without a domain](#without-a-domain)).
 
@@ -108,10 +109,21 @@ without this token, so a stranger can't claim a fresh server.
 notesd has one account. Sign in with it from as many browsers and phones as
 you like.
 
-## 4. HTTPS with a reverse proxy
+## 4. HTTPS
 
-notesd speaks plain HTTP and expects a reverse proxy to handle TLS. Keep it
-listening on `127.0.0.1` so only the proxy can reach it.
+notesd speaks plain HTTP and expects something else to handle TLS. 
+Two ways to get there:
+
+- **Reverse proxy.** A web server on the same machine terminates TLS and
+  forwards to notesd. The machine must be reachable from the internet on
+  port 443 and your domain must point at it. Certificates come from Let's
+  Encrypt. You run everything; nobody else sees your traffic.
+- **Tunnel.** A small agent on the machine opens an outbound connection to a
+  provider, which terminates TLS at its edge and relays requests to notesd.
+  No open ports, no port forwarding, works behind home routers and CGNAT.
+  The provider sees your traffic in plaintext.
+
+### Option A: Reverse proxy
 
 **Caddy** gets and renews a certificate automatically. `/etc/caddy/Caddyfile`:
 
@@ -139,7 +151,36 @@ server {
 }
 ```
 
-Things to get right:
+### Option B: Tunnel
+
+[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/),
+[ngrok](https://ngrok.com) and [Tailscale Funnel](https://tailscale.com/kb/1223/funnel)
+all work the same way: install their agent, point it at
+`http://127.0.0.1:8080`, and they hand you an HTTPS address. This guide
+covers Cloudflare Tunnel, which is free and lets you use your own domain;
+the domain's DNS must be hosted on Cloudflare.
+
+1. Install `cloudflared` from
+   [Cloudflare's packages](https://pkg.cloudflare.com/) (there's an `apt`
+   repo and a `.deb` for Raspberry Pi).
+2. In the [Zero Trust dashboard](https://one.dash.cloudflare.com), go to
+   **Networks → Tunnels → Create a tunnel**, choose **Cloudflared**, and
+   name it `notesd`. Copy the token it shows.
+3. Register the agent as a service on the machine:
+
+   ```bash
+   sudo cloudflared service install <token>
+   ```
+
+4. Back in the dashboard, add a **public hostname**: subdomain `notes`,
+   your domain, service type **HTTP**, URL `127.0.0.1:8080`. Cloudflare
+   creates the DNS record for you.
+
+Open `https://notes.example.com`; the tunnel shows as **Healthy** in the
+dashboard. Cloudflare keeps the `Host` header, so notesd needs no extra
+flags beyond `--public-url`.
+
+### Either way
 
 - **Set `--public-url`** to the `https://` address. That makes the session
   cookie `Secure`, and it makes the setup link point at the right place.
@@ -149,9 +190,9 @@ Things to get right:
   from a page whose `Origin` doesn't match the `Host` header or the public
   URL, so a misconfigured proxy shows up as every save failing with 403.
 - **Login rate limiting:** failed logins are limited to 10 per 15 minutes
-  per client address. Behind a proxy, every client shares the proxy's
-  address, so the limit is shared too: someone guessing passwords can lock
-  you out of signing in for up to 15 minutes. Your existing sessions
+  per client address. Behind a proxy or a tunnel, every client shares the
+  same address, so the limit is shared too: someone guessing passwords can
+  lock you out of signing in for up to 15 minutes. Your existing sessions
   aren't affected.
 
 ## Without a domain
@@ -193,15 +234,8 @@ Every option is a flag or an environment variable; there's no config file.
 On machines with little memory, set `GOMEMLIMIT` (for example
 `Environment=GOMEMLIMIT=64MiB` in the unit) so Go frees memory sooner.
 
-## Email
-
-Notes can be emailed from the apps through [Resend](https://resend.com).
-You enter the API key and sender address in the app's settings while signed
-in (web: Settings → Email; Android: Settings → Email). They're stored on the
-server, so you set them up once for all your devices. The server needs
-outbound HTTPS access to `api.resend.com`.
 
 ## Next
 
 - [Install the Android app](android.md)
-- [Upgrades, backups and maintenance](operations.md)
+- [Upgrades and maintenance](operations.md)

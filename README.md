@@ -1,23 +1,21 @@
 # notesd
 
-Your own notes server. One small program with a SQLite database runs on
-your server, a Raspberry Pi or a VPS. It serves a web app, and it syncs with an
-Android app that works fully offline. There's no cloud account and nothing
-else to run.
+Self-hosted notes server + web and Android native app.
 
-- **Android app** with its own copy of your notes: write, search and tag
-  on a plane, and it syncs when you're back online.
-- **Web app** built into the server: open it in any browser, or add it to
-  your Dock.
+Server is a single binary + a SQLite database: runs on
+a Raspberry Pi or a VPS.
+
+The Android app is offline-first: Notes are synced with the server automatically, and whenever there is Internet available.
+
+
+Other features: 
+
 - **Rich text that stays Markdown:** bold, headings, lists, checklists,
-  links and quotes, stored as plain Markdown you can always take with you.
+  links and quotes, stored as plain Markdown.
 - **Full-text search** and `#tags`, including `#nested/tags`.
 - **Edits are never lost:** concurrent edits merge when they can, and
   otherwise you get both versions.
-- **Email a note** through your own [Resend](https://resend.com) account.
 
-notesd is for one person on several devices. It has no sharing or
-collaboration.
 
 ## Get started
 
@@ -52,7 +50,6 @@ local network.
 | --- | --- |
 | [Hosting](docs/hosting.md) | Installing and configuring the server, HTTPS, systemd |
 | [Android](docs/android.md) | Installing the app, connecting, how sync works |
-| [Web](docs/web.md) | Using the web app |
-| [Operations](docs/operations.md) | Upgrades, backups, maintenance, monitoring |
+| [Operations](docs/operations.md) | Upgrades, maintenance, monitoring |
 | [Development](docs/development.md) | Building from source and working on notesd |
 | [Architecture](docs/architecture.md) | How it works: data model, sync protocol, conflicts |
