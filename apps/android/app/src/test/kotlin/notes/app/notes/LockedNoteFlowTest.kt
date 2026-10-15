@@ -187,7 +187,7 @@ class LockedNoteFlowTest {
     }
 
     @Test
-    fun `Not now is remembered: the password alone next time`() {
+    fun `Not now is remembered, the password alone next time`() {
         FakeBiometrics.cancelNext = true
         openBank()
         unlock(PASSWORD)
