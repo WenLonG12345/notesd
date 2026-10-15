@@ -118,6 +118,25 @@ func TestLockedNoteOverHTTP(t *testing.T) {
 	if r := c.do("GET", "/api/v1/notes/n1", nil); r.body["content"] != sealed {
 		t.Fatalf("get: %s", r.raw)
 	}
+	c.do("POST", "/api/v1/notes", map[string]any{"operationId": "c3", "id": "n3", "title": "Bank hours", "content": "open"})
+	r = c.do("GET", "/api/v1/notes?locked=true", nil)
+	if items := r.body["notes"].([]any); r.status != 200 || len(items) != 1 || items[0].(map[string]any)["id"] != "n1" || r.body["total"] != 1.0 {
+		t.Fatalf("list locked: %d %s", r.status, r.raw)
+	}
+	if r := c.do("GET", "/api/v1/search?q=bank", nil); len(r.body["results"].([]any)) != 2 {
+		t.Fatalf("search all: %s", r.raw)
+	}
+	if r := c.do("GET", "/api/v1/search?q=bank&locked=true", nil); len(r.body["results"].([]any)) != 1 {
+		t.Fatalf("search locked: %s", r.raw)
+	}
+	if r := c.do("GET", "/api/v1/tags", nil); r.body["locked"] != 1.0 {
+		t.Fatalf("tags locked count: %s", r.raw)
+	}
+	for _, q := range []string{"locked=true&untagged=true", "locked=true&tag=home"} {
+		if r := c.do("GET", "/api/v1/notes?"+q, nil); r.status != 400 {
+			t.Fatalf("%s: %d", q, r.status)
+		}
+	}
 	c.do("PUT", "/api/v1/settings/email", map[string]any{"apiKey": "re_123456789", "from": "Me <me@example.com>"})
 	if r := c.do("POST", "/api/v1/notes/n1/email", map[string]any{"to": []string{"a@b.c"}, "revision": 1}); r.status != 409 || r.body["error"] != "note_locked" {
 		t.Fatalf("email: %d %s", r.status, r.raw)
