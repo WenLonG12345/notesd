@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core'
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ApiError } from '../api/client'
 import { notes as api } from '../api/notes'
-import { ChecklistTool, LinkForm, LinkTool, MarkTools, NoteContent, TextStyles, Tool, replaceNote, useNoteEditor } from '../editor/editor'
+import { ChecklistTool, IndentTools, LinkForm, LinkTool, MarkTools, NoteContent, TextStyles, Tool, replaceNote, useNoteEditor } from '../editor/editor'
 import { noteFields, noteSummary, titleOf } from '../editor/note-doc'
 import { Banner } from '../ui/banner'
 import { Button } from '../ui/button'
@@ -263,24 +263,15 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
   return (
     <>
       <div className={styles.bar}>
-        {mobile ? (
-          <BackButton onClick={onBack} />
-        ) : (
-          <div className={styles.tools} role="toolbar" aria-label="Formatting">
-            <StylesButton editor={editor} id={stylesId} open={stylesOpen} onToggle={toggleStyles} />
-            <MarkTools editor={editor} />
-            <span className={styles.sep} aria-hidden="true" />
-            <ChecklistTool editor={editor} />
-            <LinkTool editor={editor} open={linkOpen} onToggle={toggleLink} />
-          </div>
-        )}
+        {mobile && <BackButton onClick={onBack} />}
         <span className={styles.spacer} />
         <StatusPill state={snap.state} shown={statusShown} detail={statusDetail} />
         {mobile ? <NoteMenu saver={saver} mobile /> : <NoteMenu saver={saver} mobile={false} onDelete={onDelete} />}
         {mobile && <DeleteButton onClick={onDelete} />}
       </div>
 
-      {linkOpen && (
+      {/* Phones keep the link field up top: a bottom one would sit under the keyboard. */}
+      {linkOpen && mobile && (
         <div className={styles.linkRow}>
           <LinkForm editor={editor} onDone={() => setLinkOpen(false)} />
         </div>
@@ -361,14 +352,32 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
         </div>
       </div>
 
-      {mobile && (
-        <div className={styles.bottomBar} role="toolbar" aria-label="Formatting">
-          <ChecklistTool editor={editor} className={styles.bottomTool} iconSize={20} />
-          <StylesButton editor={editor} id={stylesId} open={stylesOpen} onToggle={toggleStyles} mobile />
-          <LinkTool editor={editor} open={linkOpen} onToggle={toggleLink} className={styles.bottomTool} iconSize={19} />
-          <button type="button" className={styles.bottomTool} onClick={onNew} aria-label="New note" title="New note">
-            <ComposeIcon />
-          </button>
+      {linkOpen && !mobile ? (
+        <div className={[styles.dock, styles.dockLink].join(' ')}>
+          <LinkForm editor={editor} onDone={() => setLinkOpen(false)} />
+        </div>
+      ) : (
+        <div className={styles.dock} role="toolbar" aria-label="Formatting">
+          {mobile ? (
+            <>
+              <ChecklistTool editor={editor} className={styles.bottomTool} iconSize={20} />
+              <StylesButton editor={editor} id={stylesId} open={stylesOpen} onToggle={toggleStyles} mobile />
+              <IndentTools editor={editor} className={styles.bottomTool} iconSize={19} />
+              <LinkTool editor={editor} open={linkOpen} onToggle={toggleLink} className={styles.bottomTool} iconSize={19} />
+              <button type="button" className={styles.bottomTool} onClick={onNew} aria-label="New note" title="New note">
+                <ComposeIcon />
+              </button>
+            </>
+          ) : (
+            <>
+              <StylesButton editor={editor} id={stylesId} open={stylesOpen} onToggle={toggleStyles} />
+              <MarkTools editor={editor} />
+              <span className={styles.sep} aria-hidden="true" />
+              <ChecklistTool editor={editor} />
+              <IndentTools editor={editor} />
+              <LinkTool editor={editor} open={linkOpen} onToggle={toggleLink} />
+            </>
+          )}
         </div>
       )}
 

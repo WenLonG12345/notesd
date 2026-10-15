@@ -6,12 +6,12 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -28,8 +28,7 @@ import androidx.compose.ui.unit.dp
 import notes.app.ui.Icons
 import notes.app.ui.LocalTokens
 import notes.app.ui.Type
-import notes.app.ui.glass
-import notes.app.ui.hairline
+import notes.app.ui.floating
 import notes.core.db.TagCount
 
 /** At most this many suggestions while typing a tag. */
@@ -63,16 +62,14 @@ fun suggestTags(tags: List<TagCount>, query: String): List<TagCount> {
  */
 @Composable
 fun TagStrip(tag: TagAtCursor, tags: List<TagCount>, onPick: (String) -> Unit, onShow: (String) -> Unit) {
-    val t = LocalTokens.current
     val suggestions = tag.query?.let { suggestTags(tags, it) }.orEmpty()
     Row(
         Modifier
-            .fillMaxWidth()
-            .glass()
-            .hairline(t.hair, top = true)
+            .widthIn(max = 600.dp)
+            .floating()
             .horizontalScroll(rememberScrollState())
             .height(52.dp)
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {

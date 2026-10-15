@@ -194,13 +194,3 @@ fun NotesDialog(onDismiss: () -> Unit, title: String, content: @Composable () ->
         }
     }
 }
-
-/** Glass is translucent; a sheet over a scrim needs it solid. */
-private fun Color.compositeOverBg(t: Tokens): Color {
-    val a = alpha
-    return Color(
-        red = red * a + t.bg.red * (1 - a),
-        green = green * a + t.bg.green * (1 - a),
-        blue = blue * a + t.bg.blue * (1 - a)
-    )
-}

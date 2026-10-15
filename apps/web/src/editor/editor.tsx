@@ -3,7 +3,7 @@ import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TagCount } from '../api/types'
 import type { Fields } from '../notes/saver'
-import { ChecklistIcon, LinkIcon } from '../ui/icons'
+import { ChecklistIcon, IndentIcon, LinkIcon, OutdentIcon } from '../ui/icons'
 import { editorExtensions, isAllowedLink } from './extensions'
 import { noteContent } from './note-doc'
 import { Tags } from './tags'
@@ -89,6 +89,8 @@ function useFormat(editor: Editor) {
       const numbers = e.isActive('orderedList')
       const tasks = e.isActive('taskList')
       const quote = e.isActive('blockquote')
+      const item = e.isActive('taskItem') ? 'taskItem' : 'listItem'
+      const inList = e.isActive(item)
       return {
         bold: e.isActive('bold'),
         italic: e.isActive('italic'),
@@ -102,6 +104,8 @@ function useFormat(editor: Editor) {
         numbers,
         tasks,
         quote,
+        listItem: inList ? item : null,
+        canIndent: inList && e.can().sinkListItem(item),
       }
     },
   })
@@ -191,6 +195,25 @@ export function LinkTool({ editor, open, onToggle, className, iconSize = 16 }: T
     <Tool label="Link" keys={`${mod}K`} on={f.link || open} className={className} run={onToggle}>
       <LinkIcon size={iconSize} />
     </Tool>
+  )
+}
+
+/** Indent and outdent, only while the cursor is in a list. */
+export function IndentTools({ editor, className, iconSize = 16 }: ToolbarProps) {
+  const f = useFormat(editor)
+  const item = f.listItem
+  if (!item) return null
+  return (
+    <>
+      <Tool label="Outdent" keys={`${shift}Tab`} on={false} className={className} run={() => editor.chain().focus().liftListItem(item).run()}>
+        <OutdentIcon size={iconSize} />
+      </Tool>
+      {f.canIndent && (
+        <Tool label="Indent" keys="Tab" on={false} className={className} run={() => editor.chain().focus().sinkListItem(item).run()}>
+          <IndentIcon size={iconSize} />
+        </Tool>
+      )}
+    </>
   )
 }
 

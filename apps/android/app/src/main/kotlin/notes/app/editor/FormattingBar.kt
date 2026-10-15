@@ -11,14 +11,14 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
@@ -44,8 +44,7 @@ import notes.app.ui.LocalReduceMotion
 import notes.app.ui.LocalTokens
 import notes.app.ui.Sans
 import notes.app.ui.Serif
-import notes.app.ui.glass
-import notes.app.ui.hairline
+import notes.app.ui.floating
 import notes.app.ui.pressScale
 import notes.core.doc.ListKind
 
@@ -58,23 +57,18 @@ import notes.core.doc.ListKind
  */
 @Composable
 fun FormattingBar(state: FormatState, editor: () -> NoteEditText?, onLink: () -> Unit, modifier: Modifier = Modifier) {
-    val t = LocalTokens.current
     val reduce = LocalReduceMotion.current
     Crossfade(
         targetState = state.selecting,
-        modifier = modifier
-            .fillMaxWidth()
-            .glass()
-            .hairline(t.hair, top = true),
+        modifier = modifier.widthIn(max = 600.dp).floating(),
         animationSpec = if (reduce) snap() else tween(150),
         label = "bar"
     ) { selecting ->
         Row(
             Modifier
-                .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .height(56.dp)
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
@@ -154,7 +148,7 @@ private fun Glyph(
 private fun Toggle(description: String, icon: ImageVector, checked: Boolean, enabled: Boolean, onToggle: () -> Unit) =
     Tool(description, checked, enabled, onToggle) { color -> Icon(icon, null, Modifier.size(20.dp), tint = color) }
 
-/** A 44×44 toggle, filled while on (web: .tool[aria-pressed]). */
+/** A 48×48 toggle, filled while on (web: .tool[aria-pressed]). */
 @Composable
 private fun Tool(
     description: String,
@@ -168,10 +162,9 @@ private fun Tool(
     val bg by animateColorAsState(if (checked && enabled) t.on else Color.Transparent, label = "tool")
     Box(
         Modifier
-            .size(46.dp, 48.dp)
-            .padding(vertical = 2.dp)
+            .size(48.dp)
             .pressScale(interaction, 0.88f)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(CircleShape)
             .background(bg)
             .toggleable(
                 value = checked,
@@ -194,10 +187,9 @@ private fun Action(description: String, icon: ImageVector, enabled: Boolean, onC
     val interaction = remember { MutableInteractionSource() }
     Box(
         Modifier
-            .size(46.dp, 48.dp)
-            .padding(vertical = 2.dp)
+            .size(48.dp)
             .pressScale(interaction, 0.88f)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(CircleShape)
             .clickable(interaction, ripple(), enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center

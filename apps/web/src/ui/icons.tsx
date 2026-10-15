@@ -108,3 +108,21 @@ export function MoreIcon({ size = 16 }: Props) {
     </svg>
   )
 }
+
+export function IndentIcon({ size = 16 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 3h11M7.5 6.5h6M7.5 9.5h6M2.5 13h11" />
+      <path d="M2.5 6l2.2 2-2.2 2" />
+    </svg>
+  )
+}
+
+export function OutdentIcon({ size = 16 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 3h11M7.5 6.5h6M7.5 9.5h6M2.5 13h11" />
+      <path d="M4.7 6L2.5 8l2.2 2" />
+    </svg>
+  )
+}

@@ -66,6 +66,24 @@ describe('formatting', () => {
     await waitFor(async () => expect((await getNote(server, id)).content).toBe('- [x] Buy milk\n'))
   })
 
+  it('indents and outdents list items from the toolbar, shown only in a list', async () => {
+    const { server, user, id } = await openNote('Lists', '- One\n- Two\n\nAfter\n')
+    selectInBody('After')
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Outdent' })).toBeNull())
+
+    // The first item has nothing to nest under.
+    selectInBody('One')
+    await screen.findByRole('button', { name: 'Outdent' })
+    expect(screen.queryByRole('button', { name: 'Indent' })).toBeNull()
+
+    selectInBody('Two')
+    await user.click(await screen.findByRole('button', { name: 'Indent' }))
+    await waitFor(async () => expect((await getNote(server, id)).content).toBe('- One\n  - Two\n\nAfter\n'))
+
+    await user.click(tool('Outdent'))
+    await waitFor(async () => expect((await getNote(server, id)).content).toBe('- One\n- Two\n\nAfter\n'))
+  })
+
   it('adds a link to the selection', async () => {
     const { server, user, id } = await openNote('Links', 'See the docs\n')
 

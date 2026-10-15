@@ -1,9 +1,13 @@
 package notes.app.ui
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInput
@@ -42,3 +46,27 @@ fun Modifier.hairline(color: Color, top: Boolean = false): Modifier = drawBehind
 }
 
 private fun Modifier.background(color: Color): Modifier = drawBehind { drawRect(color) }
+
+/** Glass is translucent; a sheet over a scrim, or a bar over text with nothing to blur it, needs it solid. */
+fun Color.compositeOverBg(t: Tokens): Color {
+    val a = alpha
+    return Color(
+        red = red * a + t.bg.red * (1 - a),
+        green = green * a + t.bg.green * (1 - a),
+        blue = blue * a + t.bg.blue * (1 - a)
+    )
+}
+
+/**
+ * A pill floating over the note (web: .dock). Solid glass colour: the keyboard
+ * slot it sits in has no haze source to blur.
+ */
+@Composable
+fun Modifier.floating(): Modifier {
+    val t = LocalTokens.current
+    val shape = RoundedCornerShape(28.dp)
+    return shadow(12.dp, shape)
+        .clip(shape)
+        .background(t.glassHi.compositeOverBg(t))
+        .border(1.dp, t.edge, shape)
+}
