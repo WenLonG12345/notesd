@@ -13,7 +13,10 @@ open class NotesApp : Application() {
     }
 
     /** Tests drive sync themselves, against their own servers. */
-    protected open fun startSync() = graph.scheduler.start()
+    protected open fun startSync() {
+        graph.scheduler.start()
+        graph.watchKeyring()
+    }
 
     /** Tests swap in a graph without the Android Keystore, which Robolectric lacks. */
     protected open fun createGraph() = AppGraph(this)

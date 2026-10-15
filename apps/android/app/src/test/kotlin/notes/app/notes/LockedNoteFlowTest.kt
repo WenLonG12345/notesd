@@ -1,5 +1,6 @@
 package notes.app.notes
 
+import android.os.Looper
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -17,6 +18,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import notes.app.FakeBiometrics
 import notes.app.MainActivity
@@ -30,6 +34,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /** Locked notes (§10.1) on the phone: the prompt, unlocking offline, locking again, removing the lock. */
@@ -50,11 +55,42 @@ class LockedNoteFlowTest {
         // A keyring as sync would have brought it; few iterations keep the test quick.
         val created = Keyring.create(PASSWORD, iterations = 10_000)
         key = created.key
-        runBlocking {
+        onMain {
             graph.sync.lockKeys.replace(listOf(created.entry))
             graph.locks.refresh()
             graph.store.save("n", "Bank", LockedNotes.encrypt(key, "PIN 1234\n"))
         }
+    }
+
+    /**
+     * Turns the paused main looper until [done]. compose.waitUntil doesn't before an
+     * activity exists or once it's stopped.
+     */
+    private fun pumpUntil(done: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!done()) {
+            check(System.currentTimeMillis() < deadline) { "condition still false after 5s" }
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(5)
+        }
+    }
+
+    /**
+     * Runs [block] on the app's main scope. runBlocking on the main thread deadlocks: the
+     * graph's own main-thread coroutines hold the lock session's mutex (and the store's
+     * locks) and need this thread to release them.
+     */
+    private fun onMain(block: suspend () -> Unit) {
+        val done = graph.scope.async { block() }
+        pumpUntil { done.isCompleted }
+        runBlocking { done.await() }
+    }
+
+    /** Reads the store off the main thread, for the same reason as [onMain]. */
+    private fun <T> read(block: suspend () -> T): T {
+        val done = CoroutineScope(Dispatchers.IO).async { block() }
+        pumpUntil { done.isCompleted }
+        return runBlocking { done.await() }
     }
 
     @After
@@ -78,7 +114,7 @@ class LockedNoteFlowTest {
     }
 
     @Test
-    fun `the list shows Locked; the note opens with the lock password, offline`() {
+    fun `the list shows Locked, the note opens with the lock password, offline`() {
         openBank()
         compose.onNodeWithText("PIN 1234").assertDoesNotExist()
 
@@ -103,7 +139,7 @@ class LockedNoteFlowTest {
         unlock(PASSWORD)
         compose.waitUntilExactlyOneExists(hasContentDescription("Lock now"))
         scenario?.moveToState(Lifecycle.State.CREATED)
-        compose.waitUntil(5_000) { graph.locks.state.value == LockSession.State.Locked }
+        pumpUntil { graph.locks.state.value == LockSession.State.Locked }
     }
 
     @Test
@@ -113,14 +149,14 @@ class LockedNoteFlowTest {
         compose.waitUntilExactlyOneExists(hasContentDescription("Lock now"))
         compose.onNodeWithContentDescription("More").performClick()
         compose.onNodeWithText("Remove lock").performClick()
-        compose.waitUntil(5_000) { runBlocking { graph.store.get("n")?.content } == "PIN 1234\n" }
+        pumpUntil { read { graph.store.get("n")?.content } == "PIN 1234\n" }
         compose.waitUntilDoesNotExist(hasContentDescription("Lock now"))
-        assertTrue(runBlocking { graph.store.list().single() }.let { !it.locked && it.preview == "PIN 1234" })
+        assertTrue(read { graph.store.list().single() }.let { !it.locked && it.preview == "PIN 1234" })
     }
 
     @Test
     fun `locking another note asks for the existing lock password, not a new one`() {
-        runBlocking { graph.store.save("d", "Diary", "Dear diary\n") }
+        onMain { graph.store.save("d", "Diary", "Dear diary\n") }
         scenario = ActivityScenario.launch(MainActivity::class.java)
         compose.waitUntilExactlyOneExists(hasText("Diary"))
         compose.onNodeWithText("Diary").performClick()
@@ -131,16 +167,16 @@ class LockedNoteFlowTest {
         compose.onNodeWithText("Create a lock password").assertDoesNotExist()
         compose.onNodeWithText("Lock password").performTextInput(PASSWORD)
         compose.onNode(hasText("Lock") and hasClickAction()).performClick()
-        compose.waitUntil(5_000) {
-            runBlocking { graph.store.get("d")?.content }?.let { LockedNotes.isLocked(it) } == true
-        }
-        assertEquals("Dear diary\n", LockedNotes.decrypt(key, runBlocking { graph.store.get("d")!!.content }))
+        pumpUntil { read { graph.store.get("d")?.content }?.let { LockedNotes.isLocked(it) } == true }
+        assertEquals("Dear diary\n", LockedNotes.decrypt(key, read { graph.store.get("d")!!.content }))
     }
 
     @Test
     fun `fingerprint unlock, once turned on in Settings, opens locked notes`() {
         scenario = ActivityScenario.launch(MainActivity::class.java)
         compose.waitUntilExactlyOneExists(hasText("Locked"))
+        // Settings is on the tags screen, behind the list.
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNode(hasText("Unlock with fingerprint")).performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasText("Unlock locked notes"))
@@ -148,8 +184,9 @@ class LockedNoteFlowTest {
         compose.waitUntilExactlyOneExists(hasText("Fingerprint unlock is on for this phone."))
         assertTrue(graph.fingerprint.enabled.value)
 
-        runBlocking { graph.locks.lock() }
+        onMain { graph.locks.lock() }
         compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("All notes").performClick()
         compose.onNodeWithText("Bank").performClick()
         // Opening the note asks for the fingerprint at once; the fake one matches.
         compose.waitUntilExactlyOneExists(hasContentDescription("Lock now"))
@@ -160,10 +197,10 @@ class LockedNoteFlowTest {
     fun `a new lock password elsewhere turns fingerprint unlock off`() {
         scenario = ActivityScenario.launch(MainActivity::class.java)
         compose.waitUntilExactlyOneExists(hasText("Locked"))
-        runBlocking { graph.locks.unlock(PASSWORD) }
+        onMain { graph.locks.unlock(PASSWORD) }
         scenario!!.onActivity { activity -> runBlocking { graph.fingerprint.enable(activity) } }
         assertTrue(graph.fingerprint.enabled.value)
-        runBlocking {
+        onMain {
             graph.locks.lock()
             // The keyring was reset on another device and a new password made: the kept key is stale.
             graph.sync.lockKeys.replace(listOf(Keyring.create("another one", iterations = 10_000).entry))

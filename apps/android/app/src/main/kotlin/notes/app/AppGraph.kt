@@ -122,7 +122,10 @@ class AppGraph(
         scope.launch { listFilter.drop(1).collect { f -> prefs.edit { putString(LIST_FILTER, encodeFilter(f)) } } }
         // Fetched when a note or Settings opens; another account's settings must not linger.
         scope.launch { accounts.account.collect { if (it !is Account.SignedIn) email.forget() } }
-        // Each sync may bring the first lock password, a changed one, or a reset.
+    }
+
+    /** Each sync may bring the first lock password, a changed one, or a reset. Started with sync. */
+    fun watchKeyring() {
         scope.launch {
             locks.refresh()
             sync.status.collect { locks.refresh() }
