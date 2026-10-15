@@ -461,9 +461,10 @@ func TestHealthAndWeb(t *testing.T) {
 	if r := c.do("GET", "/readyz", nil); r.status != 200 || r.body["status"] != "ready" {
 		t.Errorf("readyz: %d %s", r.status, r.raw)
 	}
+	// 503 is the "web app not built" placeholder, as on a fresh checkout; internal/web tests both cases.
 	for _, p := range []string{"/", "/notes/abc", "/settings"} {
 		r := c.do("GET", p, nil)
-		if r.status != 200 || !strings.Contains(string(r.raw), "<html") || r.header.Get("Content-Security-Policy") == "" {
+		if (r.status != 200 && r.status != 503) || !strings.Contains(string(r.raw), "<html") || r.header.Get("Content-Security-Policy") == "" {
 			t.Errorf("GET %s: %d", p, r.status)
 		}
 	}
