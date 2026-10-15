@@ -76,6 +76,20 @@ class LockSession(
         true
     }
 
+    /**
+     * The lock password entry as synced. A key kept elsewhere on the device
+     * (behind the fingerprint) is only good while this is unchanged: a reset
+     * replaces the key, so a stale copy must never encrypt new notes.
+     */
+    suspend fun passwordEntry(): String? = keys.keys().firstOrNull { it.kind == WrapKind.Password.wire }?.wrapped
+
+    /** Unlocks with a key kept on the device, if the keyring still has the password entry it was kept against. */
+    suspend fun unlockWithKey(key: ByteArray, boundTo: String): Boolean = mutex.withLock {
+        if (key.size != LockedNotes.KEY_BYTES || passwordEntry() != boundTo) return@withLock false
+        adopt(key.copyOf())
+        true
+    }
+
     /** First use: a new key under [password]. Needs the server, which keeps the keyring for every device. */
     suspend fun setup(password: String): Outcome = mutex.withLock {
         val client = api() ?: return@withLock Outcome.NotConnected

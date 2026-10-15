@@ -1,5 +1,6 @@
 package notes.app.settings
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -58,12 +59,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import notes.app.AppGraph
 import notes.app.BuildConfig
 import notes.app.account.Account
+import notes.app.locks.FingerprintUnlock
 import notes.app.locks.MIN_LOCK_PASSWORD
+import notes.app.locks.UnlockDialog
 import notes.app.locks.message
 import notes.app.ui.BackLink
 import notes.app.ui.BrandMark
@@ -171,7 +175,7 @@ fun SettingsScreen(
                 val lockState by graph.locks.state.collectAsStateWithLifecycle()
                 if (account is Account.SignedIn || lockState != LockSession.State.None) {
                     Section("Locked notes")
-                    LockedNotesCard(graph.locks, lockState)
+                    LockedNotesCard(graph.locks, lockState, graph.fingerprint)
                 }
 
                 Section("Appearance")
@@ -353,9 +357,13 @@ private fun EmailCard(graph: AppGraph) {
 
 /** Locked notes (§10.1): change the lock password, lock now, or reset after forgetting it. */
 @Composable
-private fun LockedNotesCard(locks: LockSession, state: LockSession.State) {
+private fun LockedNotesCard(locks: LockSession, state: LockSession.State, fingerprint: FingerprintUnlock) {
     val t = LocalTokens.current
     val scope = rememberCoroutineScope()
+    val activity = LocalActivity.current as? FragmentActivity
+    val fingerprintOn by fingerprint.enabled.collectAsStateWithLifecycle()
+    val canFingerprint = remember { fingerprint.available() } && activity != null
+    var askingPassword by remember { mutableStateOf(false) }
     var current by remember { mutableStateOf("") }
     var next by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
@@ -368,6 +376,26 @@ private fun LockedNotesCard(locks: LockSession, state: LockSession.State) {
     if (state == LockSession.State.None) {
         Card { Info("No lock password yet", "Choose Lock note from a note's menu to create one.") }
         return
+    }
+
+    fun turnOnFingerprint() {
+        if (activity == null || busy) return
+        // The session itself, not [state]: right after the password dialog, that lags a frame.
+        if (locks.state.value != LockSession.State.Unlocked) {
+            askingPassword = true
+            return
+        }
+        busy = true
+        message = null
+        scope.launch {
+            val outcome = fingerprint.enable(activity)
+            busy = false
+            message = when (outcome) {
+                FingerprintUnlock.Outcome.Done -> "Fingerprint unlock is on for this phone."
+                FingerprintUnlock.Outcome.Cancelled -> null
+                else -> "Couldn't turn on fingerprint unlock. Try again."
+            }
+        }
     }
 
     fun change() {
@@ -387,6 +415,7 @@ private fun LockedNotesCard(locks: LockSession, state: LockSession.State) {
             busy = false
             when (outcome) {
                 LockSession.Outcome.Done -> {
+                    fingerprint.passwordChanged()
                     current = ""
                     next = ""
                     confirm = ""
@@ -406,6 +435,7 @@ private fun LockedNotesCard(locks: LockSession, state: LockSession.State) {
         scope.launch {
             val outcome = locks.reset(account)
             busy = false
+            if (outcome == LockSession.Outcome.Done) fingerprint.disable()
             if (outcome == LockSession.Outcome.WrongPassword) {
                 errors = mapOf("account" to "That isn't your account password.")
             } else if (outcome != LockSession.Outcome.Done) {
@@ -495,11 +525,25 @@ private fun LockedNotesCard(locks: LockSession, state: LockSession.State) {
                 Divider()
                 Action("Lock now", t.link, enabled = !busy) { scope.launch { locks.lock() } }
             }
+            if (canFingerprint) {
+                Divider()
+                if (fingerprintOn) {
+                    Action("Turn off fingerprint unlock", t.link, enabled = !busy) { fingerprint.disable() }
+                } else {
+                    Action("Unlock with fingerprint", t.link, enabled = !busy, onClick = ::turnOnFingerprint)
+                }
+            }
             Divider()
             Action("Forgot it? Reset locked notes…", t.danger, enabled = !busy) {
                 message = null
                 resetting = true
             }
+        }
+    }
+    if (askingPassword) {
+        UnlockDialog(locks, "Unlock locked notes", onDismiss = { askingPassword = false }) {
+            askingPassword = false
+            turnOnFingerprint()
         }
     }
 }

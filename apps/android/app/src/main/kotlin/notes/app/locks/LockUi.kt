@@ -1,5 +1,6 @@
 package notes.app.locks
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +35,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import notes.app.ui.ButtonKind
 import notes.app.ui.Icons
@@ -43,6 +48,9 @@ import notes.app.ui.NotesField
 import notes.app.ui.PasswordMeter
 import notes.app.ui.Type
 import notes.core.crypto.LockSession
+
+/** For call sites without fingerprint unlock. */
+private val Off = MutableStateFlow(false)
 
 /** Shortest lock password accepted; it's the only thing between the server and the notes. */
 const val MIN_LOCK_PASSWORD = 8
@@ -63,12 +71,42 @@ fun UnlockFields(
     onUnlocked: () -> Unit,
     onCancel: (() -> Unit)? = null,
     action: String = "Unlock",
-    busyAction: String = "Unlocking…"
+    busyAction: String = "Unlocking…",
+    fingerprint: FingerprintUnlock? = null,
+    /** Ask for the fingerprint as soon as this shows, as opening a locked note does. */
+    promptFingerprint: Boolean = false
 ) {
     val scope = rememberCoroutineScope()
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    val activity = LocalActivity.current as? FragmentActivity
+    val fingerprintOn by (fingerprint?.enabled ?: Off).collectAsStateWithLifecycle()
+    val available = remember(fingerprint) { fingerprint?.available() == true }
+    val canFingerprint = activity != null && fingerprintOn && available
+
+    fun useFingerprint() {
+        if (fingerprint == null || activity == null || busy) return
+        busy = true
+        error = null
+        scope.launch {
+            val outcome = fingerprint.unlock(activity)
+            busy = false
+            when (outcome) {
+                FingerprintUnlock.Outcome.Done -> onUnlocked()
+
+                FingerprintUnlock.Outcome.Stale ->
+                    error =
+                        "Fingerprint unlock is off: the lock password or your fingerprints changed. Use the password."
+
+                FingerprintUnlock.Outcome.Failed -> error = "Fingerprint unlock didn't work. Use the password."
+
+                else -> Unit
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) { if (promptFingerprint && canFingerprint) useFingerprint() }
 
     fun submit() {
         if (password.isEmpty() || busy) return
@@ -100,12 +138,29 @@ fun UnlockFields(
             }
             NotesButton(if (busy) busyAction else action, ::submit, Modifier.weight(1f), busy = busy)
         }
+        if (canFingerprint) {
+            NotesButton(
+                "Use fingerprint",
+                ::useFingerprint,
+                Modifier.fillMaxWidth(),
+                kind = ButtonKind.Chip,
+                enabled = !busy
+            )
+        }
     }
 }
 
 /** A locked note while locked notes are locked: its title, and the way in. */
 @Composable
-fun LockedNote(title: String, unreadable: Boolean, locks: LockSession, modifier: Modifier = Modifier) {
+fun LockedNote(
+    title: String,
+    unreadable: Boolean,
+    locks: LockSession,
+    modifier: Modifier = Modifier,
+    fingerprint: FingerprintUnlock? = null,
+    /** Ask for the fingerprint at once: the note was just opened, not just locked. */
+    promptFingerprint: Boolean = true
+) {
     val t = LocalTokens.current
     Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(
@@ -130,7 +185,7 @@ fun LockedNote(title: String, unreadable: Boolean, locks: LockSession, modifier:
             } else {
                 Text("This note is locked.", style = Type.small, color = t.ink3)
                 Spacer(Modifier.height(6.dp))
-                UnlockFields(locks, onUnlocked = {})
+                UnlockFields(locks, onUnlocked = {}, fingerprint = fingerprint, promptFingerprint = promptFingerprint)
             }
         }
     }
@@ -142,7 +197,12 @@ fun LockedNote(title: String, unreadable: Boolean, locks: LockSession, modifier:
  * created.
  */
 @Composable
-fun LockNoteDialog(locks: LockSession, onDismiss: () -> Unit, onUnlocked: () -> Unit) {
+fun LockNoteDialog(
+    locks: LockSession,
+    onDismiss: () -> Unit,
+    fingerprint: FingerprintUnlock? = null,
+    onUnlocked: () -> Unit
+) {
     val t = LocalTokens.current
     NotesDialog(onDismiss, "Lock this note") {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -152,8 +212,23 @@ fun LockNoteDialog(locks: LockSession, onDismiss: () -> Unit, onUnlocked: () -> 
                 style = Type.small,
                 color = t.ink2
             )
-            UnlockFields(locks, onUnlocked, onCancel = onDismiss, action = "Lock", busyAction = "Locking…")
+            UnlockFields(
+                locks,
+                onUnlocked,
+                onCancel = onDismiss,
+                action = "Lock",
+                busyAction = "Locking…",
+                fingerprint = fingerprint
+            )
         }
+    }
+}
+
+/** The lock password, asked for before something that needs locked notes unlocked (turning on fingerprint unlock). */
+@Composable
+fun UnlockDialog(locks: LockSession, title: String, onDismiss: () -> Unit, onUnlocked: () -> Unit) {
+    NotesDialog(onDismiss, title) {
+        UnlockFields(locks, onUnlocked, onCancel = onDismiss)
     }
 }
 

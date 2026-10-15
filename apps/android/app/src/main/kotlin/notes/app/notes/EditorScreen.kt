@@ -88,6 +88,7 @@ import notes.app.editor.LinkTap
 import notes.app.editor.NoteEditText
 import notes.app.editor.TagStrip
 import notes.app.editor.keepCursorInView
+import notes.app.locks.FingerprintUnlock
 import notes.app.locks.LockNoteDialog
 import notes.app.locks.LockSetupDialog
 import notes.app.locks.LockedNote
@@ -134,7 +135,8 @@ fun EditorScreen(
     /** "Email" was chosen in this note's share sheet. */
     emailRequested: Boolean = false,
     onEmailRequestHandled: () -> Unit = {},
-    sendEmail: suspend (List<String>) -> EmailOutcome = { EmailOutcome.NotSynced }
+    sendEmail: suspend (List<String>) -> EmailOutcome = { EmailOutcome.NotSynced },
+    fingerprint: FingerprintUnlock? = null
 ) {
     val context = LocalContext.current
     val t = LocalTokens.current
@@ -150,6 +152,9 @@ fun EditorScreen(
 
     /** Lock note was chosen, and the session needs a password created or entered first. */
     var locking by remember { mutableStateOf<LockSession.State?>(null) }
+
+    /** Locked from this screen: the fingerprint isn't asked for straight back. */
+    var lockedHere by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var editor by remember { mutableStateOf<NoteEditText?>(null) }
     var state by remember { mutableStateOf(FormatState()) }
@@ -243,6 +248,7 @@ fun EditorScreen(
                     IconAction(Icons.Lock, "Lock now", {
                         // Typing from the last moments saves (encrypted) before the key goes.
                         save()
+                        lockedHere = true
                         scope.launch { locks.lock() }
                     })
                 }
@@ -251,7 +257,16 @@ fun EditorScreen(
                 IconAction(Icons.More, "More", { menu = true })
             }
         }
-        if (needsUnlock || unreadable) LockedNote(storedTitle, unreadable, locks, Modifier.weight(1f))
+        if (needsUnlock || unreadable) {
+            LockedNote(
+                storedTitle,
+                unreadable,
+                locks,
+                Modifier.weight(1f),
+                fingerprint = fingerprint,
+                promptFingerprint = !lockedHere
+            )
+        }
         original?.let { o ->
             Banner(
                 "Kept from a conflict with “${o.title.ifBlank { "New note" }}”",
@@ -369,7 +384,7 @@ fun EditorScreen(
             setLocked(true)
         }
 
-        LockSession.State.Locked -> LockNoteDialog(locks, onDismiss = { locking = null }) {
+        LockSession.State.Locked -> LockNoteDialog(locks, onDismiss = { locking = null }, fingerprint = fingerprint) {
             locking = null
             setLocked(true)
         }

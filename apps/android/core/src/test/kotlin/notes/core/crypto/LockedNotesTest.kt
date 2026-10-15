@@ -44,7 +44,7 @@ class LockedNotesTest {
 
     private val fixtures: Suite by lazy {
         val dir = System.getProperty("notes.sharedDir") ?: error("notes.sharedDir not set (run through Gradle)")
-        Json { ignoreUnknownKeys = true }.decodeFromString(File(dir, "crypto-fixtures/locked.json").readText())
+        json.decodeFromString(File(dir, "crypto-fixtures/locked.json").readText())
     }
 
     private fun b(s: String) = LockedNotes.decode(s)
@@ -107,5 +107,9 @@ class LockedNotesTest {
         val code = LockedNotes.newRecoveryCode()
         assertTrue(Regex("^([2-9A-HJ-NP-Z]{3}-){7}[2-9A-HJ-NP-Z]{3}$").matches(code), code)
         assertEquals(code.replace("-", ""), LockedNotes.normalizeRecoveryCode(code.lowercase().replace('-', ' ')))
+    }
+
+    private companion object {
+        val json = Json { ignoreUnknownKeys = true }
     }
 }

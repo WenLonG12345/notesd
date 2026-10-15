@@ -5,6 +5,7 @@ import { LOCKED_PREFIX, decryptBody, fromBase64Url, importKey, passwordKek, unwr
 import { lockTiming } from '../src/locks/session'
 import { bodyText, createNote, getNote, list, listNotes, noteTitle, saved, signedIn, typeAtEnd } from './helpers'
 import type { TestServer } from './server'
+import { fakeAuthenticator } from './webauthn'
 
 const LOCK_PASSWORD = 'lock pass 123'
 const moreMenu = () => screen.getByRole('menu', { name: 'More' })
@@ -142,5 +143,81 @@ describe('locked notes', () => {
     await s.user.click(screen.getByRole('button', { name: 'More' }))
     expect(within(moreMenu()).queryByRole('menuitem', { name: 'Email…' })).toBeNull()
     expect(within(moreMenu()).getByRole('menuitem', { name: 'Remove lock' })).toBeTruthy()
+  })
+})
+
+async function addPasskey(s: Session) {
+  await s.user.click(screen.getByRole('button', { name: 'Settings' }))
+  const group = await screen.findByRole('group', { name: 'Passkeys' })
+  await s.user.click(within(group).getByRole('button', { name: 'Add a passkey' }))
+  await s.user.type(within(group).getByLabelText('Lock password'), LOCK_PASSWORD)
+  await s.user.click(within(group).getByRole('button', { name: 'Continue' }))
+  return group
+}
+
+async function closeSettings(s: Session) {
+  await s.user.click(screen.getByRole('button', { name: 'Done' }))
+}
+
+describe('passkeys for locked notes', () => {
+  it('a passkey added in Settings unlocks locked notes', async () => {
+    fakeAuthenticator()
+    const s = await seeded()
+    await lockOpenNote(s)
+    const group = await addPasskey(s)
+    expect(await within(group).findByText(/^Passkey added\./)).toBeTruthy()
+    const { keys } = (await s.server.api<{ keys: LockKey[] }>('GET', '/locks')).body
+    expect(keys.map((k) => k.kind)).toEqual(['password', 'passkey'])
+
+    await closeSettings(s)
+    await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    await screen.findByText('This note is locked.')
+    await s.user.click(screen.getByRole('button', { name: 'Use a passkey' }))
+    await waitFor(() => expect(bodyText()).toBe('PIN 1234 #money'))
+  })
+
+  it('dismissing the passkey prompt changes nothing', async () => {
+    const auth = fakeAuthenticator()
+    const s = await seeded()
+    await lockOpenNote(s)
+    await addPasskey(s)
+    await closeSettings(s)
+    await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    await screen.findByText('This note is locked.')
+    auth.dismissNext = true
+    await s.user.click(screen.getByRole('button', { name: 'Use a passkey' }))
+    expect(screen.getByText('This note is locked.')).toBeTruthy()
+    expect(screen.queryByText(/couldn’t unlock/)).toBeNull()
+  })
+
+  it('an authenticator without PRF is refused and nothing is stored', async () => {
+    fakeAuthenticator({ prf: false })
+    const s = await seeded()
+    await lockOpenNote(s)
+    const group = await addPasskey(s)
+    expect(await within(group).findByText(/doesn’t support the PRF extension/)).toBeTruthy()
+    const { keys } = (await s.server.api<{ keys: LockKey[] }>('GET', '/locks')).body
+    expect(keys.map((k) => k.kind)).toEqual(['password'])
+  })
+
+  it('a wrong lock password adds no passkey; a passkey can be removed', async () => {
+    fakeAuthenticator()
+    const s = await seeded()
+    await lockOpenNote(s)
+    await s.user.click(screen.getByRole('button', { name: 'Settings' }))
+    const group = await screen.findByRole('group', { name: 'Passkeys' })
+    await s.user.click(within(group).getByRole('button', { name: 'Add a passkey' }))
+    await s.user.type(within(group).getByLabelText('Lock password'), 'not it')
+    await s.user.click(within(group).getByRole('button', { name: 'Continue' }))
+    expect(await within(group).findByText('That isn’t your lock password.')).toBeTruthy()
+
+    await s.user.clear(within(group).getByLabelText('Lock password'))
+    await s.user.type(within(group).getByLabelText('Lock password'), LOCK_PASSWORD)
+    await s.user.click(within(group).getByRole('button', { name: 'Continue' }))
+    await within(group).findByText(/^Passkey added\./)
+    await s.user.click(within(group).getByRole('button', { name: /^Remove passkey/ }))
+    await waitFor(() => expect(within(group).queryByRole('button', { name: /^Remove passkey/ })).toBeNull())
+    const { keys } = (await s.server.api<{ keys: LockKey[] }>('GET', '/locks')).body
+    expect(keys.map((k) => k.kind)).toEqual(['password'])
   })
 })

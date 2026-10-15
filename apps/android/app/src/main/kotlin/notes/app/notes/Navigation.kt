@@ -293,6 +293,7 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
                                         EditorViewModel(graph.store, key.id, graph.scope, graph.locks, key.startTag)
                                     },
                                     locks = graph.locks,
+                                    fingerprint = graph.fingerprint,
                                     showBack = !twoPane,
                                     emailFrom = email?.takeIf { it.configured && account is Account.SignedIn }?.from,
                                     emailRequested = emailFor == key.id,

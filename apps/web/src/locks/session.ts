@@ -5,6 +5,7 @@ import {
   LockedError,
   kdfCost,
   importKey,
+  passkeyKek,
   passwordKek,
   randomBytes,
   toBase64Url,
@@ -13,6 +14,7 @@ import {
   verifier as verifierOf,
   wrap,
 } from './crypto'
+import { createPasskey, signInWithPasskey } from './passkey'
 
 /**
  * - unknown: the keyring hasn't been fetched
@@ -73,7 +75,8 @@ class LockSession {
     const p = api.keys().then(
       ({ keys }) => {
         this.keyring = keys
-        if (this.status !== 'unlocked') this.set(keys.some((k) => k.kind === 'password') ? 'locked' : 'none')
+        // Always notifies: the keyring itself may have changed (a passkey added elsewhere).
+        this.set(this.status === 'unlocked' ? 'unlocked' : keys.some((k) => k.kind === 'password') ? 'locked' : 'none')
       },
       (err: unknown) => {
         this.loading = null
@@ -100,6 +103,51 @@ class LockSession {
     this.keyring = [key]
     await this.adopt(raw, proof)
   }
+
+  /** Asks for one of the keyring's passkeys. Throws PasskeyError when dismissed or unsupported. */
+  async unlockWithPasskey(): Promise<void> {
+    await this.load()
+    const passkeys = this.keyring.filter((k) => k.kind === 'passkey')
+    const { credentialId, secret } = await signInWithPasskey(passkeys)
+    const entry = passkeys.find((k) => k.credentialId === credentialId)
+    if (!entry) throw new LockedError('That passkey can’t unlock notes')
+    const raw = await unwrapRaw(await passkeyKek(secret, fromBase64Url(entry.salt)), entry.wrapped, 'passkey')
+    await this.adopt(raw, await verifierOf(raw))
+  }
+
+  /**
+   * A new passkey that unlocks locked notes. The lock password unwraps the
+   * key to wrap it again for the passkey (the session's copy can't be read
+   * back out). Throws LockedError for a wrong password, PasskeyError when
+   * the passkey can't be made or can't give a PRF secret.
+   */
+  async addPasskey(password: string, username: string): Promise<void> {
+    await this.load(true)
+    const raw = await this.unwrapWithPassword(password)
+    const salt = randomBytes(32)
+    const { credentialId, secret } = await createPasskey(username, salt)
+    const proof = await verifierOf(raw)
+    const key = await api.put(toBase64Url(randomBytes(12)), {
+      kind: 'passkey',
+      credentialId,
+      salt: toBase64Url(salt),
+      iterations: 0,
+      wrapped: await wrap(await passkeyKek(secret, salt), raw, 'passkey'),
+      verifier: proof,
+    })
+    this.keyring = [...this.keyring, key]
+    await this.adopt(raw, proof)
+  }
+
+  /** Stops a passkey unlocking notes. Needs the key in memory (its verifier). */
+  async removePasskey(id: string): Promise<void> {
+    if (!this.proof) throw new LockedError('Unlock locked notes first')
+    await api.remove(id, this.proof)
+    this.keyring = this.keyring.filter((k) => k.id !== id)
+    this.set(this.status)
+  }
+
+  getKeys = (): readonly LockKey[] => this.keyring
 
   /** Throws LockedError when the password is wrong. */
   async unlock(password: string): Promise<void> {
@@ -215,4 +263,9 @@ export const lockSession = new LockSession()
 
 export function useLockStatus(): LockStatus {
   return useSyncExternalStore(lockSession.subscribe, lockSession.getStatus)
+}
+
+/** The keyring as last fetched or changed here. */
+export function useLockKeys(): readonly LockKey[] {
+  return useSyncExternalStore(lockSession.subscribe, lockSession.getKeys)
 }

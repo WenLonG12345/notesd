@@ -16,6 +16,9 @@ import notes.app.account.Account
 import notes.app.account.AccountStore
 import notes.app.account.KeystoreSealer
 import notes.app.account.Sealer
+import notes.app.locks.Biometrics
+import notes.app.locks.FingerprintUnlock
+import notes.app.locks.KeystoreBiometrics
 import notes.app.notes.Deletions
 import notes.app.notes.TagTreeState
 import notes.app.settings.Appearance
@@ -30,7 +33,11 @@ import notes.core.sync.SyncEngine
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /** The app's long-lived objects, wired by hand. One per process, owned by [NotesApp]. */
-class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
+class AppGraph(
+    context: Context,
+    sealer: Sealer = KeystoreSealer(),
+    biometrics: Biometrics = KeystoreBiometrics(context)
+) {
     /** Outlives screens: saves and deletes started here finish after the screen that asked is gone. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -46,6 +53,9 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
 
     /** The locked-notes key (§10.1), unlocked against the keyring sync keeps. */
     val locks = LockSession(sync.lockKeys, { api() }, scope)
+
+    /** Opens locked notes with the fingerprint instead of the lock password, once turned on here. */
+    val fingerprint = FingerprintUnlock(context, locks, biometrics)
 
     /** Emails notes through the server; it syncs a note before sending it. */
     val mailer = NoteMailer(store, sync) { api() }
@@ -89,6 +99,7 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
         withTimeoutOrNull(LOGOUT_WAIT_MS) { api()?.logout() }
         accounts.signOut()
         locks.lock()
+        fingerprint.disable()
     }
 
     /** Back to a fresh install: no notes, no account, onboarding on next launch. */
@@ -96,6 +107,7 @@ class AppGraph(context: Context, sealer: Sealer = KeystoreSealer()) {
         if (accounts.account.value is Account.SignedIn) withTimeoutOrNull(LOGOUT_WAIT_MS) { api()?.logout() }
         store.wipe()
         locks.forget()
+        fingerprint.disable()
         accounts.clear()
         setOnboardingDismissed(false)
     }

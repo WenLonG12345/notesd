@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.Lifecycle
@@ -17,6 +18,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import notes.app.FakeBiometrics
 import notes.app.MainActivity
 import notes.app.NotesApp
 import notes.app.TestNotesApp
@@ -59,6 +61,8 @@ class LockedNoteFlowTest {
     fun tearDown() {
         scenario?.close()
         graph.database.close()
+        FakeBiometrics.cancelNext = false
+        FakeBiometrics.invalidated = false
     }
 
     private fun openBank() {
@@ -131,6 +135,44 @@ class LockedNoteFlowTest {
             runBlocking { graph.store.get("d")?.content }?.let { LockedNotes.isLocked(it) } == true
         }
         assertEquals("Dear diary\n", LockedNotes.decrypt(key, runBlocking { graph.store.get("d")!!.content }))
+    }
+
+    @Test
+    fun `fingerprint unlock, once turned on in Settings, opens locked notes`() {
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitUntilExactlyOneExists(hasText("Locked"))
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNode(hasText("Unlock with fingerprint")).performScrollTo().performClick()
+        compose.waitUntilExactlyOneExists(hasText("Unlock locked notes"))
+        unlock(PASSWORD)
+        compose.waitUntilExactlyOneExists(hasText("Fingerprint unlock is on for this phone."))
+        assertTrue(graph.fingerprint.enabled.value)
+
+        runBlocking { graph.locks.lock() }
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Bank").performClick()
+        // Opening the note asks for the fingerprint at once; the fake one matches.
+        compose.waitUntilExactlyOneExists(hasContentDescription("Lock now"))
+        assertEquals(LockSession.State.Unlocked, graph.locks.state.value)
+    }
+
+    @Test
+    fun `a new lock password elsewhere turns fingerprint unlock off`() {
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitUntilExactlyOneExists(hasText("Locked"))
+        runBlocking { graph.locks.unlock(PASSWORD) }
+        scenario!!.onActivity { activity -> runBlocking { graph.fingerprint.enable(activity) } }
+        assertTrue(graph.fingerprint.enabled.value)
+        runBlocking {
+            graph.locks.lock()
+            // The keyring was reset on another device and a new password made: the kept key is stale.
+            graph.sync.lockKeys.replace(listOf(Keyring.create("another one", iterations = 10_000).entry))
+        }
+
+        compose.onNodeWithText("Bank").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Fingerprint unlock is off", substring = true))
+        assertEquals(false, graph.fingerprint.enabled.value)
+        compose.onNodeWithText("Use fingerprint").assertDoesNotExist()
     }
 
     private companion object {

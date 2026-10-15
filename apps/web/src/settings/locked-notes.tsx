@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { ApiError } from '../api/client'
 import { genericMessage } from '../auth/errors'
 import { LockedError } from '../locks/crypto'
-import { lockSession, useLockStatus } from '../locks/session'
+import { PasskeyError, passkeysAvailable } from '../locks/passkey'
+import { lockSession, useLockKeys, useLockStatus } from '../locks/session'
 import { MIN_LOCK_PASSWORD } from '../locks/unlock'
 import { Button } from '../ui/button'
 import { Field } from '../ui/field'
@@ -13,7 +14,7 @@ import styles from './settings.module.css'
 type Errors = Partial<Record<'current' | 'next' | 'confirm' | 'account', string>>
 
 /** Locked notes (§10.1): change the lock password, lock now, or reset after forgetting it. */
-export function LockedNotesCard() {
+export function LockedNotesCard({ username }: { username: string }) {
   const status = useLockStatus()
   useEffect(() => {
     void lockSession.load().catch(() => undefined)
@@ -29,7 +30,12 @@ export function LockedNotesCard() {
           server can’t read it.
         </span>
       )}
-      {(status === 'locked' || status === 'unlocked') && <Manage unlocked={status === 'unlocked'} />}
+      {(status === 'locked' || status === 'unlocked') && (
+        <>
+          <Manage unlocked={status === 'unlocked'} />
+          <Passkeys username={username} unlocked={status === 'unlocked'} />
+        </>
+      )}
     </Surface>
   )
 }
@@ -179,5 +185,112 @@ function Manage({ unlocked }: { unlocked: boolean }) {
         </div>
       </div>
     </>
+  )
+}
+
+/** Passkeys that unlock locked notes instead of the lock password (WebAuthn PRF). */
+function Passkeys({ username, unlocked }: { username: string; unlocked: boolean }) {
+  const passkeys = useLockKeys().filter((k) => k.kind === 'passkey')
+  const available = passkeysAvailable()
+  const [adding, setAdding] = useState(false)
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string>()
+  const [message, setMessage] = useState<string>()
+  const [busy, setBusy] = useState(false)
+
+  async function add(e: FormEvent) {
+    e.preventDefault()
+    if (!password) return
+    setBusy(true)
+    setError(undefined)
+    setMessage(undefined)
+    try {
+      await lockSession.addPasskey(password, username)
+      setAdding(false)
+      setPassword('')
+      setMessage('Passkey added. Use it to unlock locked notes wherever it’s available.')
+    } catch (err) {
+      if (err instanceof PasskeyError && err.reason === 'cancelled') return
+      if (err instanceof LockedError) setError('That isn’t your lock password.')
+      else if (err instanceof PasskeyError) setError(err.message)
+      else setError(genericMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove(id: string) {
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      await lockSession.removePasskey(id)
+    } catch (err) {
+      setMessage(genericMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!available && passkeys.length === 0) return null
+  return (
+    <div className={styles.forgot} role="group" aria-label="Passkeys">
+      <span className={styles.muted}>
+        {passkeys.length === 0
+          ? 'Unlock with a passkey (fingerprint, face or device PIN) instead of typing the lock password.'
+          : 'These passkeys unlock locked notes:'}
+      </span>
+      {passkeys.map((k) => (
+        <div key={k.id} className={styles.buttons}>
+          <span className={styles.text}>Passkey added {new Date(k.createdAt).toLocaleDateString()}</span>
+          <Button
+            variant="danger-text"
+            size="sm"
+            onClick={() => void remove(k.id)}
+            disabled={busy || !unlocked}
+            title={unlocked ? undefined : 'Unlock locked notes to remove a passkey'}
+            aria-label={`Remove passkey added ${new Date(k.createdAt).toLocaleDateString()}`}
+          >
+            Remove
+          </Button>
+        </div>
+      ))}
+      {message && (
+        <p role="status" className={styles.success}>
+          {message}
+        </p>
+      )}
+      {available &&
+        (adding ? (
+          <form className={styles.form} onSubmit={(e) => void add(e)} noValidate>
+            <Field
+              label="Lock password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value)
+                setError(undefined)
+              }}
+              error={error}
+              hint="Needed once, to give the passkey a copy of the key."
+              autoFocus
+            />
+            <div className={styles.buttons}>
+              <Button variant="solid" size="md" type="submit" busy={busy}>
+                {busy ? 'Waiting for the passkey…' : 'Continue'}
+              </Button>
+              <Button size="md" onClick={() => setAdding(false)} disabled={busy}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div>
+            <Button size="sm" onClick={() => setAdding(true)}>
+              Add a passkey
+            </Button>
+          </div>
+        ))}
+    </div>
   )
 }

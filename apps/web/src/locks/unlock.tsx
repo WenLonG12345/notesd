@@ -6,18 +6,21 @@ import { Field } from '../ui/field'
 import { PasswordMeter } from '../ui/password-meter'
 import { useShake } from '../ui/shake'
 import { LockedError } from './crypto'
-import { lockSession } from './session'
+import { PasskeyError, passkeysAvailable } from './passkey'
+import { lockSession, useLockKeys } from './session'
 import styles from './locks.module.css'
 
 /** Shortest lock password accepted; it's the only thing between the server and the notes. */
 export const MIN_LOCK_PASSWORD = 8
+
+const UNLOCK: [string, string] = ['Unlock', 'Unlocking…']
 
 /** The lock password field and its button ([action], Unlock by default); inline in the note pane or inside LockNoteDialog. */
 export function UnlockForm({
   onUnlocked,
   onCancel,
   autoFocus = true,
-  action = ['Unlock', 'Unlocking…'],
+  action = UNLOCK,
 }: {
   onUnlocked: () => void
   onCancel?: () => void
@@ -28,6 +31,21 @@ export function UnlockForm({
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
   const [ref, shake] = useShake<HTMLFormElement>()
+  const canPasskey = useLockKeys().some((k) => k.kind === 'passkey') && passkeysAvailable()
+
+  async function passkey() {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await lockSession.unlockWithPasskey()
+      onUnlocked()
+    } catch (err) {
+      if (err instanceof PasskeyError && err.reason === 'cancelled') return
+      setError(err instanceof PasskeyError || err instanceof LockedError ? 'That passkey couldn’t unlock notes. Use the lock password.' : genericMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -69,6 +87,11 @@ export function UnlockForm({
           {busy ? action[1] : action[0]}
         </Button>
       </div>
+      {canPasskey && (
+        <Button size="md" onClick={() => void passkey()} disabled={busy}>
+          Use a passkey
+        </Button>
+      )}
     </form>
   )
 }

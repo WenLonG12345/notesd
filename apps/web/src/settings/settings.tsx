@@ -53,7 +53,7 @@ export function SettingsSheet({ username, onClose }: { username: string; onClose
         </Surface>
       </div>
 
-      <LockedNotesCard />
+      <LockedNotesCard username={username} />
 
       <EmailCard />
 
