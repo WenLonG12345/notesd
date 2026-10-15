@@ -116,13 +116,6 @@
   view-transition-name: note-page;
 }
 
-.date {
-  padding-bottom: 14px;
-  text-align: center;
-  font-size: 11.5px;
-  color: var(--ink-3);
-}
-
 /* Opens upward from the dock's Aa. */
 .popover {
   position: absolute;

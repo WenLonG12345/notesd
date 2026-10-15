@@ -15,14 +15,15 @@ function subscribe(listener: () => void) {
   }
 }
 
-export function navigate(path: string, { replace = false } = {}) {
+/** [animate]: false for moves the user didn't make, which shouldn't play a transition. */
+export function navigate(path: string, { replace = false, animate = true } = {}) {
   if (path === window.location.pathname) return
   const go = () => {
     if (replace) window.history.replaceState(null, '', path)
     else window.history.pushState(null, '', path)
     for (const listener of listeners) listener()
   }
-  const nav = replace ? null : transitionFor(window.location.pathname, path)
+  const nav = replace || !animate ? null : transitionFor(window.location.pathname, path)
   if (!nav || !document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     go()
     return

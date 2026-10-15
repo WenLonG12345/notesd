@@ -240,7 +240,6 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
   const snap = useSyncExternalStore(saver.subscribe, saver.getSnapshot)
   const { touch, tags, setFilter } = useNotes()
   const [initial] = useState(() => saver.fields())
-  const [openedAt] = useState(() => Date.now())
   const [linkOpen, setLinkOpen] = useState(false)
   const [stylesOpen, setStylesOpen] = useState(false)
   const touchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -380,7 +379,6 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
           : problem === null
             ? 'Waiting for you to sign in again'
             : undefined
-  const edited = snap.created && snap.updatedAt !== null ? snap.updatedAt : openedAt
 
   return (
     <>
@@ -492,7 +490,6 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
 
       <div className={styles.scroller}>
         <div className={styles.page}>
-          <div className={styles.date}>{formatEdited(edited)}</div>
           <NoteContent editor={editor} />
         </div>
       </div>
@@ -577,14 +574,4 @@ function Notice({ tone, actions, children }: { tone: 'error' | 'warn'; actions: 
       </Banner>
     </div>
   )
-}
-
-function formatEdited(ts: number): string {
-  return new Date(ts).toLocaleString(undefined, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
 }
