@@ -36,3 +36,39 @@ describe('canonical form of Markdown written elsewhere', () => {
     })
   }
 })
+
+/** The inline nodes other than text. */
+function nodes(md: string) {
+  const out: { type: string; attrs: Record<string, unknown> }[] = []
+  parse(md).descendants((n) => {
+    if (n.isInline && !n.isText) out.push({ type: n.type.name, attrs: n.attrs })
+  })
+  return out
+}
+
+describe('images (spec §7.6)', () => {
+  const id = 'ab'.repeat(32)
+
+  it('an app image is an image node with its id, size and alt', () => {
+    const source = `![a \\*cat\\*](notesd:image/${id}?w=1600&h=1200)`
+    expect(nodes(`${source}\n`)).toEqual([{ type: 'image', attrs: { source, id, w: 1600, h: 1200, alt: 'a *cat*' } }])
+  })
+
+  it('any other image stays a raw run, kept as written', () => {
+    for (const md of [
+      '![a](cat.png)',
+      `![a](notesd:image/${id})`,
+      `![a](notesd:image/${id.toUpperCase()}?w=1&h=1)`,
+      `![a](notesd:image/${id}?w=0&h=1)`,
+    ]) {
+      expect(nodes(md), md).toEqual([{ type: 'rawInline', attrs: { source: md } }])
+      expect(serialize(parse(md)), md).toBe(`${md}\n`)
+    }
+  })
+
+  it('a link to an app image is a link, not a picture', () => {
+    const md = `[a](notesd:image/${id}?w=1&h=1)`
+    expect(nodes(md)).toEqual([])
+    expect(serialize(parse(md))).toBe(`${md}\n`)
+  })
+})

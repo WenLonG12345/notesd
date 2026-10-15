@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -18,18 +19,27 @@ import (
 	"golang.org/x/term"
 
 	"notes/server/internal/database"
+	"notes/server/internal/images"
 	"notes/server/internal/locks"
 	"notes/server/internal/notes"
 )
 
-const maxFileNameBytes = 100
+const (
+	maxFileNameBytes = 100
+	imagesDir        = "images"
+)
 
 // exported counts what an export wrote and what it left out.
 type exported struct {
-	Written    int
-	Locked     int // skipped: no key given
-	Unreadable int // locked, but the key didn't open them
+	Written       int
+	Locked        int // skipped: no key given
+	Unreadable    int // locked, but the key didn't open them
+	Images        int // image files written to images/
+	MissingImages int // left as notesd:image/ references: not on the server, or locked and not opened
 }
+
+// getImage returns a stored image's type and bytes, or images.ErrNotFound.
+type getImage func(id string) (contentType string, data []byte, err error)
 
 func liveNotes(ctx context.Context, db *database.DB) ([]notes.Note, error) {
 	var all []notes.Note
@@ -56,8 +66,9 @@ func liveNotes(ctx context.Context, db *database.DB) ([]notes.Note, error) {
 }
 
 // writeExport writes each note to dir as Markdown, one file each. Locked
-// notes are decrypted with key, or skipped without one.
-func writeExport(dir string, all []notes.Note, key []byte) (exported, error) {
+// notes are decrypted with key, or skipped without one. The images notes
+// show are written to dir/images, and their references pointed there.
+func writeExport(dir string, all []notes.Note, key []byte, get getImage) (exported, error) {
 	var res exported
 	if err := checkExportDir(dir); err != nil {
 		return res, err
@@ -67,6 +78,8 @@ func writeExport(dir string, all []notes.Note, key []byte) (exported, error) {
 	}
 	// Keyed case-insensitively: macOS and Windows filesystems are.
 	taken := map[string]bool{}
+	// Image id → its path in the export, or "" if it couldn't be written.
+	written := map[string]string{}
 	for _, n := range all {
 		content := n.Content
 		if locks.IsLocked(content) {
@@ -81,6 +94,10 @@ func writeExport(dir string, all []notes.Note, key []byte) (exported, error) {
 			}
 			content = plain
 		}
+		content, err := exportImages(dir, content, key, get, written, &res)
+		if err != nil {
+			return res, err
+		}
 		path := filepath.Join(dir, uniqueName(fileName(n.Title), taken))
 		if err := os.WriteFile(path, []byte(markdown(n.Title, content)), 0o600); err != nil {
 			return res, err
@@ -92,6 +109,79 @@ func writeExport(dir string, all []notes.Note, key []byte) (exported, error) {
 		res.Written++
 	}
 	return res, nil
+}
+
+// appImageRef is an app image's destination as the apps write it (§7.6).
+var appImageRef = regexp.MustCompile(`\]\(notesd:image/([0-9a-f]{64})\?w=[1-9]\d{0,5}&h=[1-9]\d{0,5}\)`)
+
+// exportImages writes the app images content shows to dir/images (once
+// each, tracked in written) and points their references at the files. A
+// locked image is decrypted with key; one that can't be had or opened keeps
+// its reference.
+func exportImages(dir, content string, key []byte, get getImage, written map[string]string, res *exported) (string, error) {
+	// Only real images: the same text inside code is left alone.
+	shown := map[string]bool{}
+	for _, id := range images.Refs(content) {
+		shown[id] = true
+	}
+	if len(shown) == 0 {
+		return content, nil
+	}
+	for id := range shown {
+		if _, done := written[id]; done {
+			continue
+		}
+		path, err := writeImage(dir, id, key, get)
+		if err != nil {
+			return "", err
+		}
+		written[id] = path
+		if path == "" {
+			res.MissingImages++
+		} else {
+			res.Images++
+		}
+	}
+	return appImageRef.ReplaceAllStringFunc(content, func(ref string) string {
+		id := appImageRef.FindStringSubmatch(ref)[1]
+		if !shown[id] || written[id] == "" {
+			return ref
+		}
+		return "](" + written[id] + ")"
+	}), nil
+}
+
+// writeImage writes one image as a plain image file and returns its path
+// relative to dir, or "" if it isn't stored or is locked and key doesn't open it.
+func writeImage(dir, id string, key []byte, get getImage) (string, error) {
+	contentType, data, err := get(id)
+	if errors.Is(err, images.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("image %s: %w", id, err)
+	}
+	if contentType == images.Locked {
+		if key == nil {
+			return "", nil
+		}
+		if data, err = locks.DecryptImage(key, data); err != nil {
+			return "", nil
+		}
+		contentType = images.Sniff(data)
+	}
+	ext := images.Ext(contentType)
+	if ext == "" {
+		return "", nil
+	}
+	if err := os.MkdirAll(filepath.Join(dir, imagesDir), 0o700); err != nil {
+		return "", err
+	}
+	path := imagesDir + "/" + id + "." + ext
+	if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(path)), data, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // checkExportDir accepts a missing or empty dir, so an export never

@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"html"
 	"strings"
+	"time"
 	"unicode"
 
 	"notes/server/internal/database"
+	"notes/server/internal/images"
 	"notes/server/internal/locks"
 )
 
@@ -155,12 +157,25 @@ func RebuildIfNeeded(ctx context.Context, db *database.DB) (rebuilt bool, err er
 	return err == nil, err
 }
 
-// Rebuild recreates the whole index and tags from the notes table without
+// Rebuild recreates the whole index, tags and plain notes' image references
+// from the notes table without
 // touching sync state (§8.1).
 func Rebuild(ctx context.Context, db *database.DB) (int, error) {
 	n := 0
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM notes_fts; DELETE FROM note_tags; DELETE FROM rebuild_index`); err != nil {
+			return err
+		}
+		// Image references are recomputed for plain notes below (SetRefs
+		// releases any they drop). A locked note's were listed by its client
+		// and can't be read from its ciphertext, so they stay.
+		now := time.Now().UnixMilli()
+		if _, err := tx.ExecContext(ctx, `UPDATE images SET released_at = ? WHERE id IN
+			(SELECT r.image_id FROM note_images r JOIN notes n ON n.seq = r.note_seq WHERE n.deleted_at IS NOT NULL)`, now); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM note_images WHERE note_seq IN
+			(SELECT seq FROM notes WHERE deleted_at IS NOT NULL)`); err != nil {
 			return err
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT seq, title, content FROM notes WHERE deleted_at IS NULL`)
@@ -188,6 +203,14 @@ func Rebuild(ctx context.Context, db *database.DB) (int, error) {
 			if err := insert(ctx, tx, d.seq, d.title, d.content); err != nil {
 				return err
 			}
+			if !locks.IsLocked(d.content) {
+				if err := images.SetRefs(ctx, tx, d.seq, images.Refs(d.content), now); err != nil {
+					return err
+				}
+			}
+		}
+		if err := images.ReleaseUntracked(ctx, tx, now); err != nil {
+			return err
 		}
 		n = len(docs)
 		_, err = tx.ExecContext(ctx, `INSERT INTO notes_fts (notes_fts) VALUES ('optimize')`)

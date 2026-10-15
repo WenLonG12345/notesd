@@ -125,8 +125,8 @@ export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile
             className={styles.item}
             onClick={() => {
               setOpen(false)
-              if (locked) saver.setLocked(false)
-              else if (lockSession.key()) saver.setLocked(true)
+              if (locked) void saver.changeLock(false)
+              else if (lockSession.key()) void saver.changeLock(true)
               else {
                 // Until the keyring is fetched, 'unknown' can't tell a first lock from a later one.
                 const choose = () => setLocking(lockSession.getStatus() === 'none' ? 'setup' : 'unlock')
@@ -160,7 +160,7 @@ export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile
           onClose={() => setLocking(null)}
           onDone={() => {
             setLocking(null)
-            saver.setLocked(true)
+            void saver.changeLock(true)
           }}
         />
       )}
@@ -169,7 +169,7 @@ export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile
           onClose={() => setLocking(null)}
           onUnlocked={() => {
             setLocking(null)
-            saver.setLocked(true)
+            void saver.changeLock(true)
           }}
         />
       )}

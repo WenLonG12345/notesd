@@ -421,3 +421,22 @@
   background: var(--accent);
   color: var(--on-accent);
 }
+
+/* --- images (spec §7.6): one per line, as wide as the text at most --- */
+.prose [data-image-view] {
+  display: block;
+  margin: 0.6em 0;
+  line-height: 0;
+}
+
+.prose [data-image-view] img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  background: var(--hover);
+}
+
+.prose [data-image-view][data-state='missing'] img {
+  border: 1px dashed var(--hair-strong);
+}

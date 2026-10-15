@@ -15,6 +15,7 @@ import notes.core.db.Database
 import notes.core.db.Note
 import notes.core.db.NoteStore
 import notes.core.db.SyncEvent
+import notes.core.images.ImageStore
 import okhttp3.Interceptor
 import okhttp3.Request
 
@@ -30,9 +31,14 @@ class TestClient(private val server: TestServer, private val pageSize: Int = 100
     private var db = Database(File(dir, "notes.db").path)
     var notes = NoteStore(db)
         private set
+    var images = newImages()
+        private set
     var engine = newEngine()
         private set
     val events = ArrayList<SyncEvent>()
+
+    /** The JSON bodies of note requests that went out, as "METHOD path" to body. */
+    val sentNotes = ArrayList<Pair<String, String>>()
 
     /** Every request fails as if there were no network. */
     var offline = false
@@ -70,6 +76,11 @@ class TestClient(private val server: TestServer, private val pageSize: Int = 100
                 Fault.Kind.Before -> fault.action()
                 else -> Unit
             }
+            val path = request.url.encodedPath
+            if (path.startsWith("/api/v1/notes") && request.body?.contentType()?.subtype == "json") {
+                val body = okio.Buffer().also { request.body!!.writeTo(it) }.readUtf8()
+                sentNotes += "${request.method} $path" to body
+            }
             val response = chain.proceed(request)
             if (fault?.kind == Fault.Kind.LoseResponse) {
                 response.close()
@@ -97,7 +108,9 @@ class TestClient(private val server: TestServer, private val pageSize: Int = 100
 
     fun mailer() = NoteMailer(notes, engine) { api }
 
-    private fun newEngine() = SyncEngine(db, { api }, pageSize)
+    private fun newImages() = ImageStore(db, File(dir, "images"), File(dir, "cache/images"), { api })
+
+    private fun newEngine() = SyncEngine(db, { api }, pageSize, images = images)
 
     suspend fun signIn(): TestClient {
         val r = ApiClient(server.url, http = http).login(TestServer.USERNAME, TestServer.PASSWORD, "test")
@@ -121,6 +134,7 @@ class TestClient(private val server: TestServer, private val pageSize: Int = 100
         db.close()
         db = Database(File(dir, "notes.db").path)
         notes = NoteStore(db)
+        images = newImages()
         engine = newEngine()
     }
 

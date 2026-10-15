@@ -135,3 +135,13 @@ export function LockIcon({ size = 14 }: Props) {
     </svg>
   )
 }
+
+export function ImageIcon({ size = 16 }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="10" rx="2" />
+      <circle cx="6" cy="6.5" r="1.1" />
+      <path d="M2.5 11.5l3.5-3 2.5 2 2-1.5 3 2.5" />
+    </svg>
+  )
+}

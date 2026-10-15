@@ -56,7 +56,14 @@ import notes.core.doc.ListKind
  * italic I, serif heading sizes.
  */
 @Composable
-fun FormattingBar(state: FormatState, editor: () -> NoteEditText?, onLink: () -> Unit, modifier: Modifier = Modifier) {
+fun FormattingBar(
+    state: FormatState,
+    editor: () -> NoteEditText?,
+    onLink: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** Add a picture (opens the photo picker); null hides the button. */
+    onImage: (() -> Unit)? = null
+) {
     val reduce = LocalReduceMotion.current
     Crossfade(
         targetState = state.selecting,
@@ -72,13 +79,13 @@ fun FormattingBar(state: FormatState, editor: () -> NoteEditText?, onLink: () ->
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            if (selecting) SelectionTools(state, editor, onLink) else WritingTools(state, editor)
+            if (selecting) SelectionTools(state, editor, onLink) else WritingTools(state, editor, onImage)
         }
     }
 }
 
 @Composable
-private fun WritingTools(state: FormatState, editor: () -> NoteEditText?) {
+private fun WritingTools(state: FormatState, editor: () -> NoteEditText?, onImage: (() -> Unit)?) {
     val body = !state.inTitle
     for (level in 1..3) {
         val style = when (level) {
@@ -97,6 +104,7 @@ private fun WritingTools(state: FormatState, editor: () -> NoteEditText?) {
     }
     Toggle("Checklist", Icons.Checklist, state.list == ListKind.Task, body) { editor()?.toggleList(ListKind.Task) }
     Toggle("Quote", Icons.Quote, state.quote, body) { editor()?.toggleQuote() }
+    if (onImage != null) Action("Add picture", Icons.Image, enabled = true, onClick = onImage)
     if (state.canIndent || state.canOutdent) {
         Separator()
         Action("Outdent", Icons.Outdent, state.canOutdent) { editor()?.outdent() }

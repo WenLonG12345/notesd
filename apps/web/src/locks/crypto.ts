@@ -5,6 +5,7 @@
 /** A locked note's content starts with this; the rest is base64url(nonce ‖ ciphertext ‖ tag). */
 export const LOCKED_PREFIX = 'notesd:locked:v1:'
 const BODY_AAD = 'notesd:locked:v1'
+const IMAGE_AAD = 'notesd:image:v1'
 const PASSKEY_INFO = 'notesd:passkey:v1'
 // PBKDF2 cost for new wraps; existing wraps carry their own. Tests lower it.
 export const kdfCost = { password: 600_000, recovery: 10_000 }
@@ -100,6 +101,16 @@ export async function decryptBody(key: CryptoKey, content: string): Promise<stri
   } catch {
     throw new LockedError('Not UTF-8')
   }
+}
+
+/** Encrypts a locked note's image file (architecture §7.6): nonce ‖ ciphertext ‖ tag, binary. */
+export function sealImage(key: CryptoKey, file: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+  return seal(key, file, IMAGE_AAD)
+}
+
+/** Decrypts a locked note's image; throws LockedError unless this key sealed it as an image. */
+export function openImage(key: CryptoKey, sealed: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+  return open(key, sealed, IMAGE_AAD)
 }
 
 /** PBKDF2-HMAC-SHA256 of the NFC-normalized password: the key that wraps the locked-notes key. */

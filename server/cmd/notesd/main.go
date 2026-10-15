@@ -9,6 +9,7 @@
 //	notesd reset-password
 //	notesd reindex                  rebuild the search index
 //	notesd check                    run an integrity check
+//	notesd gc-images [--dry-run]    delete images no note has shown for 30 days
 //	notesd export --out DIR [--include-locked]
 //	                                write every note to DIR as Markdown
 //	notesd version
@@ -41,6 +42,7 @@ import (
 	"notes/server/internal/api"
 	"notes/server/internal/auth"
 	"notes/server/internal/database"
+	"notes/server/internal/images"
 	"notes/server/internal/locks"
 	"notes/server/internal/notes"
 	"notes/server/internal/search"
@@ -67,6 +69,7 @@ type options struct {
 	username   string
 	out        string
 	locked     bool
+	dryRun     bool
 }
 
 func run(args []string) error {
@@ -91,15 +94,17 @@ func run(args []string) error {
 	case "export":
 		fs.StringVar(&o.out, "out", "", "directory to write the Markdown files to (new or empty)")
 		fs.BoolVar(&o.locked, "include-locked", false, "decrypt locked notes with the lock password and export them as plain text")
+	case "gc-images":
+		fs.BoolVar(&o.dryRun, "dry-run", false, "only report what would be deleted")
 	case "reset-password", "reindex", "check":
 	case "version":
 		fmt.Println("notesd", version)
 		return nil
 	case "help", "-h", "--help":
-		fmt.Fprintln(os.Stderr, "commands: serve, create-owner, reset-password, reindex, check, export, version")
+		fmt.Fprintln(os.Stderr, "commands: serve, create-owner, reset-password, reindex, check, gc-images, export, version")
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (commands: serve, create-owner, reset-password, reindex, check, export, version)", cmd)
+		return fmt.Errorf("unknown command %q (commands: serve, create-owner, reset-password, reindex, check, gc-images, export, version)", cmd)
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -169,7 +174,36 @@ func run(args []string) error {
 			}
 			return fmt.Errorf("integrity check found %d problem(s); restore from a backup — the database has not been modified", len(problems))
 		}
+		bad, err := images.NewStore(db).Check(ctx)
+		if err != nil {
+			return err
+		}
+		if len(bad) > 0 {
+			for _, id := range bad {
+				fmt.Fprintln(os.Stderr, "image "+id+": bytes don't match its hash")
+			}
+			return fmt.Errorf("%d image(s) are damaged; restore from a backup — the database has not been modified", len(bad))
+		}
+		// Not damage: a copy from a long-offline device can show an image
+		// already deleted, or a client never uploaded one.
+		missing, err := images.NewStore(db).Missing(ctx)
+		if err != nil {
+			return err
+		}
+		for _, id := range missing {
+			fmt.Fprintln(os.Stderr, "warning: image "+id+" is shown by a note but not stored")
+		}
 		fmt.Println("ok")
+	case "gc-images":
+		n, size, err := images.NewStore(db).Collect(ctx, time.Now().Add(-images.Grace), o.dryRun)
+		if err != nil {
+			return err
+		}
+		verb := "deleted"
+		if o.dryRun {
+			verb = "would delete"
+		}
+		fmt.Printf("%s %d images (%s) that no note has shown for 30 days\n", verb, n, humanBytes(size))
 	case "export":
 		return export(ctx, db, o)
 	}
@@ -203,16 +237,23 @@ func export(ctx context.Context, db *database.DB, o options) error {
 			}
 		}
 	}
-	res, err := writeExport(o.out, all, key)
+	store := images.NewStore(db)
+	res, err := writeExport(o.out, all, key, func(id string) (string, []byte, error) {
+		img, data, err := store.Get(ctx, id)
+		return img.ContentType, data, err
+	})
 	if err != nil {
 		return err
 	}
-	fmt.Printf("exported %d notes to %s\n", res.Written, o.out)
+	fmt.Printf("exported %d notes and %d images to %s\n", res.Written, res.Images, o.out)
 	if res.Locked > 0 {
 		fmt.Printf("skipped %d locked notes; --include-locked exports them with the lock password\n", res.Locked)
 	}
 	if res.Unreadable > 0 {
 		fmt.Printf("skipped %d locked notes that the lock password doesn't open (locked under an earlier keyring, or damaged)\n", res.Unreadable)
+	}
+	if res.MissingImages > 0 {
+		fmt.Printf("left %d images as notesd:image/ references: not on the server, or encrypted and not opened\n", res.MissingImages)
 	}
 	return nil
 }
@@ -261,6 +302,7 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
+	go collectImages(ctx, images.NewStore(db), log)
 
 	select {
 	case err := <-errc:
@@ -324,4 +366,42 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// Image collection runs a while after start, so a restart loop doesn't
+// repeat it, then every few hours. Deleting is cheap; there's no hurry.
+const (
+	collectFirst = 5 * time.Minute
+	collectEvery = 6 * time.Hour
+)
+
+// collectImages deletes images no note has shown for images.Grace until ctx ends (§7.6).
+func collectImages(ctx context.Context, store *images.Store, log *slog.Logger) {
+	t := time.NewTimer(collectFirst)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		n, size, err := store.Collect(ctx, time.Now().Add(-images.Grace), false)
+		switch {
+		case err != nil && ctx.Err() == nil:
+			log.Error("delete unused images", "err", err)
+		case n > 0:
+			log.Info("deleted unused images", "count", n, "bytes", size)
+		}
+		t.Reset(collectEvery)
+	}
+}
+
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KiB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%d bytes", n)
 }

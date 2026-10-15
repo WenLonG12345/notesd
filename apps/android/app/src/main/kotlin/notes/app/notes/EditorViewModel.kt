@@ -1,5 +1,7 @@
 package notes.app.notes
 
+import android.content.ContentResolver
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +23,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import notes.app.images.ImageException
+import notes.app.images.Prepared
+import notes.app.images.prepareImage
+import notes.core.api.LOCKED_IMAGE
 import notes.core.crypto.LockSession
 import notes.core.crypto.LockedException
 import notes.core.crypto.LockedNotes
@@ -28,6 +34,8 @@ import notes.core.db.Note
 import notes.core.db.NoteStore
 import notes.core.db.TagCount
 import notes.core.doc.Document
+import notes.core.images.ImageRef
+import notes.core.images.ImageStore
 import notes.core.markdown.Markdown
 import notes.core.text.tagText
 
@@ -60,7 +68,8 @@ class EditorViewModel(
     val id: String,
     private val appScope: CoroutineScope,
     private val locks: LockSession,
-    private val startTag: String? = null
+    private val startTag: String? = null,
+    private val images: ImageStore? = null
 ) : ViewModel() {
     private val _document = MutableStateFlow<Document?>(null)
 
@@ -107,6 +116,70 @@ class EditorViewModel(
 
     /** The stored title, readable even while the note is locked. */
     val title: StateFlow<String> = _title
+
+    private val _imageProblem = MutableStateFlow<String?>(null)
+
+    /** A picture couldn't be added, or a lock change couldn't move the pictures: shown until dismissed. */
+    val imageProblem: StateFlow<String?> = _imageProblem
+
+    fun dismissImageProblem() {
+        _imageProblem.value = null
+    }
+
+    /**
+     * Stores a picked picture for this note (encrypted if it's locked) and
+     * returns the image run to insert; null, with [imageProblem] set, if it
+     * can't be used. Sync uploads it before the note.
+     */
+    suspend fun addImage(resolver: ContentResolver, uri: Uri): String? {
+        val store = images ?: return null
+        return try {
+            val prepared = prepareImage(resolver, uri)
+            val locked = _locked.value
+            var id = storeImage(store, prepared, locked)
+            // Locked or unlocked meanwhile: stored the way the note is now.
+            if (_locked.value != locked) id = storeImage(store, prepared, _locked.value)
+            ImageRef(id, prepared.width, prepared.height).markdown()
+        } catch (e: ImageException) {
+            _imageProblem.value = e.message
+            null
+        }
+    }
+
+    private suspend fun storeImage(store: ImageStore, prepared: Prepared, locked: Boolean): String {
+        if (!locked) return store.add(prepared.bytes, prepared.type)
+        // A copy: locking zeroes the session's key.
+        val key = locks.key()?.copyOf() ?: throw ImageException("Unlock locked notes to add pictures to this note.")
+        val sealed = try {
+            withContext(Dispatchers.Default) { LockedNotes.encryptImage(key, prepared.bytes) }
+        } finally {
+            key.fill(0)
+        }
+        return store.add(sealed, LOCKED_IMAGE)
+    }
+
+    /**
+     * Before a lock change: stores the pictures with ids [ids] again,
+     * encrypted for [locked] or plain without; old id → new id. Null, with
+     * [imageProblem] set, when one isn't on this phone and can't be
+     * downloaded: the lock stays as it is.
+     */
+    suspend fun moveImages(ids: Set<String>, locked: Boolean): Map<String, String>? {
+        val store = images ?: return emptyMap()
+        if (ids.isEmpty()) return emptyMap()
+        // A copy: locking zeroes the session's key, and fetching the pictures may take a while.
+        val key = locks.key()?.copyOf()
+        val moved = try {
+            key?.let { store.move(ids, locked, it) }
+        } finally {
+            key?.fill(0)
+        }
+        if (moved == null) {
+            _imageProblem.value = "A picture in this note couldn’t be moved with the lock. " +
+                "If it isn’t on this phone yet, connect and try again."
+        }
+        return moved
+    }
 
     /** The plain text the stored envelope holds: unchanged text is saved as the same envelope. */
     private var sealed: Pair<String, String>? = null
@@ -233,11 +306,14 @@ class EditorViewModel(
             sealed?.takeIf { it.first == plain }?.second
                 ?: withContext(Dispatchers.Default) { LockedNotes.encrypt(key, plain) }
         }
-        val note = store.save(id, title, content, basedOn)
+        // The server can't read a locked body's images: the save lists them (§7.6).
+        // From the body being saved, not the lock flag, which may have changed while it encrypted.
+        val imageIds = if (LockedNotes.isLocked(content)) ImageRef.ids(plain) else null
+        val note = store.save(id, title, content, basedOn, imageIds)
         if (note == null) {
             if (basedOn != null && basedOn != (title to content)) {
                 // Deleted elsewhere while typed into here: keep the typing.
-                store.recover(title, content)
+                store.recover(title, content, imageIds)
                 _gone.value = true
             } else if (edit == edits) {
                 _status.value = SaveStatus.Blank

@@ -16,7 +16,10 @@ import (
 // Only for `notesd export --include-locked`, run by the owner with the lock
 // password. Same rules as the clients: shared/crypto-fixtures/locked.json.
 
-const bodyAAD = "notesd:locked:v1"
+const (
+	bodyAAD  = "notesd:locked:v1"
+	imageAAD = "notesd:image:v1"
+)
 
 // Errors from opening.
 var (
@@ -74,6 +77,15 @@ func Decrypt(key []byte, content string) (string, error) {
 		return "", ErrCannotOpen
 	}
 	return string(plain), nil
+}
+
+// DecryptImage returns a locked note's image: nonce ‖ ciphertext ‖ tag, as stored.
+func DecryptImage(key, sealed []byte) ([]byte, error) {
+	plain, err := open(key, sealed, imageAAD)
+	if err != nil {
+		return nil, ErrCannotOpen
+	}
+	return plain, nil
 }
 
 func open(key, sealed []byte, aad string) ([]byte, error) {

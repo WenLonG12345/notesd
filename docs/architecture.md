@@ -31,7 +31,7 @@ A self-hosted note-taking system: one Go executable backed by SQLite serves an o
 
 ### 2.2 Editing
 
-Users edit in a WYSIWYG editor and never see Markdown syntax. V1 supports plain text, bold, italic, strikethrough, headings (H1–H3), bulleted and numbered lists, checklists, links and blockquotes. Images, attachments and tables are deferred.
+Users edit in a WYSIWYG editor and never see Markdown syntax. V1 supports plain text, bold, italic, strikethrough, headings (H1–H3), bulleted and numbered lists, checklists, links, blockquotes and images (§7.6). Attachments and tables are deferred.
 
 ### 2.3 Search
 
@@ -60,7 +60,7 @@ The web app offers full note management, editing and search, but needs a live se
 | Real-time collaboration, CRDTs, WebSockets | One active editor per note; HTTP sync is sufficient |
 | Web offline mode | Would add a browser replica and a second sync engine |
 | Full version history, automatic Markdown merge | Not needed to preserve conflicts; formatting-aware merging is complex |
-| Images and attachments | Need their own binary storage and sync design |
+| File attachments | Need their own storage and sync design; images are the exception (§7.6) |
 | Multi-user collaboration, end-to-end encryption of every note | Add authorization complexity; E2EE breaks server-side search. Notes the user locks are the exception (§10.1) |
 | PostgreSQL, Redis, external search, job workers, Kubernetes | Unnecessary at this scale |
 
@@ -121,6 +121,12 @@ CREATE TABLE sync_state (
 
 -- Tags in live notes (§7.5), kept with the search index.
 CREATE TABLE note_tags (note_seq INTEGER REFERENCES notes(seq), key TEXT, name TEXT, PRIMARY KEY (note_seq, key));
+
+-- Images (§7.6): content-addressed blobs, and which live notes show each. released_at is when an
+-- image was last left without a note; NULL for images from before references were tracked.
+CREATE TABLE images (id TEXT PRIMARY KEY, content_type TEXT, size INTEGER, data BLOB, created_at INTEGER,
+                     released_at INTEGER);
+CREATE TABLE note_images (note_seq INTEGER REFERENCES notes(seq), image_id TEXT, PRIMARY KEY (note_seq, image_id));
 
 -- Server-wide settings from the apps: the Resend key and sender for emailing notes.
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -327,7 +333,7 @@ Markdown is the stored format for portability and readability; editors work on a
 
 A restricted, documented dialect based on CommonMark with selected GitHub Flavored Markdown extensions: paragraphs and line breaks, headings, bold, italic, strikethrough, links, ordered and unordered lists, task lists and blockquotes. It is implemented identically on iOS, Android and web. Unsupported constructs must not be silently discarded; V1 editing and import may be limited to the subset.
 
-Unsupported constructs (code spans and fences, tables, images, horizontal rules, raw HTML, and anything else outside the subset) are kept as opaque raw blocks or raw inline runs: shown read-only, not editable, and written back byte-for-byte on save. Turning them into ordinary text is not enough. The serializer would escape their syntax characters and fold their line breaks, so one save on any client would corrupt a note written elsewhere (for example a code fence pasted on another device).
+Images the apps add (§7.6) are first-class. Unsupported constructs (code spans and fences, tables, other images, horizontal rules, raw HTML, and anything else outside the subset) are kept as opaque raw blocks or raw inline runs: shown read-only, not editable, and written back byte-for-byte on save. Turning them into ordinary text is not enough. The serializer would escape their syntax characters and fold their line breaks, so one save on any client would corrupt a note written elsewhere (for example a code fence pasted on another device).
 
 ### 7.2 Editing model
 
@@ -360,6 +366,23 @@ Tags are plain text in the note, as in Bear: there is no tag field, so tags sync
 - **Lifetime:** a tag exists while a live note uses it.
 
 Renaming and deleting tags (rewriting every note) are not implemented yet.
+
+### 7.6 Images
+
+An image lives outside the note's text, as a content-addressed blob on the server; the note holds an ordinary Markdown image pointing at it:
+
+```markdown
+![alt text](notesd:image/<sha256 hex>?w=1600&h=1200)
+```
+
+- **Reference.** The hash is SHA-256 of the bytes as stored, so uploads are idempotent and integrity-checked. `w` and `h` are the pixel size, so editors lay the image out before its bytes arrive. Editors show such an image as an atomic, read-only node (deleted whole) and write its source back byte for byte; any other image (`![a](cat.png)`) stays a raw inline run (§7.1). Search, previews and tags treat it like any image: its alt text is plain text and never holds tags.
+- **Preparing.** Clients downscale before uploading: the long side is capped at 2048 px, orientation is applied, and the image is re-encoded as JPEG (quality 0.85), or PNG when it has transparency, which drops EXIF metadata including location. GIFs are uploaded as they are, so animation survives, along with any metadata they hold. The server caps an image at 10 MiB; clients cap a prepared one 28 bytes lower, the nonce and tag encryption adds, so it fits locked or not.
+- **Uploading.** The web app uploads before it inserts the reference. Android stores a new image locally with a pending-upload row, and each sync cycle uploads pending images before any note operation, so no device sees a reference before its bytes exist.
+- **Caching.** The web relies on the browser cache (images are immutable). Android fetches an image the first time it is shown and keeps it in its cache directory, which the system may evict; images still waiting to upload live in its files directory.
+- **Locked notes.** A locked note's images are encrypted too (§10.1). Whether to decrypt is decided by the blob's type as served, not by the note, so a note that mixes both still renders.
+- **Storage.** Blobs are rows of the server's SQLite database (`images`), so a backup of the one file holds notes and images consistently.
+- **Export.** `notesd export` writes each image a note shows once, as a plain file in `images/<id>.<ext>`, and points the reference there (only image syntax; the same text inside code is left alone). Locked images are decrypted with the lock password under `--include-locked`; one that is missing or doesn't open keeps its `notesd:image/` reference.
+- **Deletion.** The server records which live notes show which images (`note_images`), in the transaction that writes the note. A plain note's references are read from its content; only image syntax counts, so a reference inside code is not one. A locked note's come from the `imageIds` its client sends with the save, since the server can't read the ciphertext: the web app lists them on every locked save; Android lists them for each recent body it encrypted or received, including when sync later sends that body in a merge or a conflicted or recovered copy. Notes, sync changes and conflict answers carry a locked note's recorded `imageIds`, so a device that can't read a body still knows its images. A locked update without `imageIds` (a body the device can't read) leaves the record as it was. An image no note shows is *released*: at upload, and when the last note showing it drops it or is deleted. One released for 30 days is deleted, by a job `serve` runs every 6 hours, or by `notesd gc-images`. The 30 days cover undo, conflicted and recovered copies (§6.2, §6.4) and devices that were offline. Uploading an image again restarts its 30 days, so a picture added back isn't collected before its note saves. Images stored before references were tracked are released only once a note has shown and dropped them, except plain ones no plain note shows, which the backfill releases. A note from a device offline for longer than 30 days can still point at a deleted image; it shows as missing. `notesd check` reports references to missing images.
 
 ## 8. Search
 
@@ -413,14 +436,16 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 | `DELETE` | `/api/v1/auth/sessions/:id` | Revoke a session |
 | `GET` | `/api/v1/notes` | List notes (paginated), with `total`; `?tag=` or `?untagged=true` filters |
 | `GET` | `/api/v1/notes/:id` | Retrieve a note (`410` with the tombstone if deleted) |
-| `POST` | `/api/v1/notes` | Create a note |
-| `PUT` | `/api/v1/notes/:id` | Update a note |
+| `POST` | `/api/v1/notes` | Create a note; a locked one lists its images in `imageIds` (§7.6) |
+| `PUT` | `/api/v1/notes/:id` | Update a note; as for create, `imageIds` absent keeps a locked note's recorded images |
 | `DELETE` | `/api/v1/notes/:id` | Delete a note |
 | `POST` | `/api/v1/notes/:id/email` | Email the note as stored, through Resend |
 | `GET` `PUT` `DELETE` | `/api/v1/settings/email` | The Resend API key (write-only) and sender |
 | `GET` | `/api/v1/sync` | Download changes |
 | `GET` | `/api/v1/search` | Search notes; same filters as listing |
 | `GET` | `/api/v1/tags` | Tags in live notes, with counts |
+| `PUT` | `/api/v1/images/:sha256` | Upload an image (raw body); idempotent, the hash must match (§7.6) |
+| `GET` | `/api/v1/images/:sha256` | Download an image, cached as immutable |
 | `GET` | `/api/v1/locks` | The locked-notes keyring (§10.1) |
 | `PUT` `DELETE` | `/api/v1/locks/keys/:id` | Add, replace or remove a keyring entry; needs the verifier |
 | `DELETE` | `/api/v1/locks` | Forget the keyring after a forgotten lock password; needs the account password |
@@ -452,7 +477,7 @@ V1 is a single-user installation: one owner account, signed in from multiple dev
 
 Like Apple Notes' locked notes: the user locks chosen notes, and their bodies are encrypted on the device with a key the server never has. Titles stay readable, so the list, title search, title tags and the title merge are unchanged.
 
-**What protects what.** The server, its database, its backups and anyone reading them see only a locked body's ciphertext; its title, dates, size and title tags stay readable. The one exception is `notesd export --include-locked`, which the owner runs on the server's machine with the lock password; it decrypts locally into the export folder, and the password and key exist only in that process. A device that is unlocked (key in memory) and the person holding it see everything. The web app is served by the server it distrusts, so a tampered server could serve code that captures the lock password; the native apps don't share that weakness. Text a note held before it was locked was stored in plain text and survives in backups made before then. In the live database the server scrubs it: SQLite runs with `secure_delete`, the FTS5 index with its own `secure-delete` option (otherwise deleted terms stay in its segments until a merge), and the save that locks a note is followed by a `wal_checkpoint(TRUNCATE)`, so the WAL's older page images go too. That checkpoint gives up while a long read still holds old pages, which later checkpoints then overwrite. Free disk blocks, file-system snapshots and SSD wear-levelling are outside SQLite's reach.
+**What protects what.** The server, its database, its backups and anyone reading them see only a locked body's ciphertext; its title, dates, size and title tags stay readable. The one exception is `notesd export --include-locked`, which the owner runs on the server's machine with the lock password; it decrypts notes and their images locally into the export folder, and the password and key exist only in that process. A device that is unlocked (key in memory) and the person holding it see everything. The web app is served by the server it distrusts, so a tampered server could serve code that captures the lock password; the native apps don't share that weakness. Text a note held before it was locked was stored in plain text and survives in backups made before then. In the live database the server scrubs it: SQLite runs with `secure_delete`, the FTS5 index with its own `secure-delete` option (otherwise deleted terms stay in its segments until a merge), and the save that locks a note is followed by a `wal_checkpoint(TRUNCATE)`, so the WAL's older page images go too. That checkpoint gives up while a long read still holds old pages, which later checkpoints then overwrite. Free disk blocks, file-system snapshots and SSD wear-levelling are outside SQLite's reach.
 
 **Envelope.** A locked note's `content` is one line, `notesd:locked:v1:` + unpadded base64url of a 12-byte nonce, then AES-256-GCM ciphertext and tag of the UTF-8 Markdown body, with additional data `notesd:locked:v1`. The note ID is not bound in, so conflicted and recovered copies (new IDs) stay readable. Being locked is a property of the content, like tags (§7.5): no new note field, and the sync protocol, revisions, outbox and tombstones are unchanged. Locking and removing the lock are ordinary updates.
 
@@ -460,6 +485,7 @@ Like Apple Notes' locked notes: the user locks chosen notes, and their bodies ar
 - The server checks only shape (prefix, one line of strict base64url, length), which is enough to refuse an edit made on the ciphertext as if it were text. The 1 MiB content cap applies to the plain body: an envelope may be as long as that of a 1 MiB body.
 - Merging (§6.1) compares envelopes as stored, never in canonical Markdown form, so sync merges without the key: a body changed on one side takes that side; changed on both, the local version becomes a conflicted copy, still locked. The web app, which merges interactively, decrypts first and merges text.
 - Locked notes are excluded from search text, previews, excerpts and body tags (§8.1), and the server refuses to email them (`409 note_locked`).
+- A locked note's images (§7.6) are encrypted with the same key: `nonce ‖ ciphertext ‖ tag` of the image file, binary, with additional data `notesd:image:v1`, uploaded as `application/vnd.notesd.locked`. The image type is recovered by sniffing after decryption. Locking a note re-uploads each of its images encrypted and rewrites the references before the save; removing the lock does the reverse. If an image can't be fetched (offline and not cached), the change is refused rather than leaving a locked note pointing at plain images. The old blobs are released and deleted after 30 days (§7.6). Until then the plain copies of a newly locked note's images stay readable on the server, as do the plain images in backups made before. The `imageIds` a locked save lists tell the server which encrypted blobs belong to which locked note; it learns nothing of their content, and their sizes were already visible.
 
 **Keys.** Each account has one 32-byte locked-notes key, created by the first device to lock a note. The server keeps a keyring of wrapped copies, each AES-256-GCM of the key under a key-encryption key, with additional data `notesd:lnk:v1:<kind>`:
 
@@ -501,7 +527,7 @@ data/
 ./notesd --data-dir /var/lib/notesd --listen 127.0.0.1:8080
 ```
 
-Configuration is flags and environment variables (`NOTESD_DATA_DIR`, `NOTESD_LISTEN`, `NOTESD_PUBLIC_URL`, `NOTESD_LOG_LEVEL`, `NOTESD_LOG_FORMAT`, `NOTESD_SETUP_TOKEN`, and `NOTESD_RESEND_URL` for tests); a config file is not planned unless the option count grows. Subcommands: `create-owner`, `reset-password`, `reindex` (rebuild the search index), `check` (integrity check), `version`; `backup` is still to be built (§11.4). Targets: Linux x86-64 and ARM64 (including Raspberry Pi 5), small VPS installs and home servers. Docker images are optional.
+Configuration is flags and environment variables (`NOTESD_DATA_DIR`, `NOTESD_LISTEN`, `NOTESD_PUBLIC_URL`, `NOTESD_LOG_LEVEL`, `NOTESD_LOG_FORMAT`, `NOTESD_SETUP_TOKEN`, and `NOTESD_RESEND_URL` for tests); a config file is not planned unless the option count grows. Subcommands: `create-owner`, `reset-password`, `reindex` (rebuild the search index), `check` (integrity check), `gc-images` (delete images no note has shown for 30 days), `export`, `version`; `backup` is still to be built (§11.4). Targets: Linux x86-64 and ARM64 (including Raspberry Pi 5), small VPS installs and home servers. Docker images are optional.
 
 WAL mode is enabled with a busy timeout for brief write contention. The development toolchain and build tasks are defined in the root `mise.toml` (`mise run build` produces the binary with the web app embedded). Installation, HTTPS and systemd are covered for users in `docs/hosting.md`; releases (server binaries and the signed APK) in `docs/releasing.md`.
 
@@ -554,7 +580,7 @@ On Android, full reconciliation re-downloads every note and compares text rather
 - Keep transactions short, indexes limited to listing, sync and search, and skip Markdown parsing on reads.
 - Sync transfers only changed notes, each in full, with HTTP compression where useful; diffs are excluded from V1.
 - Tune and test the Go runtime on memory-constrained systems.
-- Future attachments live outside note content, possibly content-addressed for deduplication and integrity.
+- Images live outside note content, content-addressed for deduplication and integrity (§7.6); ones no note has shown for 30 days are deleted. Deleted rows are zeroed (`secure_delete`) and their pages reused; the file doesn't shrink without a `VACUUM`.
 
 ## 12. Testing Strategy
 

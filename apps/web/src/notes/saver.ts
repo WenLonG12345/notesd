@@ -1,7 +1,8 @@
 import { ApiError, NetworkError } from '../api/client'
 import { notes } from '../api/notes'
-import { canonical } from '../editor/markdown'
+import { canonical, parse } from '../editor/markdown'
 import type { MutationResult, Note } from '../api/types'
+import { imageIds } from '../images/ref'
 import { LockedError, decryptBody, encryptBody, isLocked } from '../locks/crypto'
 import { lockSession } from '../locks/session'
 import type { SaveState } from '../ui/status-pill'
@@ -30,6 +31,10 @@ export type Snapshot = {
   failures: number
   /** The body is (to be) encrypted. */
   locked: boolean
+  /** A picture couldn't be added, or the lock changed: shown until dismissed. */
+  imageError: string | null
+  /** Images are being uploaded or re-encrypted for a lock change. */
+  imagesBusy: boolean
 }
 
 type Pending = {
@@ -38,6 +43,8 @@ type Pending = {
   fields: Fields
   /** What goes over the wire: the content encrypted when locked. Fixed once, so retries send the same bytes. */
   wire: Fields
+  /** A locked note's images, which the server can't read from the ciphertext (§7.6). */
+  imageIds?: string[]
   locked: boolean
   create: boolean
   baseRevision: number
@@ -114,6 +121,10 @@ export class NoteSaver {
   private failures = 0
   private waitingForAuth = false
   private waitingForUnlock = false
+  private imageError: string | null = null
+  private imagesBusy = 0
+  /** Re-encrypts (or decrypts) the open note's images before a lock change (images/store.ts). */
+  private resealer: ((locked: boolean) => Promise<void>) | null = null
   private listeners = new Set<() => void>()
   private remoteListeners = new Set<(fields: Fields) => void>()
   private snapshot: Snapshot
@@ -191,6 +202,64 @@ export class NoteSaver {
     return this.locked
   }
 
+  /** Lets the open editor move the note's images along with a lock change. */
+  setResealer(fn: (locked: boolean) => Promise<void>): () => void {
+    this.resealer = fn
+    return () => {
+      if (this.resealer === fn) this.resealer = null
+    }
+  }
+
+  /**
+   * Locks or unlocks the note, its images first (§7.6). If they can't be
+   * moved, the lock stays as it was and imageError says why.
+   */
+  async changeLock(locked: boolean): Promise<void> {
+    if (this.locked === locked) return
+    const reseal = this.resealer
+    if (reseal) {
+      const ok = await this.withImages(() => reseal(locked))
+      if (!ok) return
+    }
+    this.setLocked(locked)
+  }
+
+  /** Runs image work, showing it as busy; a failure becomes imageError. */
+  async withImages(work: () => Promise<void>): Promise<boolean> {
+    this.imagesBusy++
+    this.imageError = null
+    this.set(this.state)
+    try {
+      await work()
+      return true
+    } catch (err) {
+      this.imageError = err instanceof Error && err.name === 'ImageError' ? err.message : 'The picture couldn’t be uploaded. Check the connection and try again.'
+      return false
+    } finally {
+      this.imagesBusy--
+      this.set(this.state)
+    }
+  }
+
+  /**
+   * Adds Markdown on its own line at the end of the note while no editor has
+   * it open: a picture whose upload finished after its note was closed.
+   * False if an editor has it open again, which owns the text.
+   */
+  appendClosed(markdown: string): boolean {
+    if (this.isAttached()) return false
+    const { title, content } = this.read()
+    const next = { title, content: appendBlock(content, markdown) }
+    this.read = () => next
+    this.edit()
+    return true
+  }
+
+  dismissImageError() {
+    this.imageError = null
+    this.set(this.state)
+  }
+
   /** Locks or unlocks the note: saved like an edit, encrypted with the session key. */
   setLocked(locked: boolean) {
     if (this.locked === locked) return
@@ -214,7 +283,7 @@ export class NoteSaver {
 
   /** Whether closing the page now could lose something. */
   hasUnsavedWork(): boolean {
-    return this.dirty || this.pending !== null || this.inflight !== null
+    return this.dirty || this.pending !== null || this.inflight !== null || this.imagesBusy > 0
   }
 
   /** Edits made since the last save went out. */
@@ -285,7 +354,8 @@ export class NoteSaver {
     // A new locked save can't be encrypted synchronously; beforeunload asks the user to stay instead.
     const p = this.pending ?? (this.locked ? null : this.plainPending())
     if (!p) return
-    if (JSON.stringify(p.wire).length > KEEPALIVE_LIMIT) return
+    // The whole body counts, the image list too.
+    if (JSON.stringify({ ...p.wire, imageIds: p.imageIds }).length > KEEPALIVE_LIMIT) return
     this.pending = p
     void this.send(p, true).catch(() => undefined)
   }
@@ -337,6 +407,7 @@ export class NoteSaver {
       operationId: crypto.randomUUID(),
       fields,
       wire: { title: fields.title, content: envelope },
+      imageIds: imageIds(fields.content),
       locked: true,
       create: !this.created,
       baseRevision: this.revision,
@@ -350,11 +421,21 @@ export class NoteSaver {
             operationId: p.operationId,
             id: this.id,
             ...p.wire,
+            ...(p.imageIds && { imageIds: p.imageIds }),
             ...(this.conflictOf !== undefined && { conflictOf: this.conflictOf }),
           },
           keepalive,
         )
-      : notes.update(this.id, { operationId: p.operationId, baseRevision: p.baseRevision, ...p.wire }, keepalive)
+      : notes.update(
+          this.id,
+          {
+            operationId: p.operationId,
+            baseRevision: p.baseRevision,
+            ...p.wire,
+            ...(p.imageIds && { imageIds: p.imageIds }),
+          },
+          keepalive,
+        )
   }
 
   private async run(): Promise<void> {
@@ -608,6 +689,31 @@ export class NoteSaver {
       updatedAt: this.updatedAt,
       failures: this.failures,
       locked: this.locked,
+      imageError: this.imageError,
+      imagesBusy: this.imagesBusy > 0,
     }
   }
+}
+
+/**
+ * content with block on its own line at the end. A code fence left open at
+ * the end would take the line in as code: it is closed first.
+ */
+export function appendBlock(content: string, block: string): string {
+  const body = content.trimEnd()
+  const next = `${body ? `${body}\n\n` : ''}${block}\n`
+  if (outsideCode(next, block)) return next
+  const fence = /^ {0,3}(`{3,}|~{3,})/
+  const opener = body.split('\n').findLast((line) => fence.test(line))
+  const marker = opener?.match(fence)?.[1]
+  return marker ? `${body}\n${marker}\n\n${block}\n` : next
+}
+
+/** Whether block is still its own image (or text) in markdown, not swallowed by a raw code block. */
+function outsideCode(markdown: string, block: string): boolean {
+  let raw = false
+  parse(markdown).descendants((node) => {
+    if (node.type.name === 'rawBlock' && String(node.attrs.source).includes(block)) raw = true
+  })
+  return !raw
 }

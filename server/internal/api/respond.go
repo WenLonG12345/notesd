@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"notes/server/internal/auth"
+	"notes/server/internal/images"
 	"notes/server/internal/locks"
 	"notes/server/internal/mail"
 	"notes/server/internal/notes"
@@ -74,6 +75,7 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	var merr *mail.InputError
 	var lerr *locks.InputError
 	var send *mail.SendError
+	var terr *images.TypeError
 	switch {
 	case errors.As(err, &verr):
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: verr.Message, Field: verr.Field})
@@ -91,6 +93,14 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusConflict, "password_key_required", err.Error())
 	case errors.Is(err, locks.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "lock key not found")
+	case errors.As(err, &terr):
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported_image", terr.Message)
+	case errors.Is(err, images.ErrHashMismatch):
+		writeError(w, http.StatusBadRequest, "hash_mismatch", err.Error())
+	case errors.Is(err, images.ErrBadID):
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid_request", Message: err.Error(), Field: "id"})
+	case errors.Is(err, images.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "image not found")
 	case errors.Is(err, mail.ErrNotConfigured):
 		writeError(w, http.StatusConflict, "email_not_configured", "add a Resend API key in Settings to send email")
 	case errors.As(err, &send):

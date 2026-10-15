@@ -38,6 +38,7 @@ import notes.core.doc.Document
 import notes.core.doc.Leaf
 import notes.core.doc.ListKind
 import notes.core.doc.Mark
+import notes.core.images.ImageRef
 import notes.core.text.tagText
 
 /** What the formatting bar shows for the current selection. */
@@ -79,9 +80,11 @@ data class LinkTap(val href: String, val title: String?, val start: Int, val end
  * note or applying a remote change, and keeps the selection by offset.
  */
 class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) :
-    AppCompatEditText(context, attrs) {
-    val editorStyle: EditorStyle = EditorStyle.from(context)
-    private val normalizer = Normalizer(editorStyle)
+    AppCompatEditText(context, attrs),
+    ImageHost {
+    override val editorStyle: EditorStyle = EditorStyle.from(context)
+    private val imageSpans = ImageSpans(this)
+    private val normalizer = Normalizer(editorStyle, imageSpans)
     private val undoStack = UndoStack()
 
     /** >0 while the editor changes its own text: filters and watchers stand aside. */
@@ -101,6 +104,22 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
     private var downX = 0f
     private var downY = 0f
     private var downAt = 0L
+
+    /** Pictures for image runs; without one they show as placeholders. */
+    override var imageSource: ImageSource? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    override val imageMaxWidth: Int get() = width - totalPaddingLeft - totalPaddingRight
+
+    override val imageLineSpacing: Float get() = lineSpacingMultiplier
+
+    override fun imageReady(id: String) {
+        val t = text ?: return
+        imageSpans.refresh(t, id)
+    }
 
     var onChange: (() -> Unit)? = null
     var onFormatState: ((FormatState) -> Unit)? = null
@@ -269,6 +288,54 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
         val end = selectionEnd
         val link = Marks.linkAt(t, start)
         return t.substring(start, end) to link?.href
+    }
+
+    /**
+     * Puts an image run ([source], an app image reference) on its own line:
+     * in the empty line the cursor is on, or after the cursor's line.
+     */
+    fun insertImage(source: String) = command { text ->
+        val block = Blocks.at(text, selectionStart)
+        val at: Int
+        val prefix: String
+        if (block != null && block.start == block.contentEnd && block.span.leaf != Leaf.Title) {
+            at = block.start
+            prefix = ""
+        } else {
+            at = block?.contentEnd ?: text.length
+            prefix = "\n"
+        }
+        val run = SpannableString(prefix + source)
+        run.setSpan(RawInlineSpan(source, editorStyle), prefix.length, run.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        text.insert(at, run)
+        setSelection(at + run.length)
+    }
+
+    /** The ids of the pictures in the note. */
+    fun imageIds(): Set<String> {
+        val t = text ?: return emptySet()
+        val runs = t.getSpans(0, t.length, RawInlineSpan::class.java)
+        return runs.mapNotNull { ImageRef.parse(it.source)?.id }.toSet()
+    }
+
+    /** Points image runs at other images (old id → new id), as a lock change does; the rest of the text is untouched. */
+    fun replaceImages(moved: Map<String, String>) {
+        if (moved.isEmpty()) return
+        command { text ->
+            val runs = text.getSpans(0, text.length, RawInlineSpan::class.java)
+                .sortedByDescending { text.getSpanStart(it) }
+            for (raw in runs) {
+                val ref = ImageRef.parse(raw.source) ?: continue
+                val next = moved[ref.id] ?: continue
+                val s = text.getSpanStart(raw)
+                val e = text.getSpanEnd(raw)
+                val source = raw.source.replace("notesd:image/${ref.id}", "notesd:image/$next")
+                val run = SpannableString(source)
+                run.setSpan(RawInlineSpan(source, editorStyle), 0, run.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                text.removeSpan(raw)
+                text.replace(s, e, run)
+            }
+        }
     }
 
     fun insertHardBreak() {

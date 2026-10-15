@@ -31,6 +31,7 @@ import (
 	"unicode/utf8"
 
 	"notes/server/internal/database"
+	"notes/server/internal/images"
 	"notes/server/internal/locks"
 	"notes/server/internal/search"
 )
@@ -67,6 +68,37 @@ type Note struct {
 	UpdatedAt  int64   `json:"updatedAt"`
 	DeletedAt  *int64  `json:"deletedAt"`
 	ConflictOf *string `json:"conflictOf,omitempty"`
+	// A locked note's images as its clients last listed them (§7.6), so a
+	// device that can't read the body still knows them, for a copy it
+	// makes of it. Absent for a plain note, whose content shows them.
+	ImageIDs []string `json:"imageIds,omitempty"`
+}
+
+// queryer is a transaction or a pool.
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// FillImageIDs sets a locked note's ImageIDs from note_images.
+func FillImageIDs(ctx context.Context, q queryer, n *Note) error {
+	if !locks.IsLocked(n.Content) {
+		return nil
+	}
+	rows, err := q.QueryContext(ctx, `SELECT r.image_id FROM note_images r JOIN notes n ON n.seq = r.note_seq
+		WHERE n.id = ? ORDER BY r.image_id`, n.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	n.ImageIDs = nil
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		n.ImageIDs = append(n.ImageIDs, id)
+	}
+	return rows.Err()
 }
 
 // Columns is the SELECT list matching ScanNote.
@@ -168,6 +200,10 @@ type CreateInput struct {
 	CreatedAt   *int64  `json:"createdAt,omitempty"`
 	UpdatedAt   *int64  `json:"updatedAt,omitempty"`
 	ConflictOf  *string `json:"conflictOf,omitempty"`
+	// The images a locked note shows, which the server can't read from its
+	// ciphertext (§7.6). Ignored for a plain note. Not omitempty: the
+	// request hash must tell absent (nil) from none ([]).
+	ImageIDs []string `json:"imageIds"`
 }
 
 // UpdateInput replaces a note's title and content, provided BaseRevision is
@@ -179,6 +215,9 @@ type UpdateInput struct {
 	Title        string `json:"title"`
 	Content      string `json:"content"`
 	UpdatedAt    *int64 `json:"updatedAt,omitempty"`
+	// As CreateInput.ImageIDs; nil (absent) keeps the images recorded, for
+	// a client that sends a locked body it can't read, such as a merge's.
+	ImageIDs []string `json:"imageIds"`
 }
 
 // DeleteInput turns a note into a tombstone, provided BaseRevision is still
@@ -204,6 +243,9 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (Result, error) {
 		if err := validateID("conflictOf", *in.ConflictOf); err != nil {
 			return Result{}, err
 		}
+	}
+	if err := validateImageIDs(in.ImageIDs); err != nil {
+		return Result{}, err
 	}
 	now := s.now().UnixMilli()
 	created := s.clientTime(in.CreatedAt, now)
@@ -236,6 +278,9 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (Result, error) {
 		if err := search.IndexNote(ctx, tx, rowid, in.Title, in.Content); err != nil {
 			return Result{}, err
 		}
+		if err := images.SetRefs(ctx, tx, rowid, shownImages(in.Content, in.ImageIDs), now); err != nil {
+			return Result{}, err
+		}
 		return Result{ID: in.ID, Status: StatusCreated, Revision: 1, ChangeSeq: seq,
 			UpdatedAt: updated, HTTPStatus: 201}, nil
 	})
@@ -255,6 +300,9 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (Result, error) {
 	if err := validateText(in.Title, in.Content); err != nil {
 		return Result{}, err
 	}
+	if err := validateImageIDs(in.ImageIDs); err != nil {
+		return Result{}, err
+	}
 	now := s.now().UnixMilli()
 	updated := s.clientTime(in.UpdatedAt, now)
 
@@ -271,6 +319,12 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (Result, error) {
 			return Result{}, &ConflictError{Code: CodeRevisionConflict, Current: cur.Note}
 		}
 		if cur.Title == in.Title && cur.Content == in.Content {
+			// The same body may come with its images listed (again): record them.
+			if locks.IsLocked(in.Content) && in.ImageIDs != nil {
+				if err := images.SetRefs(ctx, tx, cur.rowid, in.ImageIDs, now); err != nil {
+					return Result{}, err
+				}
+			}
 			return Result{ID: cur.ID, Status: StatusUnchanged, Revision: cur.Revision,
 				ChangeSeq: cur.ChangeSeq, UpdatedAt: cur.UpdatedAt, HTTPStatus: 200}, nil
 		}
@@ -290,6 +344,11 @@ func (s *Store) Update(ctx context.Context, in UpdateInput) (Result, error) {
 		}
 		if err := search.IndexNote(ctx, tx, cur.rowid, in.Title, in.Content); err != nil {
 			return Result{}, err
+		}
+		if !locks.IsLocked(in.Content) || in.ImageIDs != nil {
+			if err := images.SetRefs(ctx, tx, cur.rowid, shownImages(in.Content, in.ImageIDs), now); err != nil {
+				return Result{}, err
+			}
 		}
 		locking = locks.IsLocked(in.Content) && !locks.IsLocked(cur.Content)
 		return Result{ID: cur.ID, Status: StatusUpdated, Revision: rev, ChangeSeq: seq,
@@ -351,6 +410,9 @@ func (s *Store) Delete(ctx context.Context, in DeleteInput) (Result, error) {
 		if err := search.UnindexNote(ctx, tx, cur.rowid); err != nil {
 			return Result{}, err
 		}
+		if err := images.SetRefs(ctx, tx, cur.rowid, nil, now); err != nil {
+			return Result{}, err
+		}
 		return Result{ID: cur.ID, Status: StatusDeleted, Revision: rev, ChangeSeq: seq,
 			UpdatedAt: updated, DeletedAt: &now, HTTPStatus: 200}, nil
 	})
@@ -365,7 +427,10 @@ func (s *Store) Get(ctx context.Context, id string) (Note, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return Note{}, ErrNotFound
 	}
-	return n, err
+	if err != nil {
+		return n, err
+	}
+	return n, FillImageIDs(ctx, s.db.R, &n)
 }
 
 // ListItem is a note summary for list views (§9).
@@ -460,7 +525,11 @@ func loadForUpdate(ctx context.Context, tx *sql.Tx, id string) (storedNote, erro
 	if conflictOf.Valid {
 		sn.ConflictOf = &conflictOf.String
 	}
-	return sn, err
+	if err != nil {
+		return sn, err
+	}
+	// A conflict answers with this note; a device making a copy of it needs its images.
+	return sn, FillImageIDs(ctx, tx, &sn.Note)
 }
 
 // nextChangeSeq allocates the next global change sequence inside the
@@ -526,6 +595,27 @@ func (s *Store) apply(ctx context.Context, opID, reqHash string, fn func(*sql.Tx
 // hashRequest fingerprints a mutation by its kind and decoded input, so a
 // reused operation ID with a different payload is detected regardless of
 // JSON formatting.
+// shownImages is the images a note shows: read from a plain note's
+// content, as its client listed them for a locked one.
+func shownImages(content string, listed []string) []string {
+	if locks.IsLocked(content) {
+		return listed
+	}
+	return images.Refs(content)
+}
+
+func validateImageIDs(ids []string) error {
+	if len(ids) > images.MaxRefs {
+		return &ValidationError{"imageIds", fmt.Sprintf("at most %d images", images.MaxRefs)}
+	}
+	for _, id := range ids {
+		if !images.ValidID(id) {
+			return &ValidationError{"imageIds", "each must be 64 lowercase hex characters"}
+		}
+	}
+	return nil
+}
+
 func hashRequest(kind string, input any) string {
 	b, _ := json.Marshal(struct {
 		Kind  string `json:"kind"`

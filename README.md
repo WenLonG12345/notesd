@@ -21,6 +21,11 @@ database, so it works offline.
 lists all your tags, so you can browse by topic. Tags can be nested with `/`
 (`#home/garden`).
 
+**Images.** Add photos to a note from the toolbar, or paste or drop them on the
+web. They're downscaled and stripped of location data before upload, and on
+Android you can add them offline. GIFs are the exception: they're uploaded as
+they are, so they stay animated, and keep any metadata they hold.
+
 **Locked notes.** Lock any note and its body is encrypted on-device with AES-256-GCM before
 they're saved or synced, so the server only stores ciphertext. Unlock with a
 password, a passkey (web) or biometric (Android).
@@ -55,6 +60,10 @@ The Android app won't send your password over plain HTTP outside your local netw
   stay readable, and locked notes can't be searched by their text or emailed.
 - **Text from before locking.** When you lock a note, the server scrubs the
   previous text from its database. Backups made earlier still hold it.
+- **Images.** A locked note's images are encrypted too. Their plain copies
+  from before locking, like images you remove from any note, stay on the
+  server for 30 days after the last note showing them stops, then they're
+  deleted. A copy another note still shows stays.
 - **Forgotten passwords.** If you forget the lock password and have no
   passkey or fingerprint set up, those notes can't be recovered.
 
@@ -78,9 +87,11 @@ time:
 notesd export --out ~/notes-export
 ```
 
-Each note becomes a `.md` file named after its title. Locked notes are left
-out unless you add `--include-locked`, which asks you to confirm and to type
-the lock password, then writes them unencrypted. The command only reads the
+Each note becomes a `.md` file named after its title. Its images go in an
+`images/` folder beside them, linked from the notes, so any Markdown viewer
+shows them. Locked notes are left out unless you add `--include-locked`, which
+asks you to confirm and to type the lock password, then writes them and their
+images unencrypted. The command only reads the
 database, so it's safe to run while the server is up.
 
 ## How it's built

@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import notes.core.api.ApiClient
@@ -19,6 +21,7 @@ import notes.core.db.LockKeyStore
 import notes.core.db.Operation
 import notes.core.db.SyncEvent
 import notes.core.db.SyncStore
+import notes.core.images.ImageStore
 
 /** How a cycle ended; the scheduler retries [Offline] and [Failed] with backoff. */
 enum class SyncOutcome { Done, NotConnected, Offline, SignedOut, Failed }
@@ -47,7 +50,9 @@ class SyncEngine(
     db: Database,
     private val api: () -> ApiClient?,
     private val pageSize: Int = 100,
-    clock: () -> Long = System::currentTimeMillis
+    clock: () -> Long = System::currentTimeMillis,
+    /** Images added here, uploaded before the notes that reference them (§7.6). */
+    private val images: ImageStore? = null
 ) {
     val store = SyncStore(db, clock)
 
@@ -108,10 +113,26 @@ class SyncEngine(
         }
     }
 
+    /** Uploads every image waiting on this device; a Stop if one couldn't go. */
+    private suspend fun uploadImages(api: ApiClient): Stop? {
+        val store = images ?: return null
+        return when (val r = store.upload(api)) {
+            is ApiResult.Ok -> null
+            is ApiResult.Rejected -> Stop(SyncOutcome.Failed, "The server had a problem (${r.status}).")
+            else -> stop(r)
+        }
+    }
+
     private suspend fun push(api: ApiClient): Stop? {
+        // Every waiting image goes, whether or not a note operation follows.
+        uploadImages(api)?.let { return it }
         while (true) {
             val next = store.nextOperation() ?: return null
             val op = store.prepare(next) ?: continue
+            // For each operation, once it's in hand: an image's pending row is written
+            // before the note showing it is saved, so this sends every image the
+            // operation can show, including ones added while an earlier one was in flight.
+            uploadImages(api)?.let { return it }
             val result = send(api, op)
             when (result) {
                 is ApiResult.Ok -> store.sent(op, result.value)
@@ -145,6 +166,7 @@ class SyncEngine(
                 op.createdAt?.let { put("createdAt", it) }
                 op.updatedAt?.let { put("updatedAt", it) }
                 op.conflictOf?.let { put("conflictOf", it) }
+                op.imageIds?.let { ids -> put("imageIds", JsonArray(ids.map { JsonPrimitive(it) })) }
             }
         )
 
@@ -156,6 +178,7 @@ class SyncEngine(
                 put("title", op.title)
                 put("content", op.content)
                 op.updatedAt?.let { put("updatedAt", it) }
+                op.imageIds?.let { ids -> put("imageIds", JsonArray(ids.map { JsonPrimitive(it) })) }
             }
         )
 

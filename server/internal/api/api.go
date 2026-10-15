@@ -18,6 +18,7 @@ import (
 
 	"notes/server/internal/auth"
 	"notes/server/internal/database"
+	"notes/server/internal/images"
 	"notes/server/internal/locks"
 	"notes/server/internal/mail"
 	"notes/server/internal/notes"
@@ -38,6 +39,7 @@ type Server struct {
 	db      *database.DB
 	notes   *notes.Store
 	locks   *locks.Store
+	images  *images.Store
 	auth    *auth.Service
 	limiter *auth.Limiter
 	mailer  *mail.Client
@@ -48,7 +50,7 @@ type Server struct {
 // New wires a Server.
 func New(db *database.DB, store *notes.Store, authSvc *auth.Service, log *slog.Logger, cfg Config) *Server {
 	return &Server{
-		db: db, notes: store, locks: locks.NewStore(db), auth: authSvc, log: log, cfg: cfg,
+		db: db, notes: store, locks: locks.NewStore(db), images: images.NewStore(db), auth: authSvc, log: log, cfg: cfg,
 		limiter: auth.NewLimiter(10, 15*time.Minute),
 		mailer:  mail.NewClient(cfg.ResendURL),
 	}
@@ -89,6 +91,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/v1/locks", s.authed(s.resetLocks))
 	mux.Handle("PUT /api/v1/locks/keys/{id}", s.authed(s.putLockKey))
 	mux.Handle("DELETE /api/v1/locks/keys/{id}", s.authed(s.deleteLockKey))
+
+	mux.Handle("PUT /api/v1/images/{id}", s.authed(s.putImage))
+	mux.Handle("GET /api/v1/images/{id}", s.authed(s.getImage))
 
 	mux.Handle("GET /api/v1/sync", gzipped(s.authed(s.sync)))
 	mux.Handle("GET /api/v1/search", gzipped(s.authed(s.search)))

@@ -4,6 +4,7 @@ import androidx.sqlite.SQLiteStatement
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import notes.core.crypto.LockedNotes
+import notes.core.images.ImageRef
 import notes.core.text.Uuid7
 import notes.core.text.plainText
 import notes.core.text.tags
@@ -77,7 +78,9 @@ internal data class Payload(
     val content: String = "",
     val createdAt: Long? = null,
     val updatedAt: Long? = null,
-    val conflictOf: String? = null
+    val conflictOf: String? = null,
+    /** A locked body's images (§7.6), when this device knows them; null leaves the server's record as it is. */
+    val imageIds: List<String>? = null
 )
 
 internal val outboxJson = Json {
@@ -86,6 +89,7 @@ internal val outboxJson = Json {
 }
 
 internal fun Sql.enqueue(noteId: String, type: String, payload: Payload?, now: Long) {
+    val sent = payload?.copy(imageIds = lockedImageIds(payload.content))
     exec(
         """
         INSERT INTO sync_outbox (operation_id, note_id, operation_type, base_revision, payload_json, created_at)
@@ -94,7 +98,7 @@ internal fun Sql.enqueue(noteId: String, type: String, payload: Payload?, now: L
         Uuid7.generate(),
         noteId,
         type,
-        payload?.let { outboxJson.encodeToString(it) } ?: "{}",
+        sent?.let { outboxJson.encodeToString(it) } ?: "{}",
         now
     )
 }
@@ -117,7 +121,12 @@ internal fun Sql.unsentOp(noteId: String): PendingOp? = one(
 internal fun Sql.queueText(noteId: String, title: String, content: String, now: Long) {
     val pending = unsentOp(noteId)
     if (pending != null && pending.type != DELETE) {
-        val payload = pending.payload.copy(title = title, content = content, updatedAt = now)
+        val payload = pending.payload.copy(
+            title = title,
+            content = content,
+            updatedAt = now,
+            imageIds = lockedImageIds(content)
+        )
         exec(
             "UPDATE sync_outbox SET payload_json = ? WHERE operation_id = ?",
             outboxJson.encodeToString(payload),
@@ -132,8 +141,15 @@ internal fun Sql.queueText(noteId: String, title: String, content: String, now: 
  * A new note holding [title]/[content], queued for upload. Conflicted and
  * recovered copies are made this way, so no text is ever dropped.
  */
-internal fun Sql.insertCopy(title: String, content: String, conflictOf: String?, now: Long): String {
+internal fun Sql.insertCopy(
+    title: String,
+    content: String,
+    conflictOf: String?,
+    now: Long,
+    imageIds: List<String>? = null
+): String {
     val id = Uuid7.generate()
+    rememberImages(id, content, imageIds ?: lockedImageIds(content))
     exec(
         "INSERT INTO notes (id, title, content, created_at, updated_at, conflict_of, dirty) VALUES (?, ?, ?, ?, ?, ?, 1)",
         id,
@@ -152,3 +168,42 @@ internal fun copyTitle(title: String, suffix: String) = title.trim().ifEmpty { "
 
 internal const val CONFLICTED = " (Conflicted copy)"
 internal const val RECOVERED = " (Recovered copy)"
+
+/** How many recent locked bodies per note keep their images: saved, stored, and one a conflict copies. */
+private const val BODIES_KEPT = 3
+
+/**
+ * Records that the locked body [content] of [noteId] shows [imageIds], so
+ * whatever later sends that body (a save, a merge, a copy) lists them. The
+ * few newest bodies per note are kept; older ones are never sent again.
+ */
+internal fun Sql.rememberImages(noteId: String, content: String, imageIds: List<String>?) {
+    if (imageIds == null || !LockedNotes.isLocked(content)) return
+    exec(
+        "INSERT OR REPLACE INTO locked_images (note_id, content_sha, image_ids) VALUES (?, ?, ?)",
+        noteId,
+        ImageRef.sha256(content.toByteArray()),
+        outboxJson.encodeToString(imageIds)
+    )
+    exec(
+        """
+        DELETE FROM locked_images WHERE note_id = ? AND rowid NOT IN
+            (SELECT rowid FROM locked_images WHERE note_id = ? ORDER BY rowid DESC LIMIT ?)
+        """,
+        noteId,
+        noteId,
+        BODIES_KEPT.toLong()
+    )
+}
+
+/** A note gone from this device: its bodies' images aren't needed. */
+internal fun Sql.forgetImages(noteId: String) = exec("DELETE FROM locked_images WHERE note_id = ?", noteId)
+
+/** The images in a locked body this device encrypted or synced; null for a plain body or an unknown one. */
+internal fun Sql.lockedImageIds(content: String): List<String>? {
+    if (!LockedNotes.isLocked(content)) return null
+    return one(
+        "SELECT image_ids FROM locked_images WHERE content_sha = ? ORDER BY rowid DESC LIMIT 1",
+        ImageRef.sha256(content.toByteArray())
+    ) { outboxJson.decodeFromString<List<String>>(it.getText(0)) }
+}

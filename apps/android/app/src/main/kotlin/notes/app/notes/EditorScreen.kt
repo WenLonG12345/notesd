@@ -14,6 +14,9 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.Window
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -84,6 +87,7 @@ import notes.app.MainActivity
 import notes.app.R
 import notes.app.editor.FormatState
 import notes.app.editor.FormattingBar
+import notes.app.editor.ImageSource
 import notes.app.editor.LinkDialog
 import notes.app.editor.LinkSheet
 import notes.app.editor.LinkTap
@@ -138,7 +142,9 @@ fun EditorScreen(
     emailRequested: Boolean = false,
     onEmailRequestHandled: () -> Unit = {},
     sendEmail: suspend (List<String>) -> EmailOutcome = { EmailOutcome.NotSynced },
-    fingerprint: FingerprintUnlock? = null
+    fingerprint: FingerprintUnlock? = null,
+    /** Pictures for the note's image runs; null shows placeholders and hides Add picture. */
+    images: ImageSource? = null
 ) {
     val context = LocalContext.current
     val t = LocalTokens.current
@@ -151,6 +157,7 @@ fun EditorScreen(
     val needsUnlock by vm.needsUnlock.collectAsStateWithLifecycle()
     val unreadable by vm.unreadable.collectAsStateWithLifecycle()
     val storedTitle by vm.title.collectAsStateWithLifecycle()
+    val imageProblem by vm.imageProblem.collectAsStateWithLifecycle()
 
     /** Lock note was chosen, and the session needs a password created or entered first. */
     var locking by remember { mutableStateOf<LockSession.State?>(null) }
@@ -198,10 +205,36 @@ fun EditorScreen(
     }
 
     fun setLocked(on: Boolean) {
-        val doc = editor?.document() ?: return
+        val ids = editor?.imageIds() ?: return
         // The session itself, not the collected state: right after a dialog unlocks, that lags a frame.
         val now = locks.state.value
-        if (!on || now == LockSession.State.Unlocked) vm.setLocked(doc, on) else locking = now
+        if (on && now != LockSession.State.Unlocked) {
+            locking = now
+            return
+        }
+        scope.launch {
+            // The pictures go with the lock (§10.1): stored again encrypted, or plain, before the note is.
+            // Applied only once all have moved: a failure partway leaves the note as it was.
+            var pending = ids
+            val done = HashSet<String>()
+            val moved = HashMap<String, String>()
+            while (true) {
+                moved += vm.moveImages(pending, on) ?: return@launch
+                val e = editor ?: return@launch
+                done += pending
+                // Pictures added while those moved go with the lock too.
+                pending = e.imageIds() - done
+                if (pending.isEmpty()) break
+            }
+            val e = editor ?: return@launch
+            e.replaceImages(moved)
+            vm.setLocked(e.document(), on)
+        }
+    }
+
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch { vm.addImage(context.contentResolver, uri)?.let { editor?.insertImage(it) } }
     }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -236,7 +269,16 @@ fun EditorScreen(
                         }
                     )
                 }
-                FormattingBar(state, { editor }, onLink = { linkDialog = editor?.linkContext() })
+                FormattingBar(
+                    state,
+                    { editor },
+                    onLink = { linkDialog = editor?.linkContext() },
+                    onImage = images?.let {
+                        {
+                            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }
+                    }
+                )
             }
         }
     }
@@ -283,6 +325,15 @@ fun EditorScreen(
                 promptFingerprint = !lockedHere
             )
         }
+        imageProblem?.let { message ->
+            Banner(
+                message,
+                BannerKind.Error,
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                action = "Dismiss",
+                onAction = vm::dismissImageProblem
+            )
+        }
         if (lockFailed && !needsUnlock) {
             Banner(
                 "This note couldn't be saved, so locked notes are still unlocked. Try Lock now again.",
@@ -315,6 +366,7 @@ fun EditorScreen(
                         val pad = editorStyle.dp(22f).toInt()
                         setPadding(pad, editorStyle.dp(6f).toInt(), pad, editorStyle.dp(40f).toInt())
                         hint = "Title"
+                        imageSource = images
                         setDocument(doc)
                         onChange = {
                             vm.edited()

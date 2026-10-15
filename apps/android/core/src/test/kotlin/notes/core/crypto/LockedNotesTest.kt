@@ -30,6 +30,9 @@ class LockedNotesTest {
     private data class Envelope(val name: String, val key: String, val envelope: String, val plaintext: String = "")
 
     @Serializable
+    private data class Image(val name: String, val key: String, val plain: String? = null, val sealed: String)
+
+    @Serializable
     private data class Verifier(val name: String, val key: String, val verifier: String)
 
     @Serializable
@@ -39,6 +42,7 @@ class LockedNotesTest {
         val wraps: List<Wrap>,
         val envelopes: List<Envelope>,
         val invalid: List<Envelope>,
+        val images: List<Image>,
         val verifiers: List<Verifier>
     )
 
@@ -94,6 +98,21 @@ class LockedNotesTest {
     fun refusesInvalid() {
         for (v in fixtures.invalid) {
             assertFailsWith<LockedException>(v.name) { LockedNotes.decrypt(b(v.key), v.envelope) }
+        }
+    }
+
+    @Test
+    fun images() {
+        for (v in fixtures.images) {
+            val plain = v.plain
+            if (plain == null) {
+                assertFailsWith<LockedException>(v.name) { LockedNotes.decryptImage(b(v.key), b(v.sealed)) }
+                continue
+            }
+            assertEquals(plain, LockedNotes.encode(LockedNotes.decryptImage(b(v.key), b(v.sealed))), v.name)
+            val again = LockedNotes.encryptImage(b(v.key), b(plain))
+            assertNotEquals(v.sealed, LockedNotes.encode(again), "fresh nonce: ${v.name}")
+            assertEquals(plain, LockedNotes.encode(LockedNotes.decryptImage(b(v.key), again)), v.name)
         }
     }
 

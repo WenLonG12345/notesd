@@ -33,7 +33,7 @@ exist). A binary built without the web app still works; web pages show a
 ## Commands and configuration
 
 The commands (`serve`, the default, plus `create-owner`, `reset-password`,
-`reindex`, `check` and `version`) and every user-facing flag are documented
+`reindex`, `check`, `gc-images`, `export` and `version`) and every user-facing flag are documented
 in [docs/hosting.md](../docs/hosting.md#configuration) and
 [docs/operations.md](../docs/operations.md#maintenance-commands). Notes for
 working on them:
@@ -73,9 +73,9 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | GET | `/auth/sessions` | signed-in browsers and devices |
 | DELETE | `/auth/sessions/{id}` | revoke one |
 | GET | `/notes?limit=&cursor=&tag=&untagged=` | live notes, newest first, with `preview` (plain text, one line per block, ≤160 chars) and `locked`; `nextCursor` is opaque; `total` counts the matching live notes. `tag` (with or without `#`) keeps notes with that tag or one nested under it; `untagged=true` keeps notes without tags |
-| POST | `/notes` | `{operationId, id, title, content, createdAt?, updatedAt?, conflictOf?}` → 201 |
+| POST | `/notes` | `{operationId, id, title, content, createdAt?, updatedAt?, conflictOf?, imageIds?}` → 201. `imageIds` lists a locked note's images (up to 1000); a plain note's are read from its content |
 | GET | `/notes/{id}` | 410 with the tombstone in `current` if deleted |
-| PUT | `/notes/{id}` | `{operationId, baseRevision, title, content, updatedAt?}`; both fields required |
+| PUT | `/notes/{id}` | `{operationId, baseRevision, title, content, updatedAt?, imageIds?}`; both fields required. For a locked note, absent `imageIds` keeps the images recorded |
 | DELETE | `/notes/{id}` | `{operationId, baseRevision}` |
 | POST | `/notes/{id}/email` | `{to: [address, …], revision}` → `{id}` (Resend's). Sends the stored note: HTML rendered from the Markdown plus the Markdown as plain text, subject = title. `revision` must be the server's current one (`409 stale_revision` otherwise: sync first). Up to 10 recipients. `409 email_not_configured` without settings; `502 email_failed` with Resend's `message` when Resend refuses (unverified domain, bad key); `409 note_locked` for a locked note |
 | GET | `/sync?since=&limit=&generation=` | `{changes, nextCursor, hasMore, generation}` |
@@ -88,6 +88,8 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | PUT | `/locks/keys/{id}` | `{kind, credentialId?, salt, iterations, wrapped, verifier}`. `id` is `password` or `recovery` for those kinds; a `passkey` takes any other id of 1–64 characters `[A-Za-z0-9_-]` (`400` otherwise). `salt`, `wrapped`, `credentialId` and `verifier` are unpadded base64url. The first entry must be the password, and its `verifier` is stored (hashed); every later write must send the same verifier (`403 bad_verifier`). `409 no_lock_password` for a recovery or passkey entry first |
 | DELETE | `/locks/keys/{id}` | `{verifier}`; the password entry can't be removed (`409 password_key_required`) |
 | DELETE | `/locks` | `{accountPassword}`: forgets the whole keyring (a forgotten lock password); rate-limited like a password change |
+| PUT | `/images/{sha256}` | raw body, up to 10 MiB, `Content-Type` one of `image/jpeg`, `image/png`, `image/webp`, `image/gif` or `application/vnd.notesd.locked` (an encrypted image). `{sha256}` is lowercase hex of the body (`400 hash_mismatch` otherwise); image types must match the body's magic bytes (`415 unsupported_image`). → `201 {id, contentType, size}`, or `200` if it already exists, so retries are safe |
+| GET | `/images/{sha256}` | the bytes with their stored type, `Cache-Control: private, max-age=31536000, immutable`, an `ETag` and a sandboxing CSP |
 
 `/healthz` (process up) and `/readyz` (database reachable) sit outside
 `/api/v1`. Every other path serves the web app, falling back to `index.html`.
@@ -125,6 +127,16 @@ clear. `verifier` is HMAC-SHA256 of the key with `notesd:verifier:v1`:
 proof that a client holds the key, so a stolen session alone can't replace
 or delete entries.
 
+**Images** (architecture §7.6). Notes reference them as
+`![alt](notesd:image/<sha256>?w=<px>&h=<px>)`. The server tracks which notes show
+which images (`note_images`): plain notes' from their content, locked notes'
+from the `imageIds` their clients send, which notes and sync changes return
+for locked notes. An image is deleted 30 days after the last note showing it
+stops (or 30 days after upload, if no note ever does), every 6 hours or by
+`notesd gc-images`. On a database upgraded from before references were
+tracked, encrypted images are kept until a locked note's save lists them and
+a later one drops them: `gc-images` doesn't remove those by itself.
+
 **Search.** Input is split into words, each quoted as a prefix term, so FTS5
 syntax in user input is inert and never errors. `excerpt` is HTML-escaped
 note text with matches wrapped in `<mark>`.
@@ -138,6 +150,7 @@ internal/notes     create/update/delete, revisions, tombstones, idempotency, lis
 internal/sync      change feed
 internal/search    Markdown → plain text and tags, FTS5 query building, search, tag listing, reindex
 internal/locks     locked-note envelopes, keyring
+internal/images    image blobs: validation, storage, references, collection, integrity check
 internal/mail      email settings, note Markdown → HTML email, Resend client
 internal/auth      Argon2id, sessions, setup token, login rate limiting
 internal/api       routing, auth/CSRF middleware, handlers, gzip, logging

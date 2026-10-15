@@ -9,6 +9,8 @@ const snap = (s: Partial<Snapshot>): Snapshot => ({
   updatedAt: 1,
   failures: 0,
   locked: false,
+  imageError: null,
+  imagesBusy: false,
   ...s,
 })
 

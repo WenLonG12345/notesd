@@ -1,7 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +20,7 @@ import (
 	"time"
 
 	"notes/server/internal/database"
+	"notes/server/internal/images"
 	"notes/server/internal/locks"
 	"notes/server/internal/notes"
 )
@@ -57,7 +65,7 @@ func TestExportNotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := writeExport(dir, all, nil)
+	res, err := writeExport(dir, all, nil, noImages)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,8 +97,139 @@ func TestExportNotes(t *testing.T) {
 		t.Errorf("mtime = %v", info.ModTime())
 	}
 
-	if _, err := writeExport(dir, all, nil); err == nil || !strings.Contains(err.Error(), "not empty") {
+	if _, err := writeExport(dir, all, nil, noImages); err == nil || !strings.Contains(err.Error(), "not empty") {
 		t.Fatalf("second export into the same dir: %v", err)
+	}
+}
+
+func noImages(string) (string, []byte, error) { return "", nil, images.ErrNotFound }
+
+// storedImages keeps images as the server does and returns a reference to each.
+func storedImages(t *testing.T, db *database.DB) (getImage, func(contentType string, data []byte) (id, ref string)) {
+	t.Helper()
+	s := images.NewStore(db)
+	get := func(id string) (string, []byte, error) {
+		img, data, err := s.Get(ctx, id)
+		return img.ContentType, data, err
+	}
+	return get, func(contentType string, data []byte) (string, string) {
+		t.Helper()
+		sum := sha256.Sum256(data)
+		id := hex.EncodeToString(sum[:])
+		if _, _, err := s.Put(ctx, id, contentType, data); err != nil {
+			t.Fatal(err)
+		}
+		return id, "notesd:image/" + id + "?w=4&h=3"
+	}
+}
+
+// A 1×1 PNG and a JPEG's leading bytes: enough for the type check.
+var (
+	png  = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+	jpeg = []byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10, 'J', 'F', 'I', 'F'}
+)
+
+func TestExportImages(t *testing.T) {
+	db, create := newDB(t)
+	get, put := storedImages(t, db)
+	pngID, pngRef := put("image/png", png)
+	jpgID, jpgRef := put("image/jpeg", jpeg)
+	missing := "notesd:image/" + strings.Repeat("0", 64) + "?w=4&h=3"
+	create("a", "Trip", "Day one\n\n![the beach]("+pngRef+")\n\nand ![]("+jpgRef+") inline\n")
+	create("b", "Again", "![same]("+pngRef+")\n\n![gone]("+missing+")\n")
+	code := "`![code](" + jpgRef + ")`\n"
+	create("c", "Code", code)
+
+	dir := filepath.Join(t.TempDir(), "out")
+	all, err := liveNotes(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := writeExport(dir, all, nil, get)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != (exported{Written: 3, Images: 2, MissingImages: 1}) {
+		t.Fatalf("result = %+v", res)
+	}
+	for name, want := range map[string]string{
+		"Trip.md":  "# Trip\n\nDay one\n\n![the beach](images/" + pngID + ".png)\n\nand ![](images/" + jpgID + ".jpg) inline\n",
+		"Again.md": "# Again\n\n![same](images/" + pngID + ".png)\n\n![gone](" + missing + ")\n",
+		"Code.md":  "# Code\n\n" + code,
+	} {
+		got, _ := os.ReadFile(filepath.Join(dir, name))
+		if string(got) != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+	entries, _ := os.ReadDir(filepath.Join(dir, "images"))
+	if len(entries) != 2 {
+		t.Fatalf("images/ holds %d files, want 2", len(entries))
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "images", pngID+".png")); !bytes.Equal(got, png) {
+		t.Errorf("png = %q", got)
+	}
+}
+
+// seal encrypts as the clients do (§10.1), for building locked notes in tests.
+func seal(t *testing.T, key, plain []byte, aad string) []byte {
+	t.Helper()
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatal(err)
+	}
+	return gcm.Seal(nonce, nonce, plain, []byte(aad))
+}
+
+func TestExportLockedImages(t *testing.T) {
+	f := loadCryptoFixtures(t)
+	key, err := base64.RawURLEncoding.DecodeString(f.Images[0].Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, _ := base64.RawURLEncoding.DecodeString(f.Images[0].Plain)
+	sealed, _ := base64.RawURLEncoding.DecodeString(f.Images[0].Sealed)
+
+	db, create := newDB(t)
+	get, put := storedImages(t, db)
+	lockedID, lockedRef := put(images.Locked, sealed)
+	_, otherRef := put(images.Locked, seal(t, make([]byte, 32), plain, "notesd:image:v1"))
+	body := "![x](" + lockedRef + ")\n\n![y](" + otherRef + ")\n"
+	create("a", "Secret", locks.Prefix+base64.RawURLEncoding.EncodeToString(seal(t, key, []byte(body), "notesd:locked:v1")))
+	all, err := liveNotes(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Without the key the note is skipped, and so are its images.
+	dir := filepath.Join(t.TempDir(), "out")
+	if res, err := writeExport(dir, all, nil, get); err != nil || res != (exported{Locked: 1}) {
+		t.Fatalf("no key: %+v, %v", res, err)
+	}
+
+	dir = filepath.Join(t.TempDir(), "out")
+	res, err := writeExport(dir, all, key, get)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The second image is sealed under another key: it keeps its reference.
+	if res != (exported{Written: 1, Images: 1, MissingImages: 1}) {
+		t.Fatalf("result = %+v", res)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, "Secret.md"))
+	if want := "# Secret\n\n![x](images/" + lockedID + ".png)\n\n![y](" + otherRef + ")\n"; string(got) != want {
+		t.Fatalf("Secret.md = %q, want %q", got, want)
+	}
+	if img, _ := os.ReadFile(filepath.Join(dir, "images", lockedID+".png")); !bytes.Equal(img, plain) {
+		t.Fatal("the locked image wasn't written decrypted")
 	}
 }
 
@@ -124,6 +263,7 @@ type cryptoFixtures struct {
 	Wraps     []struct{ Kind, Wrapped string }
 	Envelopes []struct{ Name, Plaintext, Envelope string }
 	Invalid   []struct{ Name, Envelope string }
+	Images    []struct{ Name, Key, Plain, Sealed string }
 }
 
 func loadCryptoFixtures(t *testing.T) cryptoFixtures {
@@ -194,7 +334,7 @@ func TestExportLockedNotes(t *testing.T) {
 	}
 
 	dir := filepath.Join(t.TempDir(), "out")
-	res, err := writeExport(dir, all, key)
+	res, err := writeExport(dir, all, key, noImages)
 	if err != nil {
 		t.Fatal(err)
 	}

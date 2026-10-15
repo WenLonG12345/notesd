@@ -12,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
+import notes.core.crypto.LockedNotes
 
 class NoteStoreTest {
     private val dir: File = Files.createTempDirectory("notes-store").toFile()
@@ -23,6 +24,16 @@ class NoteStoreTest {
     fun cleanUp() {
         db.close()
         dir.deleteRecursively()
+    }
+
+    @Test
+    fun `a deleted note's locked bodies forget their images`() = runBlocking {
+        val body = LockedNotes.encrypt(ByteArray(32), "![](notesd:image/${"a".repeat(64)}?w=1&h=1)\n")
+        store.save("n", "Secret", body, imageIds = listOf("a".repeat(64)))
+        val rows = suspend { db.read { it.long("SELECT count(*) FROM locked_images") } }
+        assertEquals(1L, rows())
+        store.delete("n")
+        assertEquals(0L, rows())
     }
 
     @Test

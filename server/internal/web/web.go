@@ -85,7 +85,7 @@ func serveIndex(w http.ResponseWriter, r *http.Request, root fs.FS) {
 
 func setSecurityHeaders(h http.Header) {
 	h.Set("Content-Security-Policy",
-		"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "+
+		"default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "+
 			"object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "same-origin")

@@ -28,7 +28,7 @@ import notes.core.text.scanTags
  * exception that can't wait: a raw run that lost part of its text is removed
  * whole (raw text is never edited in place).
  */
-class Normalizer(private val style: EditorStyle) {
+class Normalizer(private val style: EditorStyle, private val images: ImageSpans? = null) {
     private data class Info(val path: List<Container>, val leaf: Leaf)
 
     private class Range(val start: Int, val contentEnd: Int, val end: Int)
@@ -49,6 +49,7 @@ class Normalizer(private val style: EditorStyle) {
         applyLeafStyles(text, ranges, infos)
         clipMarks(text, ranges, infos)
         applyTags(text)
+        images?.apply(text)
     }
 
     // --- raw runs ------------------------------------------------------------

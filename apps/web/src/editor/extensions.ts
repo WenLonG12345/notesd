@@ -62,6 +62,47 @@ export const RawInline = Node.create({
 })
 
 /**
+ * An image the apps added (spec §7.6). Like a raw run it is atomic and
+ * written back as its exact source; id, size and alt are read from it. The
+ * editor swaps in a node view that loads (and decrypts) the picture.
+ */
+export const NoteImage = Node.create({
+  name: 'image',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  selectable: true,
+  draggable: false,
+  addAttributes() {
+    return {
+      source: { default: '' },
+      id: { default: '' },
+      w: { default: 1 },
+      h: { default: 1 },
+      alt: { default: '' },
+    }
+  },
+  parseHTML() {
+    return [
+      {
+        tag: 'img[data-image]',
+        getAttrs: (el) => ({
+          source: el.getAttribute('data-image') ?? '',
+          id: el.getAttribute('data-id') ?? '',
+          w: Number(el.getAttribute('width') ?? 1),
+          h: Number(el.getAttribute('height') ?? 1),
+          alt: el.getAttribute('alt') ?? '',
+        }),
+      },
+    ]
+  },
+  renderHTML({ node }) {
+    const { source, id, w, h, alt } = node.attrs as { source: string; id: string; w: number; h: number; alt: string }
+    return ['img', { 'data-image': source, 'data-id': id, width: w, height: h, alt }]
+  },
+})
+
+/**
  * The note's first line, stored as its own plain-text title field, not in
  * the Markdown. Marks aren't allowed: a title has no formatting.
  */
@@ -102,6 +143,7 @@ const blockExtensions: Extensions = [
   }),
   RawBlock,
   RawInline,
+  NoteImage,
 ]
 
 /** Document model only: what Markdown parses into. */

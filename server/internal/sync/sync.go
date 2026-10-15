@@ -91,6 +91,13 @@ func Changes(ctx context.Context, db *database.DB, since int64, limit int, gener
 			return err
 		}
 
+		rows.Close()
+		for i := range page.Changes {
+			if err := notes.FillImageIDs(ctx, tx, &page.Changes[i]); err != nil {
+				return err
+			}
+		}
+
 		if len(page.Changes) > limit {
 			page.Changes = page.Changes[:limit]
 			page.HasMore = true

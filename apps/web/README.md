@@ -86,9 +86,20 @@ other client.
 
 Formatting is limited to the spec's dialect (§7.1): bold, italic,
 strikethrough, three heading levels, bulleted, numbered and task lists,
-quotes and links (http, https and mailto). Markdown outside it, such as code,
-tables and images, is shown read-only and written back byte for byte, so
-opening and saving a note never changes text written on another device.
+quotes and links (http, https and mailto), plus images added by the apps
+(§7.6). Markdown outside it, such as code, tables and other images, is shown
+read-only and written back byte for byte, so opening and saving a note never
+changes text written on another device.
+
+Images come from the toolbar's picture button, a paste or a drop
+(`src/images/`). Each is downscaled on a canvas (2048 px, JPEG or PNG),
+encrypted when the note is locked, uploaded, and only then inserted as an
+`image` node, an atom that keeps its Markdown source like a raw run. A
+plain image loads straight from `/api/v1/images/<id>`; one that won't (it's
+encrypted) is fetched, decrypted and shown from a `blob:` URL. Locking or
+unlocking a note first re-uploads its images the other way round
+(`resealImages`) and points the nodes at them; if that fails, the lock stays
+as it was.
 Output is canonical (`**bold**`, `-` bullets, one task syntax), and the
 round trip is pinned by `shared/markdown-fixtures/roundtrip.json`.
 
