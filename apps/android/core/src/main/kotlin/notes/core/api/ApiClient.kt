@@ -230,7 +230,6 @@ class ApiClient(
         }
         val code = reply.code
         val retryAfter = reply.retryAfter
-        val body = reply.text
         if (code in 200..299) {
             return@withContext try {
                 ApiResult.Ok(decode(reply))
@@ -240,8 +239,9 @@ class ApiClient(
                 unexpected(code)
             }
         }
+        // Only an error's body is text here: a success may be an image.
         val error = try {
-            json.decodeFromString<ErrorBody>(body)
+            json.decodeFromString<ErrorBody>(reply.text)
         } catch (_: SerializationException) {
             ErrorBody()
         } catch (_: IllegalArgumentException) {

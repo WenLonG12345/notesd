@@ -23,7 +23,8 @@ lists all your tags, so you can browse by topic. Tags can be nested with `/`
 
 **Images.** Add photos to a note from the toolbar, or paste or drop them on the
 web. They're downscaled and stripped of location data before upload, and on
-Android you can add them offline.
+Android you can add them offline. GIFs are the exception: they're uploaded as
+they are, so they stay animated, and keep any metadata they hold.
 
 **Locked notes.** Lock any note and its body is encrypted on-device with AES-256-GCM before
 they're saved or synced, so the server only stores ciphertext. Unlock with a

@@ -24,6 +24,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import notes.app.images.ImageException
+import notes.app.images.Prepared
 import notes.app.images.prepareImage
 import notes.core.api.LOCKED_IMAGE
 import notes.core.crypto.LockSession
@@ -134,17 +135,27 @@ class EditorViewModel(
         val store = images ?: return null
         return try {
             val prepared = prepareImage(resolver, uri)
-            val (bytes, type) = if (_locked.value) {
-                val key = locks.key() ?: throw ImageException("Unlock locked notes to add pictures to this note.")
-                withContext(Dispatchers.Default) { LockedNotes.encryptImage(key, prepared.bytes) } to LOCKED_IMAGE
-            } else {
-                prepared.bytes to prepared.type
-            }
-            ImageRef(store.add(bytes, type), prepared.width, prepared.height).markdown()
+            val locked = _locked.value
+            var id = storeImage(store, prepared, locked)
+            // Locked or unlocked meanwhile: stored the way the note is now.
+            if (_locked.value != locked) id = storeImage(store, prepared, _locked.value)
+            ImageRef(id, prepared.width, prepared.height).markdown()
         } catch (e: ImageException) {
             _imageProblem.value = e.message
             null
         }
+    }
+
+    private suspend fun storeImage(store: ImageStore, prepared: Prepared, locked: Boolean): String {
+        if (!locked) return store.add(prepared.bytes, prepared.type)
+        // A copy: locking zeroes the session's key.
+        val key = locks.key()?.copyOf() ?: throw ImageException("Unlock locked notes to add pictures to this note.")
+        val sealed = try {
+            withContext(Dispatchers.Default) { LockedNotes.encryptImage(key, prepared.bytes) }
+        } finally {
+            key.fill(0)
+        }
+        return store.add(sealed, LOCKED_IMAGE)
     }
 
     /**
@@ -156,7 +167,13 @@ class EditorViewModel(
     suspend fun moveImages(ids: Set<String>, locked: Boolean): Map<String, String>? {
         val store = images ?: return emptyMap()
         if (ids.isEmpty()) return emptyMap()
-        val moved = locks.key()?.let { store.move(ids, locked, it) }
+        // A copy: locking zeroes the session's key, and fetching the pictures may take a while.
+        val key = locks.key()?.copyOf()
+        val moved = try {
+            key?.let { store.move(ids, locked, it) }
+        } finally {
+            key?.fill(0)
+        }
         if (moved == null) {
             _imageProblem.value = "A picture in this note couldn’t be moved with the lock. " +
                 "If it isn’t on this phone yet, connect and try again."

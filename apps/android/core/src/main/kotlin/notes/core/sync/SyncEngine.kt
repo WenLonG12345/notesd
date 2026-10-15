@@ -113,17 +113,26 @@ class SyncEngine(
         }
     }
 
-    private suspend fun push(api: ApiClient): Stop? {
-        images?.let { store ->
-            when (val r = store.upload(api)) {
-                is ApiResult.Ok -> Unit
-                is ApiResult.Rejected -> return Stop(SyncOutcome.Failed, "The server had a problem (${r.status}).")
-                else -> return stop(r)
-            }
+    /** Uploads every image waiting on this device; a Stop if one couldn't go. */
+    private suspend fun uploadImages(api: ApiClient): Stop? {
+        val store = images ?: return null
+        return when (val r = store.upload(api)) {
+            is ApiResult.Ok -> null
+            is ApiResult.Rejected -> Stop(SyncOutcome.Failed, "The server had a problem (${r.status}).")
+            else -> stop(r)
         }
+    }
+
+    private suspend fun push(api: ApiClient): Stop? {
+        // Every waiting image goes, whether or not a note operation follows.
+        uploadImages(api)?.let { return it }
         while (true) {
             val next = store.nextOperation() ?: return null
             val op = store.prepare(next) ?: continue
+            // For each operation, once it's in hand: an image's pending row is written
+            // before the note showing it is saved, so this sends every image the
+            // operation can show, including ones added while an earlier one was in flight.
+            uploadImages(api)?.let { return it }
             val result = send(api, op)
             when (result) {
                 is ApiResult.Ok -> store.sent(op, result.value)

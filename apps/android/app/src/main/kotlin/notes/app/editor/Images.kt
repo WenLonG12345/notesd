@@ -8,6 +8,7 @@ import android.graphics.RectF
 import android.text.Spannable
 import android.text.Spanned
 import android.text.style.ReplacementSpan
+import android.text.style.TtsSpan
 import kotlin.math.roundToInt
 import notes.core.images.ImageRef
 
@@ -110,23 +111,47 @@ class ImageSpan(val source: String, val ref: ImageRef, private val host: ImageHo
     }
 }
 
-/** Keeps an [ImageSpan] on every image run, and none anywhere else. Run after each normalisation. */
+/**
+ * What TalkBack says for a picture instead of its Markdown: "Picture", and
+ * its alt text when it has one. The [ImageSpan] only replaces how it looks.
+ */
+class ImageDescription(val source: String) :
+    TtsSpan(TtsSpan.TYPE_TEXT, TtsSpan.TextBuilder(describe(source)).build().args) {
+    companion object {
+        fun describe(source: String): String {
+            val alt = ImageRef.alt(source)
+            return if (alt.isBlank()) "Picture" else "Picture: $alt"
+        }
+    }
+}
+
+/** Keeps an [ImageSpan] and an [ImageDescription] on every image run, and none anywhere else. Run after each normalisation. */
 class ImageSpans(private val host: ImageHost) {
     fun apply(text: Spannable) {
         val raws = text.getSpans(0, text.length, RawInlineSpan::class.java)
+        fun kept(span: Any, source: String): Boolean {
+            val s = text.getSpanStart(span)
+            val e = text.getSpanEnd(span)
+            return raws.any { it.source == source && text.getSpanStart(it) == s && text.getSpanEnd(it) == e }
+        }
         for (img in text.getSpans(0, text.length, ImageSpan::class.java)) {
-            val s = text.getSpanStart(img)
-            val e = text.getSpanEnd(img)
-            val kept = raws.any { it.source == img.source && text.getSpanStart(it) == s && text.getSpanEnd(it) == e }
-            if (!kept) text.removeSpan(img)
+            if (!kept(img, img.source)) text.removeSpan(img)
+        }
+        for (d in text.getSpans(0, text.length, ImageDescription::class.java)) {
+            if (!kept(d, d.source)) text.removeSpan(d)
         }
         for (raw in raws) {
             val ref = ImageRef.parse(raw.source) ?: continue
             val s = text.getSpanStart(raw)
             val e = text.getSpanEnd(raw)
-            val has = text.getSpans(s, e, ImageSpan::class.java)
-                .any { text.getSpanStart(it) == s && text.getSpanEnd(it) == e }
-            if (!has) text.setSpan(ImageSpan(raw.source, ref, host), s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            fun has(type: Class<*>) =
+                text.getSpans(s, e, type).any { text.getSpanStart(it) == s && text.getSpanEnd(it) == e }
+            if (!has(ImageSpan::class.java)) {
+                text.setSpan(ImageSpan(raw.source, ref, host), s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            if (!has(ImageDescription::class.java)) {
+                text.setSpan(ImageDescription(raw.source), s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
         }
     }
 

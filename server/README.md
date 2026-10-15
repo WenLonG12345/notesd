@@ -128,7 +128,7 @@ proof that a client holds the key, so a stolen session alone can't replace
 or delete entries.
 
 **Images** (architecture §7.6). Notes reference them as
-`![alt](notesd:image/<sha256>?w=&h=)`. The server tracks which notes show
+`![alt](notesd:image/<sha256>?w=<px>&h=<px>)`. The server tracks which notes show
 which images (`note_images`): plain notes' from their content, locked notes'
 from the `imageIds` their clients send. An image no note has shown for 30 days
 is deleted, every 6 hours or by `notesd gc-images`.

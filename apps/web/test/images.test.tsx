@@ -3,19 +3,19 @@ import { describe, expect, it, vi } from 'vitest'
 import type { LockKey } from '../src/api/types'
 import { decryptBody, fromBase64Url, importKey, openImage, passwordKek, unwrapRaw } from '../src/locks/crypto'
 import { sha256Hex } from '../src/images/ref'
-import { body, createNote, getNote, noteTitle, saved, selectInBody, signedIn } from './helpers'
+import { body, createNote, getNote, noteTitle, openNote as openInList, saved, selectInBody, signedIn } from './helpers'
 import type { TestServer } from './server'
 
 // jsdom can't decode or draw pictures: preparing returns the file as it is,
-// as a 1×1 PNG of the size the test names.
+// as a 1×1 PNG of the size the test names. A file named slow.png waits for
+// release(), to act while it uploads.
+let release = () => {}
 vi.mock('../src/images/prepare', async (actual) => ({
   ...(await actual<typeof import('../src/images/prepare')>()),
-  prepareImage: async (file: Blob) => ({
-    bytes: new Uint8Array(await file.arrayBuffer()),
-    type: 'image/png',
-    w: 640,
-    h: 480,
-  }),
+  prepareImage: async (file: Blob) => {
+    if (file instanceof File && file.name === 'slow.png') await new Promise<void>((r) => (release = r))
+    return { bytes: new Uint8Array(await file.arrayBuffer()), type: 'image/png', w: 640, h: 480 }
+  },
 }))
 
 // Nor does it make blob: URLs.
@@ -31,11 +31,13 @@ const imageRef = (content: string) => /\(notesd:image\/([0-9a-f]{64})\?w=640&h=4
 const shown = () => [...body().querySelectorAll<HTMLImageElement>('[data-image-view] img')]
 
 /** Signed in with one note open; the test PNG is on the server unless asked otherwise. */
-async function openNote(title: string, content: string, { upload = true } = {}) {
+async function openNote(title: string, content: string, { upload = true, other = '' } = {}) {
   let id = ''
   const ctx = await signedIn({
     seed: async (s) => {
       if (upload) await s.bytes('PUT', `/images/${await sha256Hex(PNG)}`, { type: 'image/png', data: PNG })
+      // Older, so the note opened is the one named.
+      if (other) await createNote(s, other, 'Other\n')
       id = await createNote(s, title, content)
     },
   })
@@ -43,8 +45,11 @@ async function openNote(title: string, content: string, { upload = true } = {}) 
   return { ...ctx, id }
 }
 
-async function pick(file: File) {
-  fireEvent.change(screen.getByTestId('image-input'), { target: { files: [file] } })
+/** A clipboard's getData holding only plain text. */
+const textOnly = (type: string) => (type === 'text/plain' ? 'pasted words' : '')
+
+async function pick(...files: File[]) {
+  fireEvent.change(screen.getByTestId('image-input'), { target: { files } })
 }
 
 async function keyOf(server: TestServer): Promise<CryptoKey> {
@@ -95,7 +100,42 @@ describe('images', () => {
     const paste = new Event('paste', { bubbles: true, cancelable: true })
     Object.defineProperty(paste, 'clipboardData', { value: { files: [pngFile()], getData: () => '', types: ['Files'] } })
     body().dispatchEvent(paste)
-    await waitFor(async () => expect(imageRef((await getNote(server, id)).content)).toBe(await sha256Hex(PNG)))
+    const sha = await sha256Hex(PNG)
+    await waitFor(async () => expect((await getNote(server, id)).content).toBe(`Line\n\n![](notesd:image/${sha}?w=640&h=480)\n`))
+  })
+
+  it('pasted text that comes with a picture pastes as text', async () => {
+    const { server, id } = await openNote('Mixed', 'Line\n')
+    selectInBody('Line')
+    const paste = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(paste, 'clipboardData', { value: { files: [pngFile()], getData: textOnly, types: ['text/plain', 'Files'] } })
+    body().dispatchEvent(paste)
+    // Left to the editor's own paste, which takes the text.
+    await waitFor(async () => expect((await getNote(server, id)).content).toContain('pasted words'))
+    expect(imageRef((await getNote(server, id)).content)).toBeUndefined()
+  })
+
+  it('several pictures picked at once go in in the order picked', async () => {
+    const { server, id } = await openNote('Many', 'Line\n')
+    const other = new Uint8Array([...PNG, 1])
+    selectInBody('Line')
+    await pick(pngFile(), new File([other], 'two.png', { type: 'image/png' }))
+    const [a, b] = [await sha256Hex(PNG), await sha256Hex(other)]
+    await waitFor(async () =>
+      expect((await getNote(server, id)).content).toBe(
+        `Line\n\n![](notesd:image/${a}?w=640&h=480)\n\n![](notesd:image/${b}?w=640&h=480)\n`,
+      ),
+    )
+  })
+
+  it('a picture that finishes uploading after its note is closed goes at the end of it', async () => {
+    const s = await openNote('First', 'Text\n', { other: 'Second' })
+    selectInBody('Text')
+    await pick(new File([PNG], 'slow.png', { type: 'image/png' }))
+    await openInList(s.user, 'Second')
+    release()
+    const sha = await sha256Hex(PNG)
+    await waitFor(async () => expect((await getNote(s.server, s.id)).content).toBe(`Text\n\n![](notesd:image/${sha}?w=640&h=480)\n`))
   })
 
   it('stored references render as pictures and survive other edits unchanged', async () => {

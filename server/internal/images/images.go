@@ -120,6 +120,21 @@ func (s *Store) Put(ctx context.Context, id, contentType string, data []byte) (i
 	return img, created, nil
 }
 
+// Info returns an image's metadata without reading its bytes.
+func (s *Store) Info(ctx context.Context, id string) (Image, error) {
+	if !ValidID(id) {
+		return Image{}, ErrNotFound
+	}
+	img := Image{ID: id}
+	err := s.db.R.QueryRowContext(ctx,
+		`SELECT content_type, size, created_at FROM images WHERE id = ?`, id,
+	).Scan(&img.ContentType, &img.Size, &img.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Image{}, ErrNotFound
+	}
+	return img, err
+}
+
 // Get returns an image and its bytes.
 func (s *Store) Get(ctx context.Context, id string) (Image, []byte, error) {
 	if !ValidID(id) {

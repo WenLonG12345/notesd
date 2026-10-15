@@ -20,7 +20,7 @@ async function upload(file: Prepared, locked: boolean): Promise<ImageRef> {
   }
   const id = await sha256Hex(bytes)
   await images.put(id, bytes, type)
-  if (locked) remember(id, file.bytes, file.type)
+  remember(id, file.bytes, file.type, locked)
   return { id, w: file.w, h: file.h }
 }
 
@@ -38,7 +38,10 @@ export async function storeImage(file: Blob, locked: () => boolean): Promise<Ima
 /** Decrypted images as blob: URLs, while locked notes are unlocked. */
 const decrypted = new Map<string, Promise<string | null>>()
 
-function remember(id: string, plain: Uint8Array<ArrayBuffer>, type: string) {
+/** Keeps a locked image's plain bytes for showing it, unless locked notes locked meanwhile. */
+function remember(id: string, plain: Uint8Array<ArrayBuffer>, type: string, locked: boolean) {
+  // Locked during the upload: the cleanup below already ran, and nothing would revoke this URL.
+  if (!locked || lockSession.getStatus() !== 'unlocked') return
   decrypted.set(id, Promise.resolve(URL.createObjectURL(new Blob([plain], { type }))))
 }
 
@@ -139,24 +142,34 @@ async function moveImage(id: string, locked: boolean, key: CryptoKey): Promise<s
   await images.put(next, file, type).catch(() => {
     throw new ImageError('A picture in this note couldn’t be uploaded. Try again when the connection is back.')
   })
-  if (locked) remember(next, bytes, blob.type)
+  remember(next, bytes, blob.type, locked)
   return next
 }
 
-/** Puts an image on its own line at pos (mapped by the caller), or in the empty paragraph there. */
-export function insertImageAt(editor: Editor, pos: number, ref: ImageRef) {
+/**
+ * Puts an image on its own line at pos (mapped by the caller), or in the
+ * empty paragraph there. Returns the position just after it, where the next
+ * of several pictures goes, so they keep their order.
+ */
+export function insertImageAt(editor: Editor, pos: number, ref: ImageRef): number {
   const { state } = editor
   const node = state.schema.nodes.image?.create({ source: imageMarkdown(ref), ...ref, alt: '' })
   const paragraph = state.schema.nodes.paragraph
-  if (!node || !paragraph) return
+  if (!node || !paragraph) return pos
   const $pos = state.doc.resolve(Math.min(pos, state.doc.content.size))
   const block = $pos.parent
   const tr = state.tr
+  let end: number
   if (block.type === paragraph && block.content.size === 0) {
     tr.insert($pos.pos, node)
+    end = $pos.pos + node.nodeSize
   } else {
-    // After the line the cursor is on; the title line counts as one too.
-    tr.insert($pos.after($pos.depth), paragraph.create(null, node))
+    // After the line the cursor is on; the title line counts as one too. At
+    // the top level (a drop between blocks) pos is already between lines.
+    const at = $pos.depth === 0 ? $pos.pos : $pos.after($pos.depth)
+    tr.insert(at, paragraph.create(null, node))
+    end = at + 1 + node.nodeSize
   }
   editor.view.dispatch(tr.scrollIntoView())
+  return end
 }

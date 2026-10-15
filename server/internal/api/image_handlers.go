@@ -54,7 +54,12 @@ func (s *Server) putImage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getImage(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	etag := `"` + id + `"`
-	if r.Header.Get("If-None-Match") == etag && images.ValidID(id) {
+	if r.Header.Get("If-None-Match") == etag {
+		// Only for an image that's still stored: a deleted one is a 404 (§7.6).
+		if _, err := s.images.Info(r.Context(), id); err != nil {
+			s.writeErr(w, r, err)
+			return
+		}
 		w.Header().Set("ETag", etag)
 		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 		w.WriteHeader(http.StatusNotModified)

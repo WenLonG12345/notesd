@@ -57,7 +57,9 @@ export function useNoteEditor(options: Options): Editor {
       },
       handlePaste: (view, event) => {
         const files = imageFiles(event.clipboardData?.files)
-        if (files.length === 0) return false
+        // Text with pictures (a document, a file copied in the file manager)
+        // pastes as text: the file there is often just a rendering of it.
+        if (files.length === 0 || event.clipboardData?.getData('text/plain').trim()) return false
         event.preventDefault()
         handlers.current.onImages(files, view.state.selection.from)
         return true
@@ -134,7 +136,8 @@ function useFormat(editor: Editor) {
 type ToolProps = {
   label: string
   keys?: string
-  on: boolean
+  /** Whether a toggle is on; left out for a button that only does something (no pressed state). */
+  on?: boolean
   className?: string | undefined
   run: () => void
   children: ReactNode
@@ -149,7 +152,9 @@ export function Tool({ label, keys, on, className, run, children, expanded, cont
       type="button"
       className={[styles.tool, className].filter(Boolean).join(' ')}
       aria-label={label}
-      {...(expanded === undefined ? { 'aria-pressed': on } : { 'aria-expanded': expanded, 'aria-controls': controls })}
+      {...(expanded !== undefined
+        ? { 'aria-expanded': expanded, 'aria-controls': controls }
+        : on !== undefined && { 'aria-pressed': on })}
       title={keys ? `${label} (${keys})` : label}
       // mousedown, not click: keep the editor's selection and focus.
       onMouseDown={(e) => {
@@ -223,7 +228,7 @@ export function ImageTool({ editor, onPick, className, iconSize = 16 }: ToolbarP
   const input = useRef<HTMLInputElement>(null)
   return (
     <>
-      <Tool label="Add picture" on={false} className={className} run={() => input.current?.click()}>
+      <Tool label="Add picture" className={className} run={() => input.current?.click()}>
         <ImageIcon size={iconSize} />
       </Tool>
       <input

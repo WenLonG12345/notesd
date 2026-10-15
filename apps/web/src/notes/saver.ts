@@ -241,6 +241,21 @@ export class NoteSaver {
     }
   }
 
+  /**
+   * Adds Markdown on its own line at the end of the note while no editor has
+   * it open: a picture whose upload finished after its note was closed.
+   * False if an editor has it open again, which owns the text.
+   */
+  appendClosed(markdown: string): boolean {
+    if (this.isAttached()) return false
+    const { title, content } = this.read()
+    const body = content.trimEnd()
+    const next = { title, content: `${body ? `${body}\n\n` : ''}${markdown}\n` }
+    this.read = () => next
+    this.edit()
+    return true
+  }
+
   dismissImageError() {
     this.imageError = null
     this.set(this.state)

@@ -97,6 +97,20 @@ func TestImages(t *testing.T) {
 		t.Fatalf("if-none-match: %d", res.StatusCode)
 	}
 
+	// A cached copy of an image that's no longer stored isn't confirmed.
+	gone := sha([]byte("never stored"))
+	req, _ = http.NewRequest("GET", e.srv.URL+"/api/v1/images/"+gone, nil)
+	req.Header.Set("Authorization", "Bearer "+c.bearer)
+	req.Header.Set("If-None-Match", `"`+gone+`"`)
+	res, err = c.hc.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 404 {
+		t.Fatalf("if-none-match for a missing image: %d", res.StatusCode)
+	}
+
 	locked := bytes.Repeat([]byte{7}, 40)
 	if r := c.raw("PUT", "/api/v1/images/"+sha(locked), "application/vnd.notesd.locked", locked); r.status != 201 {
 		t.Fatalf("locked: %d %s", r.status, r.raw)
@@ -172,14 +186,16 @@ func TestEmailInlinesImages(t *testing.T) {
 	content := "![a dot](notesd:image/" + id + "?w=1&h=1)\n\n" +
 		"![sealed](notesd:image/" + lockedID + "?w=1&h=1)\n\n" +
 		"![gone](notesd:image/" + missing + "?w=1&h=1)\n\n" +
-		"![again](notesd:image/" + id + "?w=1&h=1)\n"
+		"![again](notesd:image/" + id + "?w=1&h=1)\n\n" +
+		"![no size](notesd:image/" + id + ")\n"
 	c.do("POST", "/api/v1/notes", map[string]any{"operationId": "c1", "id": "n1", "title": "Pics", "content": content})
 	if r := c.do("POST", "/api/v1/notes/n1/email", map[string]any{"to": []string{"a@b.c"}, "revision": 1}); r.status != 200 {
 		t.Fatalf("send: %d %s", r.status, r.raw)
 	}
 	m := resend.sent[0]
 	html := m["html"].(string)
-	if strings.Count(html, `src="cid:`+id+`"`) != 2 || strings.Contains(html, "notesd:image") {
+	// Only app references are attached; one without the size isn't one.
+	if strings.Count(html, `src="cid:`+id+`"`) != 2 || strings.Count(html, `src="notesd:image/`+id+`"`) != 1 {
 		t.Fatalf("html: %s", html)
 	}
 	if !strings.Contains(html, "sealed") || !strings.Contains(html, "gone") || strings.Contains(html, lockedID) {

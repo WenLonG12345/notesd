@@ -3,7 +3,10 @@
 // metadata such as location. GIFs go as they are, to keep animation.
 
 export const MAX_SIDE = 2048
-export const MAX_BYTES = 10 << 20
+/** AES-GCM's nonce and tag, added when a locked note's image is encrypted. */
+const SEAL_OVERHEAD = 12 + 16
+/** The server's 10 MiB cap, less what encrypting adds, so a picture fits locked or not. */
+export const MAX_BYTES = (10 << 20) - SEAL_OVERHEAD
 const QUALITY = 0.85
 
 export type Prepared = { bytes: Uint8Array<ArrayBuffer>; type: string; w: number; h: number }
@@ -40,8 +43,8 @@ export async function prepareImage(file: Blob): Promise<Prepared> {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new ImageError('This browser can’t resize pictures.')
     ctx.drawImage(bitmap, 0, 0, w, h)
-    // Only formats that can hold transparency are checked; it stays PNG if used.
-    const keepAlpha = (file.type === 'image/png' || file.type === 'image/webp') && hasAlpha(ctx, w, h)
+    // Any format but JPEG may hold transparency (PNG, WebP, AVIF, …); it stays PNG if used.
+    const keepAlpha = file.type !== 'image/jpeg' && hasAlpha(ctx, w, h)
     const type = keepAlpha ? 'image/png' : 'image/jpeg'
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, QUALITY))
     if (!blob) throw new ImageError('This browser can’t resize pictures.')

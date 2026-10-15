@@ -56,8 +56,10 @@ sign in again. Nothing is lost.
   check lists, quotes and links.
 - Add a photo with the picture button in the same bar. It's resized and
   stripped of location data first, and works offline: it uploads with the
-  next sync. Photos from other devices download the first time you open
-  the note, then stay on the phone.
+  next sync. GIFs are uploaded as they are, so they keep any metadata they
+  hold. Photos from other devices download the first time you open the
+  note and are cached; Android may clear that cache, and then they download
+  again (which needs a connection).
 - Write `#tag` anywhere in a note to tag it. Use `#multi word tag#` for
   names with spaces and `#parent/child` to nest them. "‹ Tags" above the
   list (or the sidebar, on wide screens) filters by tag. While you type a

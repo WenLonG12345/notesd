@@ -35,17 +35,26 @@ class ImageLoader(private val store: ImageStore, private val locks: LockSession,
     private val loading = HashSet<String>()
     private val failedAt = HashMap<String, Long>()
 
+    /** Counts [forgetLocked] calls: a decryption started before the latest is thrown away. */
+    private var generation = 0
+
     override fun bitmap(id: String, width: Int, onReady: () -> Unit): Bitmap? {
         val key = "$id@$width"
         cache.get(key)?.let { return it }
         if (key in loading) return null
         failedAt[key]?.let { if (SystemClock.elapsedRealtime() - it < RETRY_MS) return null }
         loading += key
+        val started = generation
         scope.launch {
             val result = withContext(Dispatchers.Default) { decode(id, width) }
             loading -= key
             if (result == null) {
                 failedAt[key] = SystemClock.elapsedRealtime()
+                return@launch
+            }
+            if (result.second && started != generation) {
+                // Locked notes locked while this decrypted: it must not stay in memory.
+                result.first.recycle()
                 return@launch
             }
             failedAt -= key
@@ -58,6 +67,7 @@ class ImageLoader(private val store: ImageStore, private val locks: LockSession,
 
     /** Locked notes locked: their pictures leave memory with their text. */
     fun forgetLocked() {
+        generation++
         for (key in decrypted) cache.remove(key)
         decrypted.clear()
         failedAt.clear()
@@ -68,7 +78,8 @@ class ImageLoader(private val store: ImageStore, private val locks: LockSession,
         val file = store.load(id) ?: return null
         val locked = file.type == LOCKED_IMAGE
         val bytes = if (locked) {
-            val k = locks.key() ?: return null
+            // A copy: locking zeroes the session's own key, maybe mid-decryption.
+            val k = locks.key()?.copyOf() ?: return null
             try {
                 LockedNotes.decryptImage(k, file.bytes)
             } catch (_: LockedException) {

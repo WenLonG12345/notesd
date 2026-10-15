@@ -35,7 +35,7 @@
     { "name": "raw: image", "markdown": "![a cat](cat.png)\n" },
     { "name": "app image", "markdown": "Before\n\n![a cat](notesd:image/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855?w=1600&h=1200)\n\nAfter\n" },
     { "name": "app image without alt", "markdown": "![](notesd:image/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855?w=10&h=20)\n" },
-    { "name": "app image in text", "markdown": "See ![*cat*](notesd:image/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855?w=4&h=3) here\n" },
+    { "name": "app image in text", "markdown": "See ![a \\*cat\\*](notesd:image/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855?w=4&h=3) here\n" },
     { "name": "raw: fenced code", "markdown": "Before\n\n```go\nfmt.Println(\"*hi*\")\n\n// done\n```\n\nAfter\n" },
     { "name": "raw: indented code", "markdown": "    indented code\n    second line\n" },
     { "name": "raw: table", "markdown": "| a | b |\n| - | - |\n| 1 | 2 |\n" },

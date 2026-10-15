@@ -123,6 +123,27 @@ class ImagesTest {
     }
 
     @Test
+    fun `an image added while a note goes up still reaches the server before its own note`() = runBlocking<Unit> {
+        val a = client()
+        val b = client()
+        a.save("first", "First", "text\n")
+        var id = ""
+        // While the first note's request is out, a picture is added to another note.
+        a.beforeNext({ it.url.encodedPath == "/api/v1/notes" }) {
+            runBlocking {
+                id = a.images.add(png, "image/png")
+                a.save("second", "Second", ImageRef(id, 1, 1).markdown() + "\n")
+            }
+        }
+        var uploadedFirst = false
+        a.beforeNext({ it.url.encodedPath == "/api/v1/notes" && id.isNotEmpty() }) {
+            uploadedFirst = runBlocking { b.api.getImage(id) is ApiResult.Ok }
+        }
+        assertEquals(SyncOutcome.Done, a.sync())
+        assertTrue(uploadedFirst, "the image reached the server before the note showing it")
+    }
+
+    @Test
     fun `a lost upload response is retried harmlessly`() = runBlocking<Unit> {
         val a = client()
         val id = a.images.add(png, "image/png")

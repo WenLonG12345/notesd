@@ -4,6 +4,8 @@ import { ApiError } from '../api/client'
 import { notes as api } from '../api/notes'
 import { ChecklistTool, ImageTool, IndentTools, LinkForm, LinkTool, MarkTools, NoteContent, TextStyles, Tool, replaceNote, useNoteEditor } from '../editor/editor'
 import { noteFields, noteSummary, titleOf } from '../editor/note-doc'
+import { ImageError } from '../images/prepare'
+import { imageMarkdown } from '../images/ref'
 import { insertImageAt, resealImages, storeImage } from '../images/store'
 import { Banner } from '../ui/banner'
 import { Button } from '../ui/button'
@@ -258,8 +260,15 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
           // In order, each under the one before.
           // oxlint-disable-next-line no-await-in-loop
           const ref = await storeImage(file, () => saver.isLocked())
-          if (editor.isDestroyed) return
-          insertImageAt(editor, pos, ref)
+          if (editor.isDestroyed) {
+            // Closed while uploading: the picture goes at the end of the note.
+            if (!saver.appendClosed(imageMarkdown(ref))) {
+              throw new ImageError('A picture finished uploading after you reopened the note. Add it again.')
+            }
+            continue
+          }
+          // The next picture goes under this one.
+          pos = insertImageAt(editor, pos, ref)
         }
       })
       .finally(() => editor.off('transaction', follow))

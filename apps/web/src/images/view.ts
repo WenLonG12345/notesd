@@ -24,23 +24,36 @@ export const ImageView = NoteImage.extend({
       dom.append(img)
 
       let gone = false
+      // Missing may only mean offline: try again when the connection is back.
+      const retry = () => {
+        dom.removeAttribute('data-state')
+        load()
+      }
+      const missing = () => {
+        dom.setAttribute('data-state', 'missing')
+        window.addEventListener('online', retry, { once: true })
+      }
       const decrypt = () =>
         void decryptedURL(id).then((url) => {
           if (gone) return
           if (url) img.src = url
-          else dom.setAttribute('data-state', 'missing')
+          else missing()
         })
-      if (knownLocked(id)) decrypt()
-      else {
-        img.addEventListener('error', decrypt, { once: true })
-        img.src = imageURL(id)
+      const load = () => {
+        if (knownLocked(id)) decrypt()
+        else {
+          img.addEventListener('error', decrypt, { once: true })
+          img.src = imageURL(id)
+        }
       }
+      load()
       return {
         dom,
         // Atom: nothing inside is the editor's to track.
         ignoreMutation: () => true,
         destroy: () => {
           gone = true
+          window.removeEventListener('online', retry)
         },
       }
     }

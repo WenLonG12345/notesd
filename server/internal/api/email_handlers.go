@@ -99,7 +99,7 @@ func (s *Server) emailNote(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	attachments, err := s.emailImages(r, mail.ImageIDs(html))
+	attachments, err := s.emailImages(r, mail.ImageIDs(html), attachmentBudget(len(html), len(text)))
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
@@ -119,16 +119,40 @@ func (s *Server) emailNote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"id": id})
 }
 
-// Resend refuses emails over 40 MB after base64, which inflates by a third.
-const maxAttachmentBytes = 25 << 20
+// Resend refuses an email over 40 MB in all: the bodies, and the
+// attachments after base64, which inflates them by a third. The margin is
+// for the JSON around them.
+const (
+	maxEmailBytes   = 40_000_000
+	emailOverhead   = 1_000_000
+	minImageForMail = 100 // no image is smaller: stop looking once less is left
+)
 
-// emailImages loads a note's images as inline attachments. Missing and
-// encrypted ones are left out, and so is any that would push the email past
-// Resend's limit; their alt text stands in.
-func (s *Server) emailImages(r *http.Request, ids []string) ([]mail.Attachment, error) {
+// attachmentBudget is how many raw attachment bytes fit beside bodies of these sizes.
+func attachmentBudget(htmlLen, textLen int) int {
+	return max(0, (maxEmailBytes-emailOverhead-htmlLen-textLen)/4*3)
+}
+
+// emailImages loads a note's images as inline attachments, up to budget
+// raw bytes. Missing and encrypted ones are left out, and so is any that
+// doesn't fit; their alt text stands in. Sizes are checked before any
+// image's bytes are read.
+func (s *Server) emailImages(r *http.Request, ids []string, budget int) ([]mail.Attachment, error) {
 	var out []mail.Attachment
-	total := 0
 	for _, id := range ids {
+		if budget < minImageForMail {
+			break
+		}
+		info, err := s.images.Info(r.Context(), id)
+		if errors.Is(err, images.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if info.ContentType == images.Locked || info.Size > int64(budget) {
+			continue
+		}
 		img, data, err := s.images.Get(r.Context(), id)
 		if errors.Is(err, images.ErrNotFound) {
 			continue
@@ -136,10 +160,7 @@ func (s *Server) emailImages(r *http.Request, ids []string) ([]mail.Attachment, 
 		if err != nil {
 			return nil, err
 		}
-		if img.ContentType == images.Locked || total+len(data) > maxAttachmentBytes {
-			continue
-		}
-		total += len(data)
+		budget -= len(data)
 		out = append(out, mail.Attachment{
 			Filename:    id[:12] + imageExt[img.ContentType],
 			Content:     base64.StdEncoding.EncodeToString(data),

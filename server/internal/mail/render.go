@@ -61,8 +61,9 @@ func Render(title, content string) (html, text string, err error) {
 }
 
 // appImage matches an image the apps added (architecture §7.6) as goldmark
-// renders it: src, then alt, already HTML-escaped.
-var appImage = regexp.MustCompile(`<img src="notesd:image/([0-9a-f]{64})[^"]*" alt="([^"]*)"[^>]*>`)
+// renders it: src (the whole reference, & escaped), then alt, already
+// HTML-escaped. Any other notesd:image/ source is left as it is.
+var appImage = regexp.MustCompile(`<img src="notesd:image/([0-9a-f]{64})\?w=[1-9]\d{0,5}&amp;h=[1-9]\d{0,5}" alt="([^"]*)"[^>]*>`)
 
 // ImageIDs lists the app images html shows, each once, in order.
 func ImageIDs(html string) []string {

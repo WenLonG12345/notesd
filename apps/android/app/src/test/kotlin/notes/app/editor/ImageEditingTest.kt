@@ -49,6 +49,10 @@ class ImageEditingTest {
         assertEquals(listOf(a.id), e.pictures())
         assertEquals(setOf(a.id), e.imageIds())
         assertEquals(body, e.body())
+        // TalkBack reads the alt text, not the Markdown.
+        val t = e.text!!
+        val said = t.getSpans(0, t.length, ImageDescription::class.java).single()
+        assertEquals("Picture: a dot", said.args.getString(android.text.style.TtsSpan.ARG_TEXT))
     }
 
     @Test

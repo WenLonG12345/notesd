@@ -6,6 +6,7 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -16,7 +17,9 @@ class Prepared(val bytes: ByteArray, val type: String, val width: Int, val heigh
 class ImageException(message: String) : Exception(message)
 
 const val MAX_SIDE = 2048
-const val MAX_BYTES = 10 shl 20
+
+/** The server's 10 MiB cap, less AES-GCM's nonce and tag, so a picture fits locked or not. */
+const val MAX_BYTES = (10 shl 20) - (12 + 16)
 private const val QUALITY = 85
 
 /**
@@ -45,8 +48,12 @@ suspend fun prepareImage(resolver: ContentResolver, uri: Uri): Prepared = withCo
     }
     if (mime == "image/gif") {
         bitmap.recycle()
-        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw ImageException("That picture couldn’t be read.")
+        val bytes = try {
+            // At most one byte over the cap: enough to tell it's too large without holding all of it.
+            resolver.openInputStream(uri)?.use { it.readAtMost(MAX_BYTES + 1) }
+        } catch (_: IOException) {
+            null
+        } ?: throw ImageException("That picture couldn’t be read.")
         if (bytes.size > MAX_BYTES) throw ImageException("GIFs can be at most 10 MB.")
         return@withContext Prepared(bytes, "image/gif", size.first, size.second)
     }
@@ -57,4 +64,16 @@ suspend fun prepareImage(resolver: ContentResolver, uri: Uri): Prepared = withCo
     bitmap.recycle()
     if (prepared.bytes.size > MAX_BYTES) throw ImageException("That picture is too large, even resized.")
     prepared
+}
+
+/** Up to [limit] bytes of the stream (InputStream.readNBytes needs API 33). */
+private fun InputStream.readAtMost(limit: Int): ByteArray {
+    val out = ByteArrayOutputStream()
+    val buf = ByteArray(64 * 1024)
+    while (out.size() < limit) {
+        val n = read(buf, 0, minOf(buf.size, limit - out.size()))
+        if (n < 0) break
+        out.write(buf, 0, n)
+    }
+    return out.toByteArray()
 }
