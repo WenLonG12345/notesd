@@ -109,3 +109,9 @@ data class MutationResult(
 /** One page of the change feed: latest state per note, ascending changeSeq. */
 @Serializable
 data class SyncPage(val changes: List<RemoteNote>, val nextCursor: Long, val hasMore: Boolean, val generation: String)
+
+/** An image's bytes as stored on the server (§7.6), with their type: an image type, or [LOCKED_IMAGE]. */
+class ImageFile(val type: String, val bytes: ByteArray)
+
+/** The type a locked note's images are stored as: ciphertext. */
+const val LOCKED_IMAGE = "application/vnd.notesd.locked"

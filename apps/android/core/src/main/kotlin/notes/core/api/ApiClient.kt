@@ -145,9 +145,26 @@ class ApiClient(
         request("DELETE", url("api/v1/locks"), buildJsonObject { put("accountPassword", accountPassword) }, it)
     }) { }
 
+    /** Uploads an image (§7.6); [id] is the SHA-256 of [bytes], so a retry stores nothing new. */
+    suspend fun putImage(id: String, bytes: ByteArray, type: String): ApiResult<Unit> = authed({ access ->
+        Request.Builder()
+            .url(imageUrl(id))
+            .put(bytes.toRequestBody(type.toMediaType()))
+            .header("Authorization", "Bearer $access")
+            .build()
+    }) { }
+
+    /** Downloads an image with the type it is stored as. */
+    suspend fun getImage(id: String): ApiResult<ImageFile> = authedReply({ access ->
+        Request.Builder().url(imageUrl(id)).header("Authorization", "Bearer $access").build()
+    }) { ImageFile(it.type ?: "application/octet-stream", it.bytes) }
+
     // --- plumbing ------------------------------------------------------------
 
-    private suspend fun <T> authed(build: (access: String) -> Request, decode: (String) -> T): ApiResult<T> {
+    private suspend fun <T> authed(build: (access: String) -> Request, decode: (String) -> T): ApiResult<T> =
+        authedReply(build) { decode(it.text) }
+
+    private suspend fun <T> authedReply(build: (access: String) -> Request, decode: (Reply) -> T): ApiResult<T> {
         val creds = credentials ?: return ApiResult.Unauthenticated
         var tokens = creds.tokens() ?: return ApiResult.Unauthenticated
         if (tokens.accessExpiresAt - clock() < REFRESH_EARLY_MS) {
@@ -156,10 +173,10 @@ class ApiClient(
                 else -> return r.failure()
             }
         }
-        val first = send(build(tokens.access), decode)
+        val first = sendReply(build(tokens.access), decode)
         if (first != ApiResult.Unauthenticated) return first
         return when (val r = refresh(tokens)) {
-            is ApiResult.Ok -> send(build(r.value.access), decode)
+            is ApiResult.Ok -> sendReply(build(r.value.access), decode)
             else -> r.failure()
         }
     }
@@ -194,15 +211,29 @@ class ApiClient(
         }
     }
 
-    private suspend fun <T> send(request: Request, decode: (String) -> T): ApiResult<T> = withContext(io) {
-        val (code, retryAfter, body) = try {
-            http.newCall(request).execute().use { Triple(it.code, it.header("Retry-After"), it.body.string()) }
+    /** An answer as received: JSON for most endpoints, bytes for images. */
+    private class Reply(val code: Int, val retryAfter: String?, val type: String?, val bytes: ByteArray) {
+        val text get() = bytes.decodeToString()
+    }
+
+    private suspend fun <T> send(request: Request, decode: (String) -> T): ApiResult<T> =
+        sendReply(request) { decode(it.text) }
+
+    private suspend fun <T> sendReply(request: Request, decode: (Reply) -> T): ApiResult<T> = withContext(io) {
+        val reply = try {
+            http.newCall(request).execute().use {
+                val type = it.body.contentType()?.let { t -> "${t.type}/${t.subtype}" }
+                Reply(it.code, it.header("Retry-After"), type, it.body.bytes())
+            }
         } catch (e: IOException) {
             return@withContext ApiResult.Unreachable(e)
         }
+        val code = reply.code
+        val retryAfter = reply.retryAfter
+        val body = reply.text
         if (code in 200..299) {
             return@withContext try {
-                ApiResult.Ok(decode(body))
+                ApiResult.Ok(decode(reply))
             } catch (_: SerializationException) {
                 unexpected(code)
             } catch (_: IllegalArgumentException) {
@@ -240,6 +271,8 @@ class ApiClient(
         .build()
 
     private fun noteUrl(id: String) = url("api/v1/notes").newBuilder().addPathSegment(id).build()
+
+    private fun imageUrl(id: String) = url("api/v1/images").newBuilder().addPathSegment(id).build()
 
     companion object {
         /** A 2xx answer that isn't the expected JSON: something other than notesd is at this address. */

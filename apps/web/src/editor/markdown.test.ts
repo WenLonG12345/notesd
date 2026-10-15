@@ -36,3 +36,33 @@ describe('canonical form of Markdown written elsewhere', () => {
     })
   }
 })
+
+/** The inline nodes other than text. */
+function nodes(md: string) {
+  const out: { type: string; attrs: Record<string, unknown> }[] = []
+  parse(md).descendants((n) => {
+    if (n.isInline && !n.isText) out.push({ type: n.type.name, attrs: n.attrs })
+  })
+  return out
+}
+
+describe('images (spec §7.6)', () => {
+  const id = 'ab'.repeat(32)
+
+  it('an app image is an image node with its id, size and alt', () => {
+    const source = `![a \\*cat\\*](notesd:image/${id}?w=1600&h=1200)`
+    expect(nodes(`${source}\n`)).toEqual([{ type: 'image', attrs: { source, id, w: 1600, h: 1200, alt: 'a *cat*' } }])
+  })
+
+  it('any other image stays raw', () => {
+    for (const md of [
+      '![a](cat.png)',
+      `![a](notesd:image/${id})`,
+      `![a](notesd:image/${id.toUpperCase()}?w=1&h=1)`,
+      `![a](notesd:image/${id}?w=0&h=1)`,
+      `[a](notesd:image/${id}?w=1&h=1)`,
+    ]) {
+      expect(nodes(md).map((n) => n.type), md).not.toContain('image')
+    }
+  })
+})

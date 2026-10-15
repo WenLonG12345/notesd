@@ -9,8 +9,10 @@ import {
   isLocked,
   newRecoveryCode,
   normalizeRecoveryCode,
+  openImage,
   passkeyKek,
   passwordKek,
+  sealImage,
   toBase64Url,
   unwrapRaw,
   verifier,
@@ -67,6 +69,21 @@ describe('locked notes crypto (shared fixtures)', () => {
   for (const v of fixtures.invalid) {
     it(`refuses: ${v.name}`, async () => {
       await expect(decryptBody(await exportable(v.key), v.envelope)).rejects.toBeInstanceOf(LockedError)
+    })
+  }
+
+  for (const v of fixtures.images) {
+    it(`image: ${v.name}`, async () => {
+      const key = await exportable(v.key)
+      const sealed = fromBase64Url(v.sealed)
+      if (v.plain === null) {
+        await expect(openImage(key, sealed)).rejects.toBeInstanceOf(LockedError)
+        return
+      }
+      expect(toBase64Url(await openImage(key, sealed))).toBe(v.plain)
+      const again = await sealImage(key, fromBase64Url(v.plain))
+      expect(toBase64Url(again)).not.toBe(v.sealed)
+      expect(toBase64Url(await openImage(key, again))).toBe(v.plain)
     })
   }
 })

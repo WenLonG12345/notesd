@@ -21,6 +21,10 @@ database, so it works offline.
 lists all your tags, so you can browse by topic. Tags can be nested with `/`
 (`#home/garden`).
 
+**Images.** Add photos to a note from the toolbar, or paste or drop them on the
+web. They're downscaled and stripped of location data before upload, and on
+Android you can add them offline.
+
 **Locked notes.** Lock any note and its body is encrypted on-device with AES-256-GCM before
 they're saved or synced, so the server only stores ciphertext. Unlock with a
 password, a passkey (web) or biometric (Android).
@@ -55,6 +59,9 @@ The Android app won't send your password over plain HTTP outside your local netw
   stay readable, and locked notes can't be searched by their text or emailed.
 - **Text from before locking.** When you lock a note, the server scrubs the
   previous text from its database. Backups made earlier still hold it.
+- **Images.** A locked note's images are encrypted too. Images from before
+  locking, and images you remove from any note, stay on the server: nothing
+  deletes images yet.
 - **Forgotten passwords.** If you forget the lock password and have no
   passkey or fingerprint set up, those notes can't be recovered.
 

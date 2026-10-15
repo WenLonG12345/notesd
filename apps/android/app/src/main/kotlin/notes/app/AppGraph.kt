@@ -16,6 +16,7 @@ import notes.app.account.Account
 import notes.app.account.AccountStore
 import notes.app.account.KeystoreSealer
 import notes.app.account.Sealer
+import notes.app.images.ImageLoader
 import notes.app.locks.Biometrics
 import notes.app.locks.FingerprintUnlock
 import notes.app.locks.KeystoreBiometrics
@@ -28,6 +29,7 @@ import notes.core.crypto.LockSession
 import notes.core.db.Database
 import notes.core.db.NoteFilter
 import notes.core.db.NoteStore
+import notes.core.images.ImageStore
 import notes.core.sync.NoteMailer
 import notes.core.sync.SyncEngine
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -47,12 +49,23 @@ class AppGraph(
     val appearance = Appearance(context)
     val accounts = AccountStore(File(context.filesDir, "account"), sealer)
 
+    /** Pictures in notes (§7.6): added here wait in files/ to upload; downloaded ones are cached. */
+    val images = ImageStore(
+        database,
+        File(context.filesDir, "images"),
+        File(context.cacheDir, "images"),
+        { api() }
+    )
+
     /** Null server while never connected; signed out, its requests come back Unauthenticated. */
-    val sync = SyncEngine(database, { api() })
+    val sync = SyncEngine(database, { api() }, images = images)
     val scheduler = SyncScheduler(context.applicationContext, sync, store, accounts, scope)
 
     /** The locked-notes key (§10.1), unlocked against the keyring sync keeps. */
     val locks = LockSession(sync.lockKeys, { api() }, scope)
+
+    /** Decoded pictures for the editor; a locked note's leave memory when locked notes lock. */
+    val imageLoader = ImageLoader(images, locks, scope)
 
     /** Opens locked notes with the fingerprint instead of the lock password, once turned on here. */
     val fingerprint = FingerprintUnlock(context, locks, biometrics, scope)
@@ -106,6 +119,7 @@ class AppGraph(
     suspend fun removeAllData() {
         if (accounts.account.value is Account.SignedIn) withTimeoutOrNull(LOGOUT_WAIT_MS) { api()?.logout() }
         store.wipe()
+        images.wipe()
         locks.forget()
         fingerprint.disable()
         accounts.clear()
@@ -122,6 +136,7 @@ class AppGraph(
         scope.launch { listFilter.drop(1).collect { f -> prefs.edit { putString(LIST_FILTER, encodeFilter(f)) } } }
         // Fetched when a note or Settings opens; another account's settings must not linger.
         scope.launch { accounts.account.collect { if (it !is Account.SignedIn) email.forget() } }
+        scope.launch { locks.state.collect { if (it != LockSession.State.Unlocked) imageLoader.forgetLocked() } }
     }
 
     /** Each sync may bring the first lock password, a changed one, or a reset. Started with sync. */

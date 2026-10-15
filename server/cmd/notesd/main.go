@@ -38,6 +38,7 @@ import (
 	"notes/server/internal/api"
 	"notes/server/internal/auth"
 	"notes/server/internal/database"
+	"notes/server/internal/images"
 	"notes/server/internal/notes"
 	"notes/server/internal/search"
 )
@@ -156,6 +157,16 @@ func run(args []string) error {
 				fmt.Fprintln(os.Stderr, p)
 			}
 			return fmt.Errorf("integrity check found %d problem(s); restore from a backup — the database has not been modified", len(problems))
+		}
+		bad, err := images.NewStore(db).Check(ctx)
+		if err != nil {
+			return err
+		}
+		if len(bad) > 0 {
+			for _, id := range bad {
+				fmt.Fprintln(os.Stderr, "image "+id+": bytes don't match its hash")
+			}
+			return fmt.Errorf("%d image(s) are damaged; restore from a backup — the database has not been modified", len(bad))
 		}
 		fmt.Println("ok")
 	}

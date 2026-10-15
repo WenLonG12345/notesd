@@ -11,6 +11,7 @@ import {
   MarkdownSerializer,
   type MarkdownSerializerState,
 } from 'prosemirror-markdown'
+import { parseRef } from '../images/ref'
 import { schemaExtensions } from './extensions'
 
 // Markdown ⇄ ProseMirror for the restricted dialect (spec §7.1, §7.4).
@@ -59,7 +60,8 @@ function createTokenizer(): MarkdownIt {
     }, { alt: alt(md.block.ruler, name) })
   }
 
-  // Same for inline constructs: code spans and images.
+  // Same for inline constructs: code spans and images. An image the apps
+  // added (§7.6) becomes an image node, still kept as its exact source.
   for (const name of ['backticks', 'image']) {
     const original = builtin<InlineRule>(md.inline.ruler, name)
     if (!original) continue
@@ -72,15 +74,25 @@ function createTokenizer(): MarkdownIt {
       if (!original(state, false)) return false
       // No closing run: markdown-it kept the backticks as pending text, not a code span.
       if (state.tokens.length === before && state.pending) return true
+      const parsed = state.tokens[before]
+      const ref = parsed?.type === 'image' ? parseRef(parsed.attrGet('src') ?? '') : null
       state.tokens.length = before
-      const token = state.push('raw_inline', '', 0)
+      const token = state.push(ref ? 'app_image' : 'raw_inline', '', 0)
       token.content = state.src.slice(start, state.pos)
+      if (ref) token.meta = { ...ref, alt: altText(parsed?.children ?? []) }
       return true
     })
   }
 
   md.core.ruler.after('inline', 'task_lists', taskLists)
   return md
+}
+
+/** An image's alt text as plain text: what markdown-it would put in alt="". */
+function altText(tokens: Token[]): string {
+  return tokens
+    .map((t) => (t.type === 'softbreak' || t.type === 'hardbreak' ? ' ' : t.children ? altText(t.children) : t.content))
+    .join('')
 }
 
 const taskPrefix = /^\[([ xX])\](?: |$)/
@@ -159,6 +171,11 @@ const parser = new MarkdownParser(schema, createTokenizer(), {
   hardbreak: { node: 'hardBreak' },
   raw_block: { node: 'rawBlock', noCloseToken: true, getAttrs: (tok) => ({ source: tok.content }) },
   raw_inline: { node: 'rawInline', noCloseToken: true, getAttrs: (tok) => ({ source: tok.content }) },
+  app_image: {
+    node: 'image',
+    noCloseToken: true,
+    getAttrs: (tok) => ({ source: tok.content, ...(tok.meta as { id: string; w: number; h: number; alt: string }) }),
+  },
   em: { mark: 'italic' },
   strong: { mark: 'bold' },
   s: { mark: 'strike' },
@@ -259,6 +276,9 @@ const serializer = new MarkdownSerializer(
       state.closeBlock(node)
     },
     rawInline: (state, node) => {
+      state.text(String(node.attrs.source), false)
+    },
+    image: (state, node) => {
       state.text(String(node.attrs.source), false)
     },
   },

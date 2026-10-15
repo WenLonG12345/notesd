@@ -39,7 +39,7 @@ export function noteSummary(doc: PMNode): { title: string; preview: string } {
     let text = ''
     node.forEach((child) => {
       if (child.isText) text += child.text ?? ''
-      else if (child.type.name === 'rawInline') text += plainText(String(child.attrs.source))
+      else if (child.type.name === 'rawInline' || child.type.name === 'image') text += plainText(String(child.attrs.source))
       else if (child.type.name === 'hardBreak') text += '\n'
     })
     push(text)

@@ -30,6 +30,10 @@ export type Snapshot = {
   failures: number
   /** The body is (to be) encrypted. */
   locked: boolean
+  /** A picture couldn't be added, or the lock changed: shown until dismissed. */
+  imageError: string | null
+  /** Images are being uploaded or re-encrypted for a lock change. */
+  imagesBusy: boolean
 }
 
 type Pending = {
@@ -114,6 +118,10 @@ export class NoteSaver {
   private failures = 0
   private waitingForAuth = false
   private waitingForUnlock = false
+  private imageError: string | null = null
+  private imagesBusy = 0
+  /** Re-encrypts (or decrypts) the open note's images before a lock change (images/store.ts). */
+  private resealer: ((locked: boolean) => Promise<void>) | null = null
   private listeners = new Set<() => void>()
   private remoteListeners = new Set<(fields: Fields) => void>()
   private snapshot: Snapshot
@@ -191,6 +199,50 @@ export class NoteSaver {
     return this.locked
   }
 
+  /** Lets the open editor move the note's images along with a lock change. */
+  setResealer(fn: (locked: boolean) => Promise<void>): () => void {
+    this.resealer = fn
+    return () => {
+      if (this.resealer === fn) this.resealer = null
+    }
+  }
+
+  /**
+   * Locks or unlocks the note, its images first (§7.6). If they can't be
+   * moved, the lock stays as it was and imageError says why.
+   */
+  async changeLock(locked: boolean): Promise<void> {
+    if (this.locked === locked) return
+    const reseal = this.resealer
+    if (reseal) {
+      const ok = await this.withImages(() => reseal(locked))
+      if (!ok) return
+    }
+    this.setLocked(locked)
+  }
+
+  /** Runs image work, showing it as busy; a failure becomes imageError. */
+  async withImages(work: () => Promise<void>): Promise<boolean> {
+    this.imagesBusy++
+    this.imageError = null
+    this.set(this.state)
+    try {
+      await work()
+      return true
+    } catch (err) {
+      this.imageError = err instanceof Error && err.name === 'ImageError' ? err.message : 'The picture couldn’t be uploaded. Check the connection and try again.'
+      return false
+    } finally {
+      this.imagesBusy--
+      this.set(this.state)
+    }
+  }
+
+  dismissImageError() {
+    this.imageError = null
+    this.set(this.state)
+  }
+
   /** Locks or unlocks the note: saved like an edit, encrypted with the session key. */
   setLocked(locked: boolean) {
     if (this.locked === locked) return
@@ -214,7 +266,7 @@ export class NoteSaver {
 
   /** Whether closing the page now could lose something. */
   hasUnsavedWork(): boolean {
-    return this.dirty || this.pending !== null || this.inflight !== null
+    return this.dirty || this.pending !== null || this.inflight !== null || this.imagesBusy > 0
   }
 
   /** Edits made since the last save went out. */
@@ -608,6 +660,8 @@ export class NoteSaver {
       updatedAt: this.updatedAt,
       failures: this.failures,
       locked: this.locked,
+      imageError: this.imageError,
+      imagesBusy: this.imagesBusy > 0,
     }
   }
 }

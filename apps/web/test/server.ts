@@ -17,6 +17,12 @@ export type TestServer = {
   loseNextResponse: (match: (method: string, path: string) => boolean) => void
   /** Calls the API as a separate client (its own cookie jar). */
   api: <T = unknown>(method: string, path: string, body?: unknown) => Promise<{ status: number; body: T }>
+  /** Like api, for endpoints that take or return bytes (images). */
+  bytes: (
+    method: string,
+    path: string,
+    upload?: { type: string; data: Uint8Array<ArrayBuffer> },
+  ) => Promise<{ status: number; type: string; data: Uint8Array }>
   stop: () => Promise<void>
 }
 
@@ -60,6 +66,15 @@ export async function startServer({ resendUrl }: { resendUrl?: string } = {}): P
         other.csrf = String(parsed.csrfToken)
       }
       return { status: res.status, body: parsed as never }
+    },
+    async bytes(method, path, upload) {
+      if (!other.csrf) await server.api('GET', '/auth/session')
+      const res = await other(`/api/v1${path}`, {
+        method,
+        headers: { 'X-CSRF-Token': other.csrf ?? '', ...(upload && { 'Content-Type': upload.type }) },
+        ...(upload && { body: upload.data }),
+      })
+      return { status: res.status, type: res.headers.get('Content-Type') ?? '', data: new Uint8Array(await res.arrayBuffer()) }
     },
     async stop() {
       if (proc.exitCode === null) {

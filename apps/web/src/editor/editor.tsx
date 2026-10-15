@@ -3,7 +3,8 @@ import { EditorContent, useEditor, useEditorState } from '@tiptap/react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TagCount } from '../api/types'
 import type { Fields } from '../notes/saver'
-import { ChecklistIcon, IndentIcon, LinkIcon, OutdentIcon } from '../ui/icons'
+import { ImageView } from '../images/view'
+import { ChecklistIcon, ImageIcon, IndentIcon, LinkIcon, OutdentIcon } from '../ui/icons'
 import { editorExtensions, isAllowedLink } from './extensions'
 import { noteContent } from './note-doc'
 import { Tags } from './tags'
@@ -19,7 +20,11 @@ type Options = {
   tags: TagCount[]
   /** ⌘/Ctrl-click on a tag. */
   onOpenTag: (name: string) => void
+  /** Pictures pasted or dropped in, at a document position. */
+  onImages: (files: File[], pos: number) => void
 }
+
+const imageFiles = (list: FileList | null | undefined) => Array.from(list ?? []).filter((f) => f.type.startsWith('image/'))
 
 /** One editor for the whole note: the first line is the title, the rest the body. */
 export function useNoteEditor(options: Options): Editor {
@@ -31,7 +36,7 @@ export function useNoteEditor(options: Options): Editor {
   })
 
   const editor = useEditor({
-    extensions: [...editorExtensions, Tags],
+    extensions: [...editorExtensions.map((e) => (e.name === 'image' ? ImageView : e)), Tags],
     content: noteContent(initial),
     // Toolbars subscribe to what they need (useEditorState).
     shouldRerenderOnTransaction: false,
@@ -49,6 +54,21 @@ export function useNoteEditor(options: Options): Editor {
           return true
         }
         return false
+      },
+      handlePaste: (view, event) => {
+        const files = imageFiles(event.clipboardData?.files)
+        if (files.length === 0) return false
+        event.preventDefault()
+        handlers.current.onImages(files, view.state.selection.from)
+        return true
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        const files = moved ? [] : imageFiles(event.dataTransfer?.files)
+        if (files.length === 0) return false
+        event.preventDefault()
+        const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? view.state.selection.from
+        handlers.current.onImages(files, at)
+        return true
       },
     },
     onUpdate: ({ editor: e, transaction }) => {
@@ -195,6 +215,31 @@ export function LinkTool({ editor, open, onToggle, className, iconSize = 16 }: T
     <Tool label="Link" keys={`${mod}K`} on={f.link || open} className={className} run={onToggle}>
       <LinkIcon size={iconSize} />
     </Tool>
+  )
+}
+
+/** Add a picture: opens the file picker, then hands the files over with the cursor's position. */
+export function ImageTool({ editor, onPick, className, iconSize = 16 }: ToolbarProps & { onPick: (files: File[], pos: number) => void }) {
+  const input = useRef<HTMLInputElement>(null)
+  return (
+    <>
+      <Tool label="Add picture" on={false} className={className} run={() => input.current?.click()}>
+        <ImageIcon size={iconSize} />
+      </Tool>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        data-testid="image-input"
+        onChange={(e) => {
+          const files = imageFiles(e.currentTarget.files)
+          e.currentTarget.value = ''
+          if (files.length > 0) onPick(files, editor.state.selection.from)
+        }}
+      />
+    </>
   )
 }
 

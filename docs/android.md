@@ -54,6 +54,10 @@ sign in again. Nothing is lost.
 - The first line of a note is its title. Format text with the bar above the
   keyboard: bold, italic, strikethrough, headings, bullet, numbered and
   check lists, quotes and links.
+- Add a photo with the picture button in the same bar. It's resized and
+  stripped of location data first, and works offline: it uploads with the
+  next sync. Photos from other devices download the first time you open
+  the note, then stay on the phone.
 - Write `#tag` anywhere in a note to tag it. Use `#multi word tag#` for
   names with spaces and `#parent/child` to nest them. "‹ Tags" above the
   list (or the sidebar, on wide screens) filters by tag. While you type a

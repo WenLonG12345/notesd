@@ -31,7 +31,7 @@ A self-hosted note-taking system: one Go executable backed by SQLite serves an o
 
 ### 2.2 Editing
 
-Users edit in a WYSIWYG editor and never see Markdown syntax. V1 supports plain text, bold, italic, strikethrough, headings (H1–H3), bulleted and numbered lists, checklists, links and blockquotes. Images, attachments and tables are deferred.
+Users edit in a WYSIWYG editor and never see Markdown syntax. V1 supports plain text, bold, italic, strikethrough, headings (H1–H3), bulleted and numbered lists, checklists, links, blockquotes and images (§7.6). Attachments and tables are deferred.
 
 ### 2.3 Search
 
@@ -60,7 +60,7 @@ The web app offers full note management, editing and search, but needs a live se
 | Real-time collaboration, CRDTs, WebSockets | One active editor per note; HTTP sync is sufficient |
 | Web offline mode | Would add a browser replica and a second sync engine |
 | Full version history, automatic Markdown merge | Not needed to preserve conflicts; formatting-aware merging is complex |
-| Images and attachments | Need their own binary storage and sync design |
+| File attachments | Need their own storage and sync design; images are the exception (§7.6) |
 | Multi-user collaboration, end-to-end encryption of every note | Add authorization complexity; E2EE breaks server-side search. Notes the user locks are the exception (§10.1) |
 | PostgreSQL, Redis, external search, job workers, Kubernetes | Unnecessary at this scale |
 
@@ -327,7 +327,7 @@ Markdown is the stored format for portability and readability; editors work on a
 
 A restricted, documented dialect based on CommonMark with selected GitHub Flavored Markdown extensions: paragraphs and line breaks, headings, bold, italic, strikethrough, links, ordered and unordered lists, task lists and blockquotes. It is implemented identically on iOS, Android and web. Unsupported constructs must not be silently discarded; V1 editing and import may be limited to the subset.
 
-Unsupported constructs (code spans and fences, tables, images, horizontal rules, raw HTML, and anything else outside the subset) are kept as opaque raw blocks or raw inline runs: shown read-only, not editable, and written back byte-for-byte on save. Turning them into ordinary text is not enough. The serializer would escape their syntax characters and fold their line breaks, so one save on any client would corrupt a note written elsewhere (for example a code fence pasted on another device).
+Images the apps add (§7.6) are first-class. Unsupported constructs (code spans and fences, tables, other images, horizontal rules, raw HTML, and anything else outside the subset) are kept as opaque raw blocks or raw inline runs: shown read-only, not editable, and written back byte-for-byte on save. Turning them into ordinary text is not enough. The serializer would escape their syntax characters and fold their line breaks, so one save on any client would corrupt a note written elsewhere (for example a code fence pasted on another device).
 
 ### 7.2 Editing model
 
@@ -360,6 +360,22 @@ Tags are plain text in the note, as in Bear: there is no tag field, so tags sync
 - **Lifetime:** a tag exists while a live note uses it.
 
 Renaming and deleting tags (rewriting every note) are not implemented yet.
+
+### 7.6 Images
+
+An image lives outside the note's text, as a content-addressed blob on the server; the note holds an ordinary Markdown image pointing at it:
+
+```markdown
+![alt text](notesd:image/<sha256 hex>?w=1600&h=1200)
+```
+
+- **Reference.** The hash is SHA-256 of the bytes as stored, so uploads are idempotent and integrity-checked. `w` and `h` are the pixel size, so editors lay the image out before its bytes arrive. Editors show such an image as an atomic, read-only node (deleted whole) and write its source back byte for byte; any other image (`![a](cat.png)`) stays a raw inline run (§7.1). Search, previews and tags treat it like any image: its alt text is plain text and never holds tags.
+- **Preparing.** Clients downscale before uploading: the long side is capped at 2048 px, orientation is applied, and the image is re-encoded as JPEG (quality 0.85), or PNG when it has transparency, which drops EXIF metadata including location. GIFs are uploaded as they are, so animation survives. The server caps an image at 10 MiB.
+- **Uploading.** The web app uploads before it inserts the reference. Android stores a new image locally with a pending-upload row, and each sync cycle uploads pending images before any note operation, so no device sees a reference before its bytes exist.
+- **Caching.** The web relies on the browser cache (images are immutable). Android fetches an image the first time it is shown and keeps it in its cache directory, which the system may evict; images still waiting to upload live in its files directory.
+- **Locked notes.** A locked note's images are encrypted too (§10.1). Whether to decrypt is decided by the blob's type as served, not by the note, so a note that mixes both still renders.
+- **Storage.** Blobs are rows of the server's SQLite database (`images`), so a backup of the one file holds notes and images consistently.
+- **Not yet built.** Images are never deleted from the server: one removed from a note, or belonging to a deleted note, stays. The server can't read references inside locked notes, so collecting unused images needs its own design.
 
 ## 8. Search
 
@@ -421,6 +437,8 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 | `GET` | `/api/v1/sync` | Download changes |
 | `GET` | `/api/v1/search` | Search notes; same filters as listing |
 | `GET` | `/api/v1/tags` | Tags in live notes, with counts |
+| `PUT` | `/api/v1/images/:sha256` | Upload an image (raw body); idempotent, the hash must match (§7.6) |
+| `GET` | `/api/v1/images/:sha256` | Download an image, cached as immutable |
 | `GET` | `/api/v1/locks` | The locked-notes keyring (§10.1) |
 | `PUT` `DELETE` | `/api/v1/locks/keys/:id` | Add, replace or remove a keyring entry; needs the verifier |
 | `DELETE` | `/api/v1/locks` | Forget the keyring after a forgotten lock password; needs the account password |
@@ -460,6 +478,7 @@ Like Apple Notes' locked notes: the user locks chosen notes, and their bodies ar
 - The server checks only shape (prefix, one line of strict base64url, length), which is enough to refuse an edit made on the ciphertext as if it were text. The 1 MiB content cap applies to the plain body: an envelope may be as long as that of a 1 MiB body.
 - Merging (§6.1) compares envelopes as stored, never in canonical Markdown form, so sync merges without the key: a body changed on one side takes that side; changed on both, the local version becomes a conflicted copy, still locked. The web app, which merges interactively, decrypts first and merges text.
 - Locked notes are excluded from search text, previews, excerpts and body tags (§8.1), and the server refuses to email them (`409 note_locked`).
+- A locked note's images (§7.6) are encrypted with the same key: `nonce ‖ ciphertext ‖ tag` of the image file, binary, with additional data `notesd:image:v1`, uploaded as `application/vnd.notesd.locked`. The image type is recovered by sniffing after decryption. Locking a note re-uploads each of its images encrypted and rewrites the references before the save; removing the lock does the reverse. If an image can't be fetched (offline and not cached), the change is refused rather than leaving a locked note pointing at plain images. The old blobs stay on the server (§7.6).
 
 **Keys.** Each account has one 32-byte locked-notes key, created by the first device to lock a note. The server keeps a keyring of wrapped copies, each AES-256-GCM of the key under a key-encryption key, with additional data `notesd:lnk:v1:<kind>`:
 
@@ -554,7 +573,7 @@ On Android, full reconciliation re-downloads every note and compares text rather
 - Keep transactions short, indexes limited to listing, sync and search, and skip Markdown parsing on reads.
 - Sync transfers only changed notes, each in full, with HTTP compression where useful; diffs are excluded from V1.
 - Tune and test the Go runtime on memory-constrained systems.
-- Future attachments live outside note content, possibly content-addressed for deduplication and integrity.
+- Images live outside note content, content-addressed for deduplication and integrity (§7.6).
 
 ## 12. Testing Strategy
 

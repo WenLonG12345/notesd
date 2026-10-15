@@ -19,6 +19,7 @@ import notes.core.db.LockKeyStore
 import notes.core.db.Operation
 import notes.core.db.SyncEvent
 import notes.core.db.SyncStore
+import notes.core.images.ImageStore
 
 /** How a cycle ended; the scheduler retries [Offline] and [Failed] with backoff. */
 enum class SyncOutcome { Done, NotConnected, Offline, SignedOut, Failed }
@@ -47,7 +48,9 @@ class SyncEngine(
     db: Database,
     private val api: () -> ApiClient?,
     private val pageSize: Int = 100,
-    clock: () -> Long = System::currentTimeMillis
+    clock: () -> Long = System::currentTimeMillis,
+    /** Images added here, uploaded before the notes that reference them (§7.6). */
+    private val images: ImageStore? = null
 ) {
     val store = SyncStore(db, clock)
 
@@ -109,6 +112,13 @@ class SyncEngine(
     }
 
     private suspend fun push(api: ApiClient): Stop? {
+        images?.let { store ->
+            when (val r = store.upload(api)) {
+                is ApiResult.Ok -> Unit
+                is ApiResult.Rejected -> return Stop(SyncOutcome.Failed, "The server had a problem (${r.status}).")
+                else -> return stop(r)
+            }
+        }
         while (true) {
             val next = store.nextOperation() ?: return null
             val op = store.prepare(next) ?: continue

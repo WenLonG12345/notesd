@@ -53,6 +53,31 @@ export async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const res = await send(method, path, headers, body === undefined ? undefined : JSON.stringify(body), options)
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
+/** Sends bytes as the body, for endpoints that take a file rather than JSON (images). */
+export async function upload<T>(path: string, body: Uint8Array<ArrayBuffer>, contentType: string, options: Options = {}): Promise<T> {
+  const res = await send('PUT', path, { Accept: 'application/json', 'Content-Type': contentType }, body, options)
+  return (await res.json()) as T
+}
+
+/** Fetches a file the server stores as bytes (images), with its type. */
+export async function download(path: string, options: Options = {}): Promise<Blob> {
+  const res = await send('GET', path, {}, undefined, options)
+  return res.blob()
+}
+
+/** One request: CSRF, connection failures and error bodies handled; resolves only with an OK response. */
+async function send(
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  path: string,
+  headers: Record<string, string>,
+  body: BodyInit | undefined,
+  options: Options,
+): Promise<Response> {
   if (method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken
 
   let res: Response
@@ -60,7 +85,7 @@ export async function request<T>(
     res = await fetch(`/api/v1${path}`, {
       method,
       headers,
-      ...(body !== undefined && { body: JSON.stringify(body) }),
+      ...(body !== undefined && { body }),
       credentials: 'same-origin',
       signal: options.signal,
       keepalive: options.keepalive,
@@ -69,11 +94,7 @@ export async function request<T>(
     if (isAbort(err)) throw err
     throw new NetworkError(err)
   }
-
-  if (res.ok) {
-    if (res.status === 204) return undefined as T
-    return (await res.json()) as T
-  }
+  if (res.ok) return res
 
   const error = new ApiError(res.status, await errorBody(res), parseRetryAfter(res))
   // invalid_credentials is also a 401 but means "wrong password", not "signed out".

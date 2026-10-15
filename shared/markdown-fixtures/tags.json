@@ -41,6 +41,7 @@
     { "name": "link text is not a tag", "markdown": "[#notatag](https://x.y) #yes", "tags": ["yes"] },
     { "name": "url fragment is not a tag", "markdown": "https://example.com/#anchor and <https://x.y/#z>", "tags": [] },
     { "name": "image alt is not a tag", "markdown": "![#alt](a.png)", "tags": [] },
+    { "name": "app image alt is not a tag", "markdown": "![#alt](notesd:image/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855?w=4&h=3) #real", "tags": ["real"] },
     { "name": "escaped hash is still a tag", "markdown": "\\#escaped", "tags": ["escaped"] },
     { "name": "tag stops at end of line", "markdown": "#first line#\n#second", "tags": ["first line", "second"] },
     { "name": "multi word does not span lines", "markdown": "#one\ntwo#", "tags": ["one"] },

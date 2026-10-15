@@ -301,6 +301,7 @@ class NoteStore(private val db: Database, private val clock: () -> Long = System
             sql.exec("DELETE FROM notes")
             sql.exec("DELETE FROM sync_outbox")
             sql.exec("DELETE FROM lock_keys")
+            sql.exec("DELETE FROM pending_images")
             sql.exec(
                 """
                 UPDATE sync_state SET cursor = 0, generation = NULL, last_sync_at = NULL, last_error = NULL,

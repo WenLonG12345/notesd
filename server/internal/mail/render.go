@@ -3,6 +3,7 @@ package mail
 import (
 	"bytes"
 	"html/template"
+	"regexp"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -57,4 +58,34 @@ func Render(title, content string) (html, text string, err error) {
 		text = "# " + title + "\n\n" + content
 	}
 	return out.String(), text, nil
+}
+
+// appImage matches an image the apps added (architecture §7.6) as goldmark
+// renders it: src, then alt, already HTML-escaped.
+var appImage = regexp.MustCompile(`<img src="notesd:image/([0-9a-f]{64})[^"]*" alt="([^"]*)"[^>]*>`)
+
+// ImageIDs lists the app images html shows, each once, in order.
+func ImageIDs(html string) []string {
+	var ids []string
+	seen := map[string]bool{}
+	for _, m := range appImage.FindAllStringSubmatch(html, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			ids = append(ids, m[1])
+		}
+	}
+	return ids
+}
+
+// InlineImages points the app images in html at their attachments
+// (cid:<id>). An image that isn't attached (missing, too large to send, or
+// encrypted) is replaced by its alt text.
+func InlineImages(html string, attached map[string]bool) string {
+	return appImage.ReplaceAllStringFunc(html, func(tag string) string {
+		m := appImage.FindStringSubmatch(tag)
+		if !attached[m[1]] {
+			return m[2]
+		}
+		return `<img src="cid:` + m[1] + `" alt="` + m[2] + `" style="max-width:100%;height:auto;">`
+	})
 }

@@ -21,6 +21,8 @@
     { "name": "link with emphasis", "markdown": "[**bold** link](https://x.y)", "text": "bold link" },
     { "name": "link with parens in url", "markdown": "[wiki](https://en.wikipedia.org/wiki/Go_(language))", "text": "wiki" },
     { "name": "image alt", "markdown": "![a cat](cat.png)", "text": "a cat" },
+    { "name": "app image alt", "markdown": "![a cat](notesd:image/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855?w=4&h=3)", "text": "a cat" },
+    { "name": "app image without alt", "markdown": "Before\n\n![](notesd:image/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855?w=4&h=3)\n\nAfter", "text": "Before\n\nAfter" },
     { "name": "brackets without link", "markdown": "[not a link] here", "text": "[not a link] here" },
     { "name": "autolink", "markdown": "Visit <https://example.com> today", "text": "Visit https://example.com today" },
     { "name": "less-than is literal", "markdown": "a < b and c > d", "text": "a < b and c > d" },

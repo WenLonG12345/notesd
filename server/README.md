@@ -88,6 +88,8 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | PUT | `/locks/keys/{id}` | `{kind, credentialId?, salt, iterations, wrapped, verifier}`. `id` is `password` or `recovery` for those kinds; a `passkey` takes any other id of 1–64 characters `[A-Za-z0-9_-]` (`400` otherwise). `salt`, `wrapped`, `credentialId` and `verifier` are unpadded base64url. The first entry must be the password, and its `verifier` is stored (hashed); every later write must send the same verifier (`403 bad_verifier`). `409 no_lock_password` for a recovery or passkey entry first |
 | DELETE | `/locks/keys/{id}` | `{verifier}`; the password entry can't be removed (`409 password_key_required`) |
 | DELETE | `/locks` | `{accountPassword}`: forgets the whole keyring (a forgotten lock password); rate-limited like a password change |
+| PUT | `/images/{sha256}` | raw body, up to 10 MiB, `Content-Type` one of `image/jpeg`, `image/png`, `image/webp`, `image/gif` or `application/vnd.notesd.locked` (an encrypted image). `{sha256}` is lowercase hex of the body (`400 hash_mismatch` otherwise); image types must match the body's magic bytes (`415 unsupported_image`). → `201 {id, contentType, size}`, or `200` if it already exists, so retries are safe |
+| GET | `/images/{sha256}` | the bytes with their stored type, `Cache-Control: private, max-age=31536000, immutable`, an `ETag` and a sandboxing CSP |
 
 `/healthz` (process up) and `/readyz` (database reachable) sit outside
 `/api/v1`. Every other path serves the web app, falling back to `index.html`.
@@ -125,6 +127,10 @@ clear. `verifier` is HMAC-SHA256 of the key with `notesd:verifier:v1`:
 proof that a client holds the key, so a stolen session alone can't replace
 or delete entries.
 
+**Images** (architecture §7.6). Notes reference them as
+`![alt](notesd:image/<sha256>?w=&h=)`. The server never checks references
+(it can't read locked notes) and never deletes images.
+
 **Search.** Input is split into words, each quoted as a prefix term, so FTS5
 syntax in user input is inert and never errors. `excerpt` is HTML-escaped
 note text with matches wrapped in `<mark>`.
@@ -138,6 +144,7 @@ internal/notes     create/update/delete, revisions, tombstones, idempotency, lis
 internal/sync      change feed
 internal/search    Markdown → plain text and tags, FTS5 query building, search, tag listing, reindex
 internal/locks     locked-note envelopes, keyring
+internal/images    image blobs: validation, storage, integrity check
 internal/mail      email settings, note Markdown → HTML email, Resend client
 internal/auth      Argon2id, sessions, setup token, login rate limiting
 internal/api       routing, auth/CSRF middleware, handlers, gzip, logging

@@ -290,10 +290,18 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
                                 LaunchedEffect(key.id) { graph.email.refresh() }
                                 EditorScreen(
                                     vm = viewModel(key = key.id) {
-                                        EditorViewModel(graph.store, key.id, graph.scope, graph.locks, key.startTag)
+                                        EditorViewModel(
+                                            graph.store,
+                                            key.id,
+                                            graph.scope,
+                                            graph.locks,
+                                            key.startTag,
+                                            graph.images
+                                        )
                                     },
                                     locks = graph.locks,
                                     fingerprint = graph.fingerprint,
+                                    images = graph.imageLoader,
                                     showBack = !twoPane,
                                     emailFrom = email?.takeIf { it.configured && account is Account.SignedIn }?.from,
                                     emailRequested = emailFor == key.id,

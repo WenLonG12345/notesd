@@ -1,9 +1,11 @@
 package api
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/http"
 
+	"notes/server/internal/images"
 	"notes/server/internal/locks"
 	"notes/server/internal/mail"
 )
@@ -97,8 +99,18 @@ func (s *Server) emailNote(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
+	attachments, err := s.emailImages(r, mail.ImageIDs(html))
+	if err != nil {
+		s.writeErr(w, r, err)
+		return
+	}
+	attached := map[string]bool{}
+	for _, a := range attachments {
+		attached[a.ContentID] = true
+	}
 	id, err := s.mailer.Send(r.Context(), st.APIKey, mail.Message{
-		From: st.From, To: to, Subject: mail.Subject(n.Title), HTML: html, Text: text,
+		From: st.From, To: to, Subject: mail.Subject(n.Title),
+		HTML: mail.InlineImages(html, attached), Text: text, Attachments: attachments,
 	})
 	if err != nil {
 		s.writeErr(w, r, err)
@@ -106,3 +118,36 @@ func (s *Server) emailNote(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": id})
 }
+
+// Resend refuses emails over 40 MB after base64, which inflates by a third.
+const maxAttachmentBytes = 25 << 20
+
+// emailImages loads a note's images as inline attachments. Missing and
+// encrypted ones are left out, and so is any that would push the email past
+// Resend's limit; their alt text stands in.
+func (s *Server) emailImages(r *http.Request, ids []string) ([]mail.Attachment, error) {
+	var out []mail.Attachment
+	total := 0
+	for _, id := range ids {
+		img, data, err := s.images.Get(r.Context(), id)
+		if errors.Is(err, images.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if img.ContentType == images.Locked || total+len(data) > maxAttachmentBytes {
+			continue
+		}
+		total += len(data)
+		out = append(out, mail.Attachment{
+			Filename:    id[:12] + imageExt[img.ContentType],
+			Content:     base64.StdEncoding.EncodeToString(data),
+			ContentType: img.ContentType,
+			ContentID:   id,
+		})
+	}
+	return out, nil
+}
+
+var imageExt = map[string]string{"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}

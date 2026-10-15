@@ -42,6 +42,7 @@ object LockedNotes {
     const val KEY_BYTES = 32
 
     private const val BODY_AAD = "notesd:locked:v1"
+    private const val IMAGE_AAD = "notesd:image:v1"
     private const val NONCE = 12
     private const val TAG = 16
     private val random = SecureRandom()
@@ -82,6 +83,12 @@ object LockedNotes {
             throw LockedException("Not UTF-8")
         }
     }
+
+    /** Encrypts a locked note's image file (§7.6): nonce ‖ ciphertext ‖ tag, binary. */
+    fun encryptImage(key: ByteArray, file: ByteArray): ByteArray = seal(key, file, IMAGE_AAD)
+
+    /** Decrypts a locked note's image; throws [LockedException] unless [key] sealed it as an image. */
+    fun decryptImage(key: ByteArray, sealed: ByteArray): ByteArray = open(key, sealed, IMAGE_AAD)
 
     /** PBKDF2-HMAC-SHA256 of the NFC-normalized password. */
     fun passwordKek(password: String, salt: ByteArray, iterations: Int): ByteArray {

@@ -20,6 +20,17 @@ type Message struct {
 	Subject string   `json:"subject"`
 	HTML    string   `json:"html"`
 	Text    string   `json:"text"`
+	// Attachments are the note's images, shown inline through their
+	// content_id (the HTML refers to them as cid:<content_id>).
+	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+// Attachment is one inline image. Content is base64 (standard, padded).
+type Attachment struct {
+	Filename    string `json:"filename"`
+	Content     string `json:"content"`
+	ContentType string `json:"content_type"`
+	ContentID   string `json:"content_id"`
 }
 
 // SendError is Resend refusing or failing a send. Message is Resend's own

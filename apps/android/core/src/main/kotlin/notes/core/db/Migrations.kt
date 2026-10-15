@@ -11,7 +11,14 @@ import androidx.sqlite.execSQL
  */
 internal object Migrations {
     val files =
-        listOf("0001_init.sql", "0002_full_sync.sql", "0003_tags.sql", "0004_lock_keys.sql", "0005_reindex_locked.sql")
+        listOf(
+            "0001_init.sql",
+            "0002_full_sync.sql",
+            "0003_tags.sql",
+            "0004_lock_keys.sql",
+            "0005_reindex_locked.sql",
+            "0006_pending_images.sql"
+        )
 
     fun apply(conn: SQLiteConnection) {
         val current = conn.prepare("PRAGMA user_version").use { if (it.step()) it.getLong(0).toInt() else 0 }

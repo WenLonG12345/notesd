@@ -2,8 +2,9 @@ import type { Editor } from '@tiptap/core'
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ApiError } from '../api/client'
 import { notes as api } from '../api/notes'
-import { ChecklistTool, IndentTools, LinkForm, LinkTool, MarkTools, NoteContent, TextStyles, Tool, replaceNote, useNoteEditor } from '../editor/editor'
+import { ChecklistTool, ImageTool, IndentTools, LinkForm, LinkTool, MarkTools, NoteContent, TextStyles, Tool, replaceNote, useNoteEditor } from '../editor/editor'
 import { noteFields, noteSummary, titleOf } from '../editor/note-doc'
+import { insertImageAt, resealImages, storeImage } from '../images/store'
 import { Banner } from '../ui/banner'
 import { Button } from '../ui/button'
 import { ComposeIcon, LockIcon, TrashIcon } from '../ui/icons'
@@ -244,8 +245,29 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
   const stylesId = useId()
   const popover = useRef<HTMLDivElement>(null)
 
+  // Pictures go in where they were asked for, even if the text moves meanwhile.
+  const addImages = (files: File[], at: number) => {
+    let pos = at
+    const follow = ({ transaction }: { transaction: { mapping: { map: (p: number) => number } } }) => {
+      pos = transaction.mapping.map(pos)
+    }
+    editor.on('transaction', follow)
+    void saver
+      .withImages(async () => {
+        for (const file of files) {
+          // In order, each under the one before.
+          // oxlint-disable-next-line no-await-in-loop
+          const ref = await storeImage(file, () => saver.isLocked())
+          if (editor.isDestroyed) return
+          insertImageAt(editor, pos, ref)
+        }
+      })
+      .finally(() => editor.off('transaction', follow))
+  }
+
   const editor = useNoteEditor({
     initial,
+    onImages: (files, at) => addImages(files, at),
     onChange: (ed) => {
       saver.edit()
       touchTimer.current ??= setTimeout(() => {
@@ -274,8 +296,10 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
       replaceNote(editor, next)
       touch(saver.id, summary(saver, editor.state.doc))
     })
+    const unreseal = saver.setResealer((locked) => resealImages(editor, locked))
     return () => {
       off()
+      unreseal()
       detach()
     }
   }, [saver, editor, touch])
@@ -354,7 +378,7 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
       <div className={styles.bar}>
         {mobile && <BackButton onClick={onBack} />}
         <span className={styles.spacer} />
-        <StatusPill state={snap.state} shown={statusShown} detail={statusDetail} />
+        <StatusPill state={snap.imagesBusy ? 'saving' : snap.state} shown={statusShown || snap.imagesBusy} detail={statusDetail} />
         {snap.locked && (
           <button
             type="button"
@@ -387,6 +411,18 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
           }
         >
           Couldn’t reach the server. Changes are kept here and retried.
+        </Notice>
+      )}
+      {snap.imageError && (
+        <Notice
+          tone="error"
+          actions={
+            <Button size="sm" onClick={() => saver.dismissImageError()}>
+              Dismiss
+            </Button>
+          }
+        >
+          {snap.imageError}
         </Notice>
       )}
       {problem?.kind === 'rejected' && (
@@ -464,6 +500,7 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
               <StylesButton editor={editor} id={stylesId} open={stylesOpen} onToggle={toggleStyles} mobile />
               <IndentTools editor={editor} className={styles.bottomTool} iconSize={19} />
               <LinkTool editor={editor} open={linkOpen} onToggle={toggleLink} className={styles.bottomTool} iconSize={19} />
+              <ImageTool editor={editor} onPick={addImages} className={styles.bottomTool} iconSize={19} />
               <button type="button" className={styles.bottomTool} onClick={onNew} aria-label="New note" title="New note">
                 <ComposeIcon />
               </button>
@@ -476,6 +513,7 @@ function NoteEditor({ saver, isDraft, mobile, onBack, onNew, onCreated, onDelete
               <ChecklistTool editor={editor} />
               <IndentTools editor={editor} />
               <LinkTool editor={editor} open={linkOpen} onToggle={toggleLink} />
+              <ImageTool editor={editor} onPick={addImages} />
             </>
           )}
         </div>

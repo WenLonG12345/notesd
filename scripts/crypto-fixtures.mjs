@@ -11,6 +11,7 @@ const bytes = (n, seed) => Buffer.from(Array.from({ length: n }, (_, i) => (seed
 
 const PREFIX = 'notesd:locked:v1:'
 const BODY_AAD = 'notesd:locked:v1'
+const IMAGE_AAD = 'notesd:image:v1'
 const wrapAad = (kind) => `notesd:lnk:v1:${kind}`
 
 function seal(key, nonce, plain, aad) {
@@ -80,6 +81,22 @@ const invalid = [
   { name: 'line break', envelope: good.slice(0, 40) + '\r\n' + good.slice(40) }
 ].map((v) => ({ ...v, key: b64(lnk) }))
 
+// A locked note's images (§7.6): the whole file, binary, no prefix.
+// The 1×1 PNG stands for any image; nothing about its type is in the AAD.
+const png = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg',
+  'base64'
+)
+const images = [
+  { name: 'png', key: b64(lnk), plain: b64(png), sealed: b64(seal(lnk, bytes(12, 70), png, IMAGE_AAD)) },
+  {
+    name: 'body aad is refused',
+    key: b64(lnk),
+    plain: null,
+    sealed: b64(seal(lnk, bytes(12, 71), png, BODY_AAD))
+  }
+]
+
 // Proves to the server that a client holds the key, without revealing it.
 const verifiers = [
   { name: 'verifier', key: b64(lnk), verifier: b64(createHmac('sha256', lnk).update('notesd:verifier:v1').digest()) }
@@ -93,12 +110,14 @@ const out = {
     'wraps: AES-256-GCM of the 32-byte locked-notes key under kek, nonce(12) ‖ ciphertext ‖ tag, AAD "notesd:lnk:v1:<kind>". ' +
     'envelopes: note content "notesd:locked:v1:" + base64url(nonce(12) ‖ ciphertext ‖ tag) of the UTF-8 Markdown body, AAD "notesd:locked:v1". ' +
     'invalid: envelopes every client must refuse to open with key. ' +
+    'images: a locked note\'s image file, nonce(12) ‖ ciphertext ‖ tag, AAD "notesd:image:v1"; plain null means it must be refused. ' +
     'verifiers: HMAC-SHA256(key, "notesd:verifier:v1"), sent to change the keyring.',
   kdf,
   hkdf,
   wraps,
   envelopes,
   invalid,
+  images,
   verifiers
 }
 
