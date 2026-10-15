@@ -1,0 +1,61 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { navigate, transitionFor } from '../src/router'
+import { phoneLayout } from './helpers'
+
+describe('navigation transitions', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/')
+    // jsdom has none; one test stubs it.
+    Reflect.deleteProperty(document, 'startViewTransition')
+  })
+
+  it('pushes deeper and pops shallower on a phone', () => {
+    phoneLayout()
+    expect(transitionFor('/', '/notes/a')).toBe('forward')
+    expect(transitionFor('/notes/a', '/')).toBe('back')
+    expect(transitionFor('/tags', '/')).toBe('forward')
+    expect(transitionFor('/', '/settings')).toBeNull()
+  })
+
+  it('only crossfades the page between notes on a wider screen', () => {
+    expect(transitionFor('/notes/a', '/notes/b')).toBe('switch')
+    expect(transitionFor('/', '/notes/a')).toBeNull()
+  })
+
+  it('runs the move inside a view transition where the browser has them', async () => {
+    phoneLayout()
+    const start = vi.fn((update: () => void) => {
+      expect(document.documentElement.dataset.nav).toBe('forward')
+      update()
+      return { finished: Promise.resolve() }
+    })
+    Object.assign(document, { startViewTransition: start })
+
+    navigate('/notes/a')
+    expect(start).toHaveBeenCalledOnce()
+    expect(window.location.pathname).toBe('/notes/a')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(document.documentElement.dataset.nav).toBeUndefined()
+
+    // A redirect isn't something the user did: no animation.
+    navigate('/', { replace: true })
+    expect(start).toHaveBeenCalledOnce()
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('moves without animating when motion is reduced', () => {
+    phoneLayout()
+    const start = vi.fn()
+    Object.assign(document, { startViewTransition: start })
+    const matchMedia = window.matchMedia
+    vi.spyOn(window, 'matchMedia').mockImplementation((q) =>
+      q === '(prefers-reduced-motion: reduce)' ? ({ matches: true } as MediaQueryList) : matchMedia(q),
+    )
+
+    navigate('/notes/a')
+    expect(start).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe('/notes/a')
+    vi.restoreAllMocks()
+  })
+})

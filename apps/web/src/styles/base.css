@@ -94,6 +94,67 @@ code {
   }
 }
 
+/* Phone: the list and a note push and pop like native screens. router.ts sets
+   data-nav for the length of the view transition. */
+@keyframes nav-enter-forward {
+  from {
+    transform: translateX(25%);
+    opacity: 0;
+  }
+}
+
+@keyframes nav-leave-forward {
+  to {
+    transform: translateX(-10%);
+    opacity: 0;
+  }
+}
+
+@keyframes nav-enter-back {
+  from {
+    transform: translateX(-10%);
+    opacity: 0;
+  }
+}
+
+@keyframes nav-leave-back {
+  to {
+    transform: translateX(25%);
+    opacity: 0;
+  }
+}
+
+:root[data-nav='forward']::view-transition-new(root) {
+  animation: nav-enter-forward 0.32s var(--ease-out);
+}
+
+:root[data-nav='forward']::view-transition-old(root) {
+  animation: nav-leave-forward 0.32s var(--ease-out);
+}
+
+:root[data-nav='back']::view-transition-new(root) {
+  animation: nav-enter-back 0.32s var(--ease-out);
+}
+
+:root[data-nav='back']::view-transition-old(root) {
+  animation: nav-leave-back 0.32s var(--ease-out);
+}
+
+/* Desktop, one note to another: only the page crossfades, quickly. */
+:root[data-nav='switch']::view-transition-old(root),
+:root[data-nav='switch']::view-transition-new(root) {
+  animation: none;
+}
+
+:root[data-nav='switch']::view-transition-group(note-page) {
+  animation-duration: 0.15s;
+}
+
+:root[data-nav='switch']::view-transition-old(note-page),
+:root[data-nav='switch']::view-transition-new(note-page) {
+  animation-duration: 0.15s;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

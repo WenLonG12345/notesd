@@ -15,7 +15,7 @@
   font-size: 13.5px;
   box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.4);
   transform: translateX(-50%);
-  animation: toast-in 0.25s ease-out;
+  animation: toast-in 0.4s var(--spring);
 }
 
 /* No action: keep the right padding even. */

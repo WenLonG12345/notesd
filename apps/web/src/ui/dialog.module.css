@@ -16,7 +16,7 @@
 }
 
 .dialog[open] {
-  animation: sheet-in 0.38s var(--ease-out);
+  animation: sheet-in 0.45s var(--spring);
 }
 
 .dialog[open]::backdrop {

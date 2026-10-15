@@ -111,6 +111,11 @@
   margin: 0 auto;
 }
 
+/* Only while switching notes on desktop; on phones the whole screen slides. */
+:global(:root[data-nav='switch']) .page {
+  view-transition-name: note-page;
+}
+
 .date {
   padding-bottom: 14px;
   text-align: center;
@@ -135,7 +140,7 @@
   box-shadow:
     var(--inset),
     0 24px 50px -16px rgb(0 0 0 / 0.35);
-  animation: pop-in 0.16s ease-out;
+  animation: pop-in 0.3s var(--spring);
 }
 
 @keyframes pop-in {

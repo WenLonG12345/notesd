@@ -3,15 +3,11 @@ package notes.app.ui
 import android.provider.Settings
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.Composable
@@ -28,6 +24,13 @@ import androidx.compose.ui.unit.dp
 
 /** The web app's --ease-out. */
 val EaseOut = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
+
+/** Screens sliding in and out: a spring damped just short of bouncing, so a move settles rather than stops. */
+fun <T> springSlide(reduce: Boolean): FiniteAnimationSpec<T> =
+    if (reduce) snap() else spring(dampingRatio = 0.9f, stiffness = 400f)
+
+/** Things appearing in place, like the bars above the keyboard: quicker, with a hint of overshoot. */
+fun <T> springPop(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.8f, stiffness = 600f)
 
 /** True when the system's "Remove animations" is on: decorative motion stops, state changes snap. */
 val LocalReduceMotion = staticCompositionLocalOf { false }

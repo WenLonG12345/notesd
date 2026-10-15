@@ -47,12 +47,12 @@ import notes.app.account.Account
 import notes.app.account.OnboardingScreen
 import notes.app.account.OnboardingViewModel
 import notes.app.settings.SettingsScreen
-import notes.app.ui.EaseOut
 import notes.app.ui.KeyboardBar
 import notes.app.ui.KeyboardBarSlot
 import notes.app.ui.LocalKeyboardBar
 import notes.app.ui.LocalReduceMotion
 import notes.app.ui.hideKeyboard
+import notes.app.ui.springSlide
 import notes.core.api.ApiClient
 import notes.core.db.NoteFilter
 import notes.core.text.Uuid7
@@ -208,23 +208,23 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
                             rememberViewModelStoreNavEntryDecorator()
                         ),
                         sceneStrategies = listOf(listDetail, SinglePaneSceneStrategy()),
-                        // Forward: the new screen slides in a quarter-width and fades up; the old one drifts back.
+                        // Forward: the new screen slides in a quarter-width and fades up; the old one drifts back. Springs move, tweens fade.
                         transitionSpec = {
                             ContentTransform(
-                                slideInHorizontally(tween(ms, easing = EaseOut)) { it / 4 } + fadeIn(tween(ms / 2)),
-                                slideOutHorizontally(tween(ms, easing = EaseOut)) { -it / 10 } + fadeOut(tween(ms))
+                                slideInHorizontally(springSlide(reduce)) { it / 4 } + fadeIn(tween(ms / 2)),
+                                slideOutHorizontally(springSlide(reduce)) { -it / 10 } + fadeOut(tween(ms))
                             )
                         },
                         popTransitionSpec = {
-                            slideInHorizontally(tween(ms, easing = EaseOut)) {
+                            slideInHorizontally(springSlide(reduce)) {
                                 -it / 10
                             } + fadeIn(tween(ms)) togetherWith
-                                slideOutHorizontally(tween(ms, easing = EaseOut)) { it / 4 } + fadeOut(tween(ms / 2))
+                                slideOutHorizontally(springSlide(reduce)) { it / 4 } + fadeOut(tween(ms / 2))
                         },
                         // The back gesture shrinks the screen toward the edge it came from, revealing the one beneath.
                         predictivePopTransitionSpec = {
-                            slideInHorizontally(tween(ms)) { -it / 10 } + fadeIn(tween(ms)) togetherWith
-                                scaleOut(tween(ms), targetScale = 0.9f) + fadeOut(tween(ms))
+                            slideInHorizontally(springSlide(reduce)) { -it / 10 } + fadeIn(tween(ms)) togetherWith
+                                scaleOut(springSlide(reduce), targetScale = 0.9f) + fadeOut(tween(ms))
                         },
                         entryProvider = entryProvider {
                             entry<TagsKey> {

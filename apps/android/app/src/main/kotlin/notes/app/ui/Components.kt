@@ -395,8 +395,8 @@ fun Banner(
 fun Reveal(visible: Boolean, content: @Composable () -> Unit) {
     AnimatedVisibility(
         visible,
-        enter = fadeIn(tween(200)) + expandVertically(tween(260, easing = EaseOut)),
-        exit = fadeOut(tween(150)) + shrinkVertically(tween(200))
+        enter = fadeIn(tween(200)) + expandVertically(springPop()),
+        exit = fadeOut(tween(150)) + shrinkVertically(springSlide(reduce = false))
     ) { content() }
 }
 
