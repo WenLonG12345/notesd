@@ -21,6 +21,7 @@ sudo -u notesd notesd check --data-dir /var/lib/notesd
 | Command | What it does |
 | --- | --- |
 | `check` | Runs SQLite's integrity check and prints `ok`. Never changes the database. |
+| `export --out DIR` | Writes every note to DIR (new or empty) as a Markdown file named after its title. Locked notes are skipped: the server only has them encrypted. Never changes the database. |
 | `reindex` | Rebuilds the search index and tags from the notes. Try it if search results look wrong. |
 | `reset-password` | Sets a new password (from `NOTESD_PASSWORD` or stdin) and signs out every session. For when you've forgotten it. |
 | `create-owner --username NAME` | Creates the account, if there isn't one yet. |

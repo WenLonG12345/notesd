@@ -9,6 +9,7 @@
 //	notesd reset-password
 //	notesd reindex                  rebuild the search index
 //	notesd check                    run an integrity check
+//	notesd export --out DIR         write every note to DIR as Markdown
 //	notesd version
 //
 // Flags may also be set through environment variables: NOTESD_DATA_DIR,
@@ -61,6 +62,7 @@ type options struct {
 	setupToken string
 	resendURL  string
 	username   string
+	out        string
 }
 
 func run(args []string) error {
@@ -82,21 +84,26 @@ func run(args []string) error {
 		fs.StringVar(&o.resendURL, "resend-url", env("NOTESD_RESEND_URL", ""), "Resend API base URL for emailing notes (default https://api.resend.com)")
 	case "create-owner":
 		fs.StringVar(&o.username, "username", "", "owner username")
+	case "export":
+		fs.StringVar(&o.out, "out", "", "directory to write the Markdown files to (new or empty)")
 	case "reset-password", "reindex", "check":
 	case "version":
 		fmt.Println("notesd", version)
 		return nil
 	case "help", "-h", "--help":
-		fmt.Fprintln(os.Stderr, "commands: serve, create-owner, reset-password, reindex, check, version")
+		fmt.Fprintln(os.Stderr, "commands: serve, create-owner, reset-password, reindex, check, export, version")
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (commands: serve, create-owner, reset-password, reindex, check, version)", cmd)
+		return fmt.Errorf("unknown command %q (commands: serve, create-owner, reset-password, reindex, check, export, version)", cmd)
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
+	}
+	if cmd == "export" && o.out == "" {
+		return errors.New("--out is required")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -109,8 +116,8 @@ func run(args []string) error {
 	}
 	defer db.Close()
 
-	// check must leave the database untouched.
-	if cmd != "check" {
+	// check and export must leave the database untouched.
+	if cmd != "check" && cmd != "export" {
 		if _, err := search.RebuildIfNeeded(ctx, db); err != nil {
 			return fmt.Errorf("rebuild search index: %w", err)
 		}
@@ -158,6 +165,15 @@ func run(args []string) error {
 			return fmt.Errorf("integrity check found %d problem(s); restore from a backup — the database has not been modified", len(problems))
 		}
 		fmt.Println("ok")
+	case "export":
+		n, locked, err := exportNotes(ctx, db, o.out)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("exported %d notes to %s\n", n, o.out)
+		if locked > 0 {
+			fmt.Printf("skipped %d locked notes (only their encrypted form is on the server)\n", locked)
+		}
 	}
 	return nil
 }
