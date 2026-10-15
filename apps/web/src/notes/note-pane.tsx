@@ -2,7 +2,6 @@ import type { Editor } from '@tiptap/core'
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ApiError } from '../api/client'
 import { notes as api } from '../api/notes'
-import type { Note } from '../api/types'
 import { ChecklistTool, IndentTools, LinkForm, LinkTool, MarkTools, NoteContent, TextStyles, Tool, replaceNote, useNoteEditor } from '../editor/editor'
 import { noteFields, noteSummary, titleOf } from '../editor/note-doc'
 import { Banner } from '../ui/banner'
@@ -40,8 +39,12 @@ type Load =
   | { kind: 'loading' }
   | { kind: 'missing' }
   | { kind: 'failed' }
-  /** A locked note, and locked notes are locked: only its title is readable. */
-  | { kind: 'locked'; note: Note }
+  /**
+   * A locked note, and locked notes are locked: only its title is readable.
+   * [draft]: a new note, not on the server yet, kept until unlocked.
+   * [keyFailed]: the key in memory didn't open it (the keyring was reset since).
+   */
+  | { kind: 'locked'; title: string; draft?: NoteSaver; keyFailed: boolean }
   | { kind: 'ready'; saver: NoteSaver }
 
 export function NotePane({ id, draft, mobile, onBack, onNew, onCreated, onOpenDraft, onDelete, onGone }: Props) {
@@ -50,12 +53,37 @@ export function NotePane({ id, draft, mobile, onBack, onNew, onCreated, onOpenDr
   const [load, setLoad] = useState<Load>(() => {
     const ready = draft ?? (id ? existingSaver(id) : undefined)
     // A locked note's saver holds plain text: only show it while unlocked.
-    return ready && !(ready.isLocked() && !lockSession.key()) ? { kind: 'ready', saver: ready } : { kind: 'loading' }
+    if (!ready || (ready.isLocked() && !lockSession.key())) return draft ? lockedDraft(draft) : { kind: 'loading' }
+    return { kind: 'ready', saver: ready }
   })
 
   // Locked notes locked again: the open note closes (during render, so its
-  // text is never shown again) and reloads as a locked placeholder.
-  if (load.kind === 'ready' && load.saver.isLocked() && lockStatus !== 'unlocked' && id) setLoad({ kind: 'loading' })
+  // text is never shown again) and reloads as a locked placeholder. A new
+  // note can't be reloaded; it waits, in memory, for the unlock.
+  if (load.kind === 'ready' && load.saver.isLocked() && lockStatus !== 'unlocked') {
+    setLoad(draft ? lockedDraft(draft) : { kind: 'loading' })
+  }
+
+  // The locked new note reached the server and is opened by id now.
+  if (load.kind === 'locked' && load.draft && !draft) setLoad({ kind: 'loading' })
+
+  // Unlocked elsewhere (another note, Settings, a password change): try again.
+  if (load.kind === 'locked' && !load.keyFailed && lockStatus === 'unlocked') {
+    setLoad(load.draft ? { kind: 'ready', saver: load.draft } : { kind: 'loading' })
+  }
+
+  // A locked new note behind the placeholder: an untouched one just goes; one
+  // that reached the server (saved before the key went) opens by id, locked.
+  const lockedNew = load.kind === 'locked' ? load.draft : undefined
+  useEffect(() => {
+    if (!lockedNew) return
+    const check = () => {
+      if (lockedNew.getSnapshot().created) onCreated(lockedNew.id)
+      else if (lockedNew.isBlankDraft()) onGone(lockedNew.id)
+    }
+    check()
+    return lockedNew.subscribe(check)
+  }, [lockedNew, onCreated, onGone])
 
   useEffect(() => {
     if (load.kind !== 'loading' || !id) return
@@ -66,7 +94,12 @@ export function NotePane({ id, draft, mobile, onBack, onNew, onCreated, onOpenDr
         try {
           opened = await openNote(stored)
         } catch (err) {
-          if (!cancelled) setLoad(err instanceof LockedError ? { kind: 'locked', note: stored } : { kind: 'failed' })
+          if (cancelled) return
+          setLoad(
+            err instanceof LockedError
+              ? { kind: 'locked', title: stored.title, keyFailed: lockSession.key() !== null }
+              : { kind: 'failed' },
+          )
           return
         }
         if (cancelled) return
@@ -134,14 +167,15 @@ export function NotePane({ id, draft, mobile, onBack, onNew, onCreated, onOpenDr
                 <span className={styles.lockMark}>
                   <LockIcon size={24} />
                 </span>
-                <h2 className={styles.placeholderTitle}>{load.note.title.trim() || 'Locked note'}</h2>
-                {lockStatus === 'none' || lockStatus === 'unlocked' ? (
+                <h2 className={styles.placeholderTitle}>{load.title.trim() || 'Locked note'}</h2>
+                {lockStatus === 'none' || (load.keyFailed && lockStatus === 'unlocked') ? (
                   // The keyring was reset since this note was locked: its key is gone.
                   <span className={styles.muted}>This note was locked with a password that was reset. It can’t be opened.</span>
                 ) : (
                   <>
                     <span className={styles.muted}>This note is locked.</span>
-                    <UnlockForm onUnlocked={() => setLoad({ kind: 'loading' })} autoFocus={!mobile} />
+                    {/* Unlocking re-renders this pane as unlocked, which opens the note. */}
+                    <UnlockForm onUnlocked={() => undefined} autoFocus={!mobile} />
                   </>
                 )}
               </>
@@ -159,6 +193,10 @@ export function NotePane({ id, draft, mobile, onBack, onNew, onCreated, onOpenDr
       )}
     </section>
   )
+}
+
+function lockedDraft(saver: NoteSaver): Load {
+  return { kind: 'locked', title: saver.fields().title, draft: saver, keyFailed: false }
 }
 
 /** The list row's title and preview; a locked note's body stays out of the list. */

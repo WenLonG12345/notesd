@@ -91,14 +91,21 @@ class SyncEngine(
         return if (store.nextOperation() != null) push(api) else null
     }
 
-    /** The keyring is tiny and has no change feed: fetched whole every cycle. */
-    private suspend fun keyring(api: ApiClient): Stop? = when (val result = api.lockKeys()) {
-        is ApiResult.Ok -> {
-            lockKeys.replace(result.value)
-            null
-        }
+    /**
+     * The keyring is tiny and has no change feed: fetched whole every cycle.
+     * A change made on this device while the fetch was out is newer; the
+     * fetched copy is dropped, and the next cycle brings the server's.
+     */
+    private suspend fun keyring(api: ApiClient): Stop? {
+        val since = lockKeys.generation()
+        return when (val result = api.lockKeys()) {
+            is ApiResult.Ok -> {
+                lockKeys.replaceIfUnchanged(result.value, since)
+                null
+            }
 
-        else -> stop(result)
+            else -> stop(result)
+        }
     }
 
     private suspend fun push(api: ApiClient): Stop? {

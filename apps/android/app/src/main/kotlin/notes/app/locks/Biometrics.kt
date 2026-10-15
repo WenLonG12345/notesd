@@ -68,6 +68,8 @@ class KeystoreBiometrics(private val context: Context) : Biometrics {
     }
 
     override suspend fun open(activity: FragmentActivity, sealed: ByteArray): BiometricResult {
+        // Too short for an IV and a tag: damaged, and never openable.
+        if (sealed.size < IV_BYTES + TAG_BITS / 8) return BiometricResult.Invalidated
         val key = existingKey() ?: return BiometricResult.Invalidated
         val cipher = try {
             Cipher.getInstance(TRANSFORMATION).apply {

@@ -127,7 +127,12 @@ export function NoteMenu({ saver, mobile, onDelete }: { saver: NoteSaver; mobile
               setOpen(false)
               if (locked) saver.setLocked(false)
               else if (lockSession.key()) saver.setLocked(true)
-              else setLocking(lockStatus === 'none' ? 'setup' : 'unlock')
+              else {
+                // Until the keyring is fetched, 'unknown' can't tell a first lock from a later one.
+                const choose = () => setLocking(lockSession.getStatus() === 'none' ? 'setup' : 'unlock')
+                if (lockStatus === 'unknown') lockSession.load().then(choose, choose)
+                else choose()
+              }
             }}
           >
             {locked ? 'Remove lock' : 'Lock note'}

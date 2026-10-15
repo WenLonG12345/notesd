@@ -88,4 +88,22 @@ class LockedSyncTest {
         assertEquals(body, merged.content)
         assertEquals(1, a.live().size)
     }
+
+    @Test
+    fun `a keyring fetched before a change made on this device doesn't overwrite it`() = runBlocking<Unit> {
+        val a = client()
+        setUp(a)
+        syncAll(a)
+        // A setup or new password on this device lands while the cycle's fetch is out.
+        val local = Keyring.create("newer", iterations = 10_000).entry
+        a.beforeNext({ it.method == "GET" && it.url.encodedPath == "/api/v1/locks" }) {
+            runBlocking { a.engine.lockKeys.replace(listOf(local)) }
+        }
+        assertEquals(SyncOutcome.Done, a.sync())
+        assertEquals(listOf(local), a.engine.lockKeys.keys())
+
+        // The next cycle takes the server's again.
+        assertEquals(SyncOutcome.Done, a.sync())
+        assertTrue(a.engine.lockKeys.keys().none { it.wrapped == local.wrapped })
+    }
 }

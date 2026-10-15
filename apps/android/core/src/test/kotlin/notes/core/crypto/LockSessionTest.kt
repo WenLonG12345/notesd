@@ -45,4 +45,50 @@ class LockSessionTest {
         assertEquals(LockSession.State.Locked, session.state.value)
         assertFalse(session.unlockWithKey(ByteArray(5), session.passwordEntry()!!))
     }
+
+    @Test
+    fun `a new password or a reset synced from elsewhere locks an unlocked session`() = runBlocking {
+        val created = Keyring.create("lock pass 123", iterations = 10_000)
+        keys.replace(listOf(created.entry))
+        session.refresh()
+        assertTrue(session.unlock("lock pass 123"))
+
+        // Nothing changed: still unlocked.
+        session.refresh()
+        assertEquals(LockSession.State.Unlocked, session.state.value)
+
+        keys.replace(listOf(Keyring.create("another one", iterations = 10_000).entry))
+        session.refresh()
+        assertEquals(LockSession.State.Locked, session.state.value)
+        assertNull(session.key())
+
+        assertTrue(session.unlock("another one"))
+        keys.replace(emptyList())
+        session.refresh()
+        assertEquals(LockSession.State.None, session.state.value)
+        assertNull(session.key())
+    }
+
+    @Test
+    fun `a save that fails keeps the key, unless the keyring moved on`() = runBlocking {
+        val created = Keyring.create("lock pass 123", iterations = 10_000)
+        keys.replace(listOf(created.entry))
+        session.refresh()
+        assertTrue(session.unlock("lock pass 123"))
+        var saves = 0
+        val unhook = session.onBeforeLock {
+            saves++
+            false
+        }
+
+        assertFalse(session.lock())
+        assertEquals(LockSession.State.Unlocked, session.state.value)
+        assertTrue(session.key() != null)
+
+        keys.replace(listOf(Keyring.create("another one", iterations = 10_000).entry))
+        session.refresh()
+        assertEquals(LockSession.State.Locked, session.state.value)
+        assertEquals(2, saves)
+        unhook()
+    }
 }

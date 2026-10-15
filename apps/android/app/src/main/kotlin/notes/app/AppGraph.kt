@@ -98,7 +98,7 @@ class AppGraph(
     suspend fun signOut() {
         withTimeoutOrNull(LOGOUT_WAIT_MS) { api()?.logout() }
         accounts.signOut()
-        locks.lock()
+        locks.lock(force = true)
         fingerprint.disable()
     }
 

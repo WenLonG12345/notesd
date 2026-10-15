@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ApiError } from '../api/client'
 import { genericMessage } from '../auth/errors'
 import { LockedError } from '../locks/crypto'
@@ -16,14 +16,37 @@ type Errors = Partial<Record<'current' | 'next' | 'confirm' | 'account', string>
 /** Locked notes (§10.1): change the lock password, lock now, or reset after forgetting it. */
 export function LockedNotesCard({ username }: { username: string }) {
   const status = useLockStatus()
-  useEffect(() => {
-    void lockSession.load().catch(() => undefined)
+  const [loadError, setLoadError] = useState<string>()
+  // Fresh each time: another device may have changed the password, reset, or added a passkey.
+  const fetchKeyring = useCallback(() => {
+    lockSession.load(true).catch((err: unknown) => setLoadError(genericMessage(err)))
   }, [])
+  useEffect(fetchKeyring, [fetchKeyring])
 
   return (
     <Surface as="section" className={[styles.card, styles.wide].join(' ')} aria-labelledby="locks-kicker">
       <Kicker id="locks-kicker">Locked notes</Kicker>
-      {status === 'unknown' && <span className={styles.muted}>Loading…</span>}
+      {status === 'unknown' &&
+        (loadError ? (
+          <>
+            <p role="alert" className={styles.error}>
+              {loadError}
+            </p>
+            <div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setLoadError(undefined)
+                  fetchKeyring()
+                }}
+              >
+                Try again
+              </Button>
+            </div>
+          </>
+        ) : (
+          <span className={styles.muted}>Loading…</span>
+        ))}
       {status === 'none' && (
         <span className={styles.text}>
           No lock password yet. Choose Lock note from a note’s menu to create one; the note is then encrypted so the
@@ -135,6 +158,7 @@ function Manage({ unlocked }: { unlocked: boolean }) {
           value={current}
           onChange={(e) => setCurrent(e.target.value)}
           error={errors.current}
+          readOnly={busy}
         />
         <div className={styles.pair}>
           <Field
@@ -145,6 +169,7 @@ function Manage({ unlocked }: { unlocked: boolean }) {
             value={next}
             onChange={(e) => setNext(e.target.value)}
             error={errors.next}
+            readOnly={busy}
           />
           <Field
             label="Confirm new lock password"
@@ -153,6 +178,7 @@ function Manage({ unlocked }: { unlocked: boolean }) {
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             error={errors.confirm}
+            readOnly={busy}
           />
         </div>
         {formError && (
@@ -196,6 +222,7 @@ function Passkeys({ username, unlocked }: { username: string; unlocked: boolean 
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string>()
   const [message, setMessage] = useState<string>()
+  const [removeError, setRemoveError] = useState<string>()
   const [busy, setBusy] = useState(false)
 
   async function add(e: FormEvent) {
@@ -204,6 +231,7 @@ function Passkeys({ username, unlocked }: { username: string; unlocked: boolean 
     setBusy(true)
     setError(undefined)
     setMessage(undefined)
+    setRemoveError(undefined)
     try {
       await lockSession.addPasskey(password, username)
       setAdding(false)
@@ -222,10 +250,11 @@ function Passkeys({ username, unlocked }: { username: string; unlocked: boolean 
   async function remove(id: string) {
     setBusy(true)
     setMessage(undefined)
+    setRemoveError(undefined)
     try {
       await lockSession.removePasskey(id)
     } catch (err) {
-      setMessage(genericMessage(err))
+      setRemoveError(genericMessage(err))
     } finally {
       setBusy(false)
     }
@@ -257,6 +286,11 @@ function Passkeys({ username, unlocked }: { username: string; unlocked: boolean 
       {message && (
         <p role="status" className={styles.success}>
           {message}
+        </p>
+      )}
+      {removeError && (
+        <p role="alert" className={styles.error}>
+          {removeError}
         </p>
       )}
       {available &&

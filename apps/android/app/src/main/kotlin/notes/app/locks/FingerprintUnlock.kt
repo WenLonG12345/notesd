@@ -77,11 +77,19 @@ class FingerprintUnlock(context: Context, private val locks: LockSession, privat
     }
 
     /**
-     * This device changed the lock password: the key is the same, so the
-     * sealed copy stays good and follows the new password entry.
+     * This device changed the lock password from the entry [rewrapped]: the key
+     * is the same, so the sealed copy follows the new entry. Only if it was
+     * kept against that entry, though; one kept against an older keyring (reset
+     * elsewhere since) is stale, and turned off rather than revived.
      */
-    suspend fun passwordChanged() {
-        if (prefs.contains(SEALED)) locks.passwordEntry()?.let { prefs.edit { putString(BOUND, it) } }
+    fun passwordChanged(rewrapped: String?) {
+        if (!prefs.contains(SEALED)) return
+        val next = locks.keyEntry()
+        if (rewrapped == null || next == null || prefs.getString(BOUND, null) != rewrapped) {
+            disable()
+        } else {
+            prefs.edit { putString(BOUND, next) }
+        }
     }
 
     fun disable() {

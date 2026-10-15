@@ -1,9 +1,33 @@
-import { screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import type { LockKey } from '../src/api/types'
-import { LOCKED_PREFIX, decryptBody, fromBase64Url, importKey, passwordKek, unwrapRaw } from '../src/locks/crypto'
-import { lockTiming } from '../src/locks/session'
-import { bodyText, createNote, getNote, list, listNotes, noteTitle, saved, signedIn, typeAtEnd } from './helpers'
+import {
+  LOCKED_PREFIX,
+  decryptBody,
+  fromBase64Url,
+  importKey,
+  passwordKek,
+  randomBytes,
+  toBase64Url,
+  unwrapRaw,
+  verifier,
+  wrap,
+} from '../src/locks/crypto'
+import { lockSession, lockTiming } from '../src/locks/session'
+import { timing } from '../src/notes/saver'
+import {
+  bodyText,
+  createNote,
+  getNote,
+  list,
+  listNotes,
+  newNoteButton,
+  noteTitle,
+  saved,
+  signedIn,
+  typeAtEnd,
+  typeInTitle,
+} from './helpers'
 import type { TestServer } from './server'
 import { fakeAuthenticator } from './webauthn'
 
@@ -239,3 +263,183 @@ describe('passkeys for locked notes', () => {
     expect(keys.map((k) => k.kind)).toEqual(['password'])
   })
 })
+
+/** The lock password changed on another device: same key, new wrap. */
+async function changePasswordElsewhere(server: TestServer, next: string) {
+  const { keys } = (await server.api<{ keys: LockKey[] }>('GET', '/locks')).body
+  const entry = keys.find((k) => k.kind === 'password')
+  if (!entry) throw new Error('no password entry')
+  const raw = await unwrapRaw(await passwordKek(LOCK_PASSWORD, fromBase64Url(entry.salt), entry.iterations), entry.wrapped, 'password')
+  const salt = randomBytes(16)
+  await server.api('PUT', '/locks/keys/password', {
+    kind: 'password',
+    salt: toBase64Url(salt),
+    iterations: 10_000,
+    wrapped: await wrap(await passwordKek(next, salt, 10_000), raw, 'password'),
+    verifier: await verifier(raw),
+  })
+}
+
+describe('locked notes, when things happen meanwhile', () => {
+  it('Lock now during a password change keeps notes locked', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    await act(async () => {
+      const change = lockSession.changePassword(LOCK_PASSWORD, 'brand new pass')
+      await lockSession.lock()
+      await change
+    })
+    expect(lockSession.key()).toBeNull()
+    expect(lockSession.getStatus()).toBe('locked')
+    expect(await screen.findByText('This note is locked.')).toBeTruthy()
+    // The change itself went through.
+    expect(await readLocked(s.server, s.id, 'brand new pass')).toBe('PIN 1234 #money\n')
+  })
+
+  it('an unlock or keyring fetch finishing after sign-out changes nothing', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    await screen.findByText('This note is locked.')
+    await act(async () => {
+      const unlock = lockSession.unlock(LOCK_PASSWORD)
+      const load = lockSession.load(true)
+      lockSession.forget()
+      // Whether they resolve or give up, they land nowhere.
+      await Promise.allSettled([unlock, load])
+    })
+    expect(lockSession.key()).toBeNull()
+    expect(lockSession.getStatus()).toBe('unknown')
+    expect(lockSession.keys()).toEqual([])
+  })
+
+  it('a note waiting on the placeholder opens when notes are unlocked elsewhere', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    await screen.findByText('This note is locked.')
+    await act(() => lockSession.unlock(LOCK_PASSWORD))
+    await waitFor(() => expect(bodyText()).toBe('PIN 1234 #money'))
+    expect(screen.queryByText(/can’t be opened/)).toBeNull()
+  })
+
+  it('a lock password changed elsewhere unlocks with the new one', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    await screen.findByText('This note is locked.')
+    await changePasswordElsewhere(s.server, 'brand new pass')
+    await s.user.type(screen.getByLabelText('Lock password'), 'brand new pass{Enter}')
+    await waitFor(() => expect(bodyText()).toBe('PIN 1234 #money'))
+  })
+
+  it('a reset elsewhere locks this tab: nothing new is locked with the old key', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    await s.server.api('DELETE', '/locks', { accountPassword: s.password })
+    await s.user.click(screen.getByRole('button', { name: 'Settings' }))
+    const card = await screen.findByRole('region', { name: 'Locked notes' })
+    // Settings fetched the keyring afresh rather than trusting the one from sign-in.
+    expect(await within(card).findByText(/^No lock password yet\./)).toBeTruthy()
+    expect(lockSession.key()).toBeNull()
+  })
+
+  it('Settings says when the keyring can’t be fetched, and tries again', async () => {
+    const s = await seeded()
+    act(() => lockSession.forget())
+    const real = globalThis.fetch
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) =>
+      String(input).endsWith('/api/v1/locks') ? Promise.reject(new TypeError('offline')) : real(input, init),
+    )
+    await s.user.click(screen.getByRole('button', { name: 'Settings' }))
+    const card = await screen.findByRole('region', { name: 'Locked notes' })
+    expect(await within(card).findByRole('alert')).toBeTruthy()
+    spy.mockRestore()
+    await s.user.click(within(card).getByRole('button', { name: 'Try again' }))
+    expect(await within(card).findByText(/^No lock password yet\./)).toBeTruthy()
+  })
+
+  it('Lock note waits for the keyring before choosing between first lock and unlock', async () => {
+    const s = await seeded()
+    act(() => lockSession.forget())
+    await s.user.click(screen.getByRole('button', { name: 'More' }))
+    await s.user.click(within(moreMenu()).getByRole('menuitem', { name: 'Lock note' }))
+    expect(await screen.findByRole('dialog', { name: 'Create a lock password' })).toBeTruthy()
+  })
+
+  it('a new note locked and then locked again before saving goes to the server encrypted, then shows locked', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    await s.user.click(newNoteButton())
+    await s.user.click(await screen.findByRole('button', { name: 'More' }))
+    await s.user.click(within(moreMenu()).getByRole('menuitem', { name: 'Lock note' }))
+    // Still a draft when Lock now comes: locking must save it (encrypted), then hide it.
+    timing.debounceMs = 60_000
+    try {
+      await typeInTitle(s.user, 'Diary{Enter}secret words')
+      await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    } finally {
+      timing.debounceMs = 40
+    }
+    expect(await screen.findByText('This note is locked.')).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'Note' })).toBeNull()
+    const all = await listNotes(s.server)
+    const diary = all.find((n) => n.title === 'Diary')
+    if (!diary) throw new Error(JSON.stringify(all))
+    const stored = await getNote(s.server, diary.id)
+    expect(stored.content.startsWith(LOCKED_PREFIX)).toBe(true)
+    expect(await readLocked(s.server, diary.id)).toBe('secret words\n')
+  })
+
+  it('a new, still empty note marked locked closes when notes lock', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    await s.user.click(newNoteButton())
+    await s.user.click(await screen.findByRole('button', { name: 'More' }))
+    await s.user.click(within(moreMenu()).getByRole('menuitem', { name: 'Lock note' }))
+    await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Note' })).toBeNull())
+    expect((await listNotes(s.server)).map((n) => n.title)).toEqual(['Bank'])
+  })
+
+  it('a new note that couldn’t be saved hides behind the lock, and comes back on unlock', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    const real = globalThis.fetch
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) =>
+      init?.method === 'POST' && String(input).endsWith('/api/v1/notes')
+        ? Promise.reject(new TypeError('offline'))
+        : real(input, init),
+    )
+    try {
+      await s.user.click(newNoteButton())
+      await s.user.click(await screen.findByRole('button', { name: 'More' }))
+      await s.user.click(within(moreMenu()).getByRole('menuitem', { name: 'Lock note' }))
+      await typeInTitle(s.user, 'Diary{Enter}secret words')
+      await s.user.click(screen.getByRole('button', { name: 'Lock now' }))
+      expect(await screen.findByText('This note is locked.')).toBeTruthy()
+      expect(screen.queryByText('secret words')).toBeNull()
+    } finally {
+      spy.mockRestore()
+    }
+    await s.user.type(screen.getByLabelText('Lock password'), `${LOCK_PASSWORD}{Enter}`)
+    await waitFor(() => expect(bodyText()).toBe('secret words'))
+  })
+
+  it('scrolling counts as activity', async () => {
+    const s = await seeded()
+    await lockOpenNote(s)
+    lockTiming.idleMs = 600
+    fireEvent.wheel(document.body)
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setTimeout(r, 300))
+      if (i % 2) fireEvent.wheel(document.body)
+      else fireEvent.scroll(body())
+    }
+    expect(lockSession.getStatus()).toBe('unlocked')
+    // And without it, the timer still runs out.
+    expect(await screen.findByText('This note is locked.', {}, { timeout: 2000 })).toBeTruthy()
+  })
+})
+
+const body = () => screen.getByRole('textbox', { name: 'Note' })

@@ -53,7 +53,9 @@ object FakeBiometrics : Biometrics {
         else -> BiometricResult.Ok(sealer.open(sealed))
     }
 
+    // As the Keystore deletes the key: what it sealed is invalidated until the next seal.
     override fun forget() {
         sealer = TestSealer()
+        invalidated = true
     }
 }

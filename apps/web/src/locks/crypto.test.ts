@@ -86,3 +86,10 @@ describe('recovery codes', () => {
     expect(normalizeRecoveryCode(code.toLowerCase().replace(/-/g, ' '))).toBe(code.replace(/-/g, ''))
   })
 })
+
+describe('bodies', () => {
+  it('a leading byte order mark survives the round trip', async () => {
+    const key = await importKey(fromBase64Url(lnk))
+    expect(await decryptBody(key, await encryptBody(key, '﻿secret\n'))).toBe('﻿secret\n')
+  })
+})

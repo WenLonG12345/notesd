@@ -22,7 +22,8 @@ export class LockedError extends Error {
 }
 
 const enc = new TextEncoder()
-const dec = new TextDecoder('utf-8', { fatal: true })
+// ignoreBOM: a body may start with U+FEFF, and it must come back as it went in.
+const dec = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 
 export function isLocked(content: string): boolean {
   return content.startsWith(LOCKED_PREFIX)

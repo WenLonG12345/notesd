@@ -411,11 +411,12 @@ private fun LockedNotesCard(locks: LockSession, state: LockSession.State, finger
         if (errors.isNotEmpty() || busy) return
         busy = true
         scope.launch {
+            val rewrapped = locks.passwordEntry()
             val outcome = locks.changePassword(current, next)
             busy = false
             when (outcome) {
                 LockSession.Outcome.Done -> {
-                    fingerprint.passwordChanged()
+                    fingerprint.passwordChanged(rewrapped)
                     current = ""
                     next = ""
                     confirm = ""

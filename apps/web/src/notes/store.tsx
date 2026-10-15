@@ -375,12 +375,15 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       if (Date.now() - loadedAt.current > STALE_MS) {
         void fetchPage(true)
         fetchTags()
+        // A lock password changed or reset elsewhere shows up here too.
+        void lockSession.load(true).catch(() => undefined)
       }
     }
     const onOnline = () => {
       for (const s of all()) s.resume()
       void fetchPage(true)
       fetchTags()
+      void lockSession.load(true).catch(() => undefined)
     }
     const onHidden = () => {
       if (document.visibilityState === 'hidden') for (const s of all()) void s.flush()

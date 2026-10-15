@@ -100,7 +100,7 @@ class EditorViewModel(
 
     private val _unreadable = MutableStateFlow(false)
 
-    /** Locked with a key the keyring no longer has (it was reset): it can't be opened. */
+    /** Locked with a key the keyring no longer has (it was reset, or there's no lock password at all): it can't be opened. */
     val unreadable: StateFlow<Boolean> = _unreadable
 
     private val _title = MutableStateFlow("")
@@ -148,7 +148,7 @@ class EditorViewModel(
         }
     }
 
-    // Saves in flight finish (encrypting) before the key goes.
+    // Saves in flight finish (encrypting) before the key goes; one that failed keeps the key.
     private val unhook = locks.onBeforeLock { saved() }
 
     override fun onCleared() {
@@ -177,9 +177,11 @@ class EditorViewModel(
                 save(it)
             }
         } else {
-            // The plain text leaves memory; the screen shows the unlock prompt.
+            // The plain text leaves memory; the screen shows the unlock prompt, or,
+            // with no lock password left (a reset), that the note can't be opened.
             _document.value = null
             sealed = null
+            _unreadable.value = state == LockSession.State.None
         }
     }
 
@@ -204,9 +206,11 @@ class EditorViewModel(
         }
     }
 
-    /** Waits for the saves started so far; they run in order, so the last one is enough. */
-    suspend fun saved() {
-        lastSave?.join()
+    /** Waits for the saves started so far; they run in order, so the last one is enough. False if it failed. */
+    suspend fun saved(): Boolean {
+        val last = lastSave ?: return true
+        last.join()
+        return !last.isCancelled
     }
 
     private suspend fun store(doc: Document, edit: Int) {
@@ -247,10 +251,10 @@ class EditorViewModel(
             // Merged with a sync change: the editor shows the result.
             known = stored
             _locked.value = LockedNotes.isLocked(note.content)
-            parse(note)?.let {
-                _document.value = it
-                _incoming.tryEmit(it)
-            }
+            // Null while locked: unlocking then loads the stored body, not the text from before.
+            val doc = parse(note)
+            _document.value = doc
+            if (doc != null) _incoming.tryEmit(doc)
         } else {
             // If typing continued, the next save merges from what this one sent.
             known = if (stored == (title to content)) stored else title to content
@@ -292,7 +296,12 @@ class EditorViewModel(
             _unreadable.value = false
             return withContext(Dispatchers.Default) { Document.forNote(note.title, Markdown.parse(note.content)) }
         }
-        val key = locks.key() ?: return null
+        val key = locks.key()
+        if (key == null) {
+            // No lock password at all (reset): nothing can open it. Otherwise the screen asks to unlock.
+            _unreadable.value = locks.state.value == LockSession.State.None
+            return null
+        }
         return withContext(Dispatchers.Default) {
             try {
                 val plain = LockedNotes.decrypt(key, note.content)

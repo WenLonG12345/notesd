@@ -85,7 +85,7 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | DELETE | `/settings/email` | forget the key and sender |
 | GET | `/tags` | `{tags: [{key, name, count}]}` sorted by key; parents of nested tags included, `count` is distinct notes including nested tags |
 | GET | `/locks` | `{keys: [{id, kind, credentialId?, salt, iterations, wrapped, createdAt}]}`: the locked-notes keyring, password entry first |
-| PUT | `/locks/keys/{id}` | `{kind, credentialId?, salt, iterations, wrapped, verifier}`. `id` is `password` or `recovery` for those kinds, any other id for a `passkey`. The first entry must be the password, and its `verifier` is stored (hashed); every later write must send the same verifier (`403 bad_verifier`). `409 no_lock_password` for a recovery or passkey entry first |
+| PUT | `/locks/keys/{id}` | `{kind, credentialId?, salt, iterations, wrapped, verifier}`. `id` is `password` or `recovery` for those kinds; a `passkey` takes any other id of 1–64 characters `[A-Za-z0-9_-]` (`400` otherwise). `salt`, `wrapped`, `credentialId` and `verifier` are unpadded base64url. The first entry must be the password, and its `verifier` is stored (hashed); every later write must send the same verifier (`403 bad_verifier`). `409 no_lock_password` for a recovery or passkey entry first |
 | DELETE | `/locks/keys/{id}` | `{verifier}`; the password entry can't be removed (`409 password_key_required`) |
 | DELETE | `/locks` | `{accountPassword}`: forgets the whole keyring (a forgotten lock password); rate-limited like a password change |
 

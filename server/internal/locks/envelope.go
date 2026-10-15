@@ -16,6 +16,11 @@ const Prefix = "notesd:locked:v1:"
 // minSealed is a 12-byte nonce plus a 16-byte GCM tag around an empty body.
 const minSealed = 12 + 16
 
+// EnvelopeLen is the length of the locked content for a plain body of n bytes.
+func EnvelopeLen(n int) int {
+	return len(Prefix) + base64.RawURLEncoding.EncodedLen(minSealed+n)
+}
+
 // IsLocked reports whether content is (or claims to be) a locked body.
 func IsLocked(content string) bool { return strings.HasPrefix(content, Prefix) }
 
@@ -25,7 +30,8 @@ func IsLocked(content string) bool { return strings.HasPrefix(content, Prefix) }
 // (a typed character, an added line) from destroying the note.
 func ValidEnvelope(content string) bool {
 	body, ok := strings.CutPrefix(content, Prefix)
-	if !ok {
+	// Go's decoder skips CR and LF even in strict mode; the clients' don't.
+	if !ok || strings.ContainsAny(body, "\r\n") {
 		return false
 	}
 	raw, err := base64.RawURLEncoding.Strict().DecodeString(body)

@@ -121,6 +121,8 @@ export function UnlockForm({
           setError(undefined)
         }}
         error={error}
+        // Read-only, not disabled, so focus stays for another try.
+        readOnly={busy}
         // Chosen over the passkey: the field is what's wanted next.
         autoFocus={autoFocus || usePassword}
       />
@@ -228,6 +230,8 @@ export function SetupDialog({ onDone, onClose }: { onDone: () => void; onClose: 
             setError(undefined)
           }}
           error={error?.field === 'password' ? error.message : undefined}
+          // What's typed while the key is derived wouldn't be the password used.
+          readOnly={busy}
           autoFocus
         >
           <PasswordMeter password={password} />
@@ -242,6 +246,7 @@ export function SetupDialog({ onDone, onClose }: { onDone: () => void; onClose: 
             setError(undefined)
           }}
           error={error?.field === 'confirm' ? error.message : undefined}
+          readOnly={busy}
         />
         <div className={styles.actions}>
           <Button size="md" onClick={onClose} disabled={busy}>

@@ -60,6 +60,11 @@ func TestLockKeyring(t *testing.T) {
 		{"kind": "password", "salt": b64(4, 's'), "iterations": 600000, "wrapped": b64(60, 'w'), "verifier": verifier},
 		{"kind": "password", "salt": b64(16, 's'), "iterations": 600000, "wrapped": b64(10, 'w'), "verifier": verifier},
 		{"kind": "recovery", "salt": b64(16, 's'), "iterations": 600000, "wrapped": b64(60, 'w'), "verifier": verifier},
+		// Not base64url a client could decode: a length no encoding has,
+		// stray bits in the last character, a line break Go would skip.
+		{"kind": "password", "salt": strings.Repeat("A", 25), "iterations": 600000, "wrapped": b64(60, 'w'), "verifier": verifier},
+		{"kind": "password", "salt": strings.Repeat("A", 21) + "B", "iterations": 600000, "wrapped": b64(60, 'w'), "verifier": verifier},
+		{"kind": "password", "salt": b64(16, 's'), "iterations": 600000, "wrapped": b64(60, 'w')[:40] + "\n" + b64(60, 'w')[40:], "verifier": verifier},
 	} {
 		if r := c.do("PUT", "/api/v1/locks/keys/password", bad); r.status != 400 {
 			t.Fatalf("bad %v: %d %s", bad, r.status, r.raw)

@@ -11,6 +11,7 @@ import android.service.chooser.ChooserAction
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.Window
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
@@ -76,6 +77,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.util.WeakHashMap
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import notes.app.MainActivity
@@ -184,9 +186,11 @@ fun EditorScreen(
     // A locked note stays out of screenshots and the recent-apps thumbnail.
     val window = LocalActivity.current?.window
     DisposableEffect(window, locked) {
-        if (locked) window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { if (locked) window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+        if (locked) window?.let(SecureWindows::acquire)
+        onDispose { if (locked) window?.let(SecureWindows::release) }
     }
+    // Only the prompt straight after "Lock now" is skipped; later relocks ask again.
+    LaunchedEffect(needsUnlock) { if (!needsUnlock) lockedHere = false }
 
     fun setLocked(on: Boolean) {
         val doc = editor?.document() ?: return
@@ -396,6 +400,31 @@ fun EditorScreen(
             save()
             vm.saved()
             sendEmail(to)
+        }
+    }
+}
+
+/**
+ * FLAG_SECURE is per window, but two editors can share it: during a
+ * transition the incoming locked note sets it before the outgoing one is
+ * disposed. Counted, so the last locked editor to go clears it. Main thread only.
+ */
+private object SecureWindows {
+    private val holders = WeakHashMap<Window, Int>()
+
+    fun acquire(window: Window) {
+        val n = holders[window] ?: 0
+        holders[window] = n + 1
+        if (n == 0) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    fun release(window: Window) {
+        val n = (holders[window] ?: return) - 1
+        if (n > 0) {
+            holders[window] = n
+        } else {
+            holders.remove(window)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
     }
 }

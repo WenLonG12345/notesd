@@ -264,6 +264,27 @@ class NoteStoreTest {
     }
 
     @Test
+    fun `an upgrade drops ciphertext indexed before locked notes were known`() = runBlocking {
+        val sealed = notes.core.crypto.LockedNotes.encrypt(notes.core.crypto.LockedNotes.newKey(), "PIN\n")
+        store.save("a", "Bank", sealed)
+        db.close()
+        // As a database at version 4 whose indexer took the envelope for body text.
+        val conn = androidx.sqlite.driver.bundled.BundledSQLiteDriver().open(File(dir, "notes.db").path)
+        conn.prepare("UPDATE notes_fts SET body_text = 'notesd locked v1 ciphertext'").use { it.step() }
+        conn.prepare("PRAGMA user_version = 4").use { it.step() }
+        conn.close()
+
+        val reopened = Database(File(dir, "notes.db").path)
+        try {
+            val notes = NoteStore(reopened)
+            assertEquals("", notes.list().single().preview)
+            assertEquals(emptyList(), notes.search("ciphertext"))
+        } finally {
+            reopened.close()
+        }
+    }
+
+    @Test
     fun `a locked body is neither indexed, tagged nor previewed`() = runBlocking {
         val key = notes.core.crypto.LockedNotes.newKey()
         val sealed = notes.core.crypto.LockedNotes.encrypt(key, "PIN 1234 #money\n")

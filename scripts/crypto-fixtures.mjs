@@ -24,7 +24,9 @@ const lnk = bytes(32, 1)
 
 const kdf = [
   { name: 'ascii password', password: 'correct horse battery staple', salt: bytes(16, 3), iterations: 1000 },
-  { name: 'unicode password', password: 'pässwörd 🔒', salt: bytes(16, 9), iterations: 1000 },
+  // Decomposed (NFD: a + U+0308), so only a client that normalizes to NFC
+  // derives this key; typed on another device the same word may be precomposed.
+  { name: 'unicode password, decomposed', password: 'pa\u0308sswo\u0308rd 🔒', salt: bytes(16, 9), iterations: 1000 },
   { name: 'production iterations', password: 'hunter2', salt: bytes(16, 11), iterations: 600000 }
 ].map((v) => ({
   ...v,
@@ -33,7 +35,7 @@ const kdf = [
 }))
 
 const prf = bytes(32, 5)
-const prfSalt = bytes(16, 13)
+const prfSalt = bytes(32, 13) // a passkey entry's salt: the PRF input and the HKDF salt
 const hkdf = [
   {
     name: 'passkey prf',
@@ -74,7 +76,8 @@ const invalid = [
   { name: 'missing prefix', envelope: good.slice(PREFIX.length) },
   { name: 'unknown version', envelope: 'notesd:locked:v2:' + good.slice(PREFIX.length) },
   { name: 'too short', envelope: PREFIX + b64(bytes(20, 0)) },
-  { name: 'not base64url', envelope: PREFIX + 'abc+/=' }
+  { name: 'not base64url', envelope: PREFIX + 'abc+/=' },
+  { name: 'line break', envelope: good.slice(0, 40) + '\r\n' + good.slice(40) }
 ].map((v) => ({ ...v, key: b64(lnk) }))
 
 // Proves to the server that a client holds the key, without revealing it.

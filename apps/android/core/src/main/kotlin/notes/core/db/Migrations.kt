@@ -10,7 +10,8 @@ import androidx.sqlite.execSQL
  * hold a trigger body (nor a comment with ";" at its end).
  */
 internal object Migrations {
-    val files = listOf("0001_init.sql", "0002_full_sync.sql", "0003_tags.sql", "0004_lock_keys.sql")
+    val files =
+        listOf("0001_init.sql", "0002_full_sync.sql", "0003_tags.sql", "0004_lock_keys.sql", "0005_reindex_locked.sql")
 
     fun apply(conn: SQLiteConnection) {
         val current = conn.prepare("PRAGMA user_version").use { if (it.step()) it.getLong(0).toInt() else 0 }

@@ -61,9 +61,9 @@ var (
 	b64Pattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
 
-// Bounds on wrapped values: nonce + 32-byte key + tag, base64url.
+// Bounds on keyring fields, as decoded bytes (maxField: as sent).
 const (
-	wrappedLen  = 80 // 60 bytes
+	wrappedLen  = 12 + 32 + 16 // nonce ‖ key ‖ tag
 	minSaltLen  = 16
 	maxField    = 1024
 	minPBKDF2   = 10_000
@@ -191,9 +191,20 @@ func hash(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// decode strictly reads unpadded base64url, as clients do: the pattern
+// rules out the CR and LF that Go's decoder would skip, and Strict the
+// stray bits a last partial character can carry.
+func decode(s string) ([]byte, bool) {
+	if len(s) > maxField || !b64Pattern.MatchString(s) {
+		return nil, false
+	}
+	b, err := base64.RawURLEncoding.Strict().DecodeString(s)
+	return b, err == nil
+}
+
 func decodeVerifier(v string) ([]byte, error) {
-	b, err := base64.RawURLEncoding.Strict().DecodeString(v)
-	if err != nil || len(b) != verifierLen {
+	b, ok := decode(v)
+	if !ok || len(b) != verifierLen {
 		return nil, &InputError{"verifier", "must be 32 bytes, base64url"}
 	}
 	return b, nil
@@ -218,19 +229,16 @@ func validate(id string, in PutInput) error {
 		if in.Iterations != 0 {
 			return &InputError{"iterations", "must be 0 for passkeys"}
 		}
-		if !b64Pattern.MatchString(in.CredentialID) || len(in.CredentialID) > maxField {
+		if cred, ok := decode(in.CredentialID); !ok || len(cred) == 0 {
 			return &InputError{"credentialId", "required, base64url"}
 		}
 	default:
 		return &InputError{"kind", "must be password, recovery or passkey"}
 	}
-	if !b64Pattern.MatchString(in.Salt) || len(in.Salt) > maxField {
-		return &InputError{"salt", "required, base64url"}
+	if salt, ok := decode(in.Salt); !ok || len(salt) < minSaltLen {
+		return &InputError{"salt", "must be at least 16 bytes, base64url"}
 	}
-	if salt, _ := base64.RawURLEncoding.DecodeString(in.Salt); len(salt) < minSaltLen {
-		return &InputError{"salt", "must be at least 16 bytes"}
-	}
-	if len(in.Wrapped) != wrappedLen || !b64Pattern.MatchString(in.Wrapped) {
+	if wrapped, ok := decode(in.Wrapped); !ok || len(wrapped) != wrappedLen {
 		return &InputError{"wrapped", "must be a wrapped 32-byte key"}
 	}
 	return nil
