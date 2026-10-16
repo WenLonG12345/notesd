@@ -3,7 +3,7 @@ export type ThemeChoice = 'system' | 'light' | 'dark'
 const KEY = 'notes.theme'
 
 // --bg (styles/tokens.css): the window's title bar in Safari and installed web apps.
-const BG = { light: '#F6F3EE', dark: '#121416' }
+const BG = { light: '#F2F4F5', dark: '#121416' }
 
 // A display preference, not data: localStorage is fine and survives reloads.
 export function readTheme(): ThemeChoice {

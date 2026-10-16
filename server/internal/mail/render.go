@@ -22,8 +22,8 @@ var checkboxes = strings.NewReplacer(
 var page = template.Must(template.New("email").Parse(`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>{{.Title}}</title></head>
-<body style="margin:0;padding:24px 16px;background:#f6f3ee;">
-<div style="max-width:640px;margin:0 auto;font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#241e1a;">
+<body style="margin:0;padding:24px 16px;background:#f2f4f5;">
+<div style="max-width:640px;margin:0 auto;font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1d2022;">
 {{if .Title}}<h1 style="font:600 28px/1.25 Georgia,'Times New Roman',serif;margin:0 0 16px;">{{.Title}}</h1>{{end}}
 {{.Body}}
 </div></body></html>

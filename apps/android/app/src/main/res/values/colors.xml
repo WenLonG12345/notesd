@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Mirrors ui/Tokens.kt for what's drawn before Compose: window, splash, launcher icon. -->
-    <color name="paper">#F6F3EE</color>
+    <color name="paper">#F2F4F5</color>
     <color name="accent">#EFB146</color>
     <!-- The tile's amber, behind the launcher foreground (scripts/icons.py). -->
     <color name="icon_background">#EFC360</color>

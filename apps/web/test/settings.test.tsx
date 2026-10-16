@@ -33,7 +33,7 @@ describe('settings', () => {
     await user.click(within(group).getByRole('radio', { name: 'System' }))
     expect(document.documentElement.dataset.theme).toBeUndefined()
     expect(localStorage.getItem('notes.theme')).toBeNull()
-    expect(colors()).toEqual(['#F6F3EE', '#121416'])
+    expect(colors()).toEqual(['#F2F4F5', '#121416'])
     for (const m of metas) m.remove()
   })
 
