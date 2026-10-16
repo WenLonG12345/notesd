@@ -143,6 +143,39 @@ public final class ApiClient: Sendable {
             { self.request("GET", "api/v1/sync", query: items, access: $0) }, decode: json(SyncPage.self))
     }
 
+    // MARK: email
+
+    public func emailSettings() async -> ApiResult<EmailSettings> {
+        await authed(
+            { self.request("GET", "api/v1/settings/email", access: $0) }, decode: json(EmailSettings.self))
+    }
+
+    /// A nil `apiKey` keeps the saved one.
+    public func saveEmailSettings(from: String, apiKey: String?) async -> ApiResult<EmailSettings> {
+        struct Body: Encodable {
+            var from: String
+            var apiKey: String?
+        }
+        let body = Body(from: from, apiKey: apiKey)
+        return await authed(
+            { self.request("PUT", "api/v1/settings/email", body: body, access: $0) }, decode: json(EmailSettings.self))
+    }
+
+    public func deleteEmailSettings() async -> ApiResult<Void> {
+        await authed({ self.request("DELETE", "api/v1/settings/email", access: $0) }, decode: { _ in () })
+    }
+
+    /// Emails the server's copy, which must be at `revision` (409 stale_revision otherwise).
+    public func emailNote(_ id: String, to: [String], revision: Int64) async -> ApiResult<Void> {
+        struct Body: Encodable {
+            var to: [String]
+            var revision: Int64
+        }
+        let body = Body(to: to, revision: revision)
+        return await authed(
+            { self.request("POST", "api/v1/notes/\(id)/email", body: body, access: $0) }, decode: { _ in () })
+    }
+
     // MARK: plumbing
 
     private func authed<T: Sendable>(

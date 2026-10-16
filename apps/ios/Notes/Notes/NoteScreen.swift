@@ -15,6 +15,7 @@ struct NoteScreen: View {
     @State private var model: EditorModel
     @State private var controller = EditorController()
     @State private var confirmDelete = false
+    @State private var emailing = false
 
     init(store: NoteStore, id: String, startTag: String?, isNew: Bool, path: Binding<[Route]>) {
         self.id = id
@@ -71,6 +72,12 @@ struct NoteScreen: View {
                     if !model.locked, let doc = controller.document() {
                         ShareLink(item: share(doc)) { Label("Share", systemImage: "square.and.arrow.up") }
                     }
+                    if canEmail {
+                        Button("Email…", systemImage: "envelope") {
+                            saveNow()
+                            emailing = true
+                        }
+                    }
                     Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
                 } label: {
                     Label("More", systemImage: "ellipsis")
@@ -85,6 +92,14 @@ struct NoteScreen: View {
                 }
             }
         }
+        .sheet(isPresented: $emailing) {
+            EmailSheet(from: graph.email.settings?.from) { to in
+                saveNow()
+                await model.flushed()
+                return await graph.mailer.send(id, to: to)
+            }
+        }
+        .task { await graph.email.refresh() }
         .sheet(isPresented: linkSheetShown) {
             LinkSheet(controller: controller)
         }
@@ -92,6 +107,12 @@ struct NoteScreen: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { saveNow() }
         }
+    }
+
+    /// The server sends email, so it needs a connection and settings, and it refuses locked notes.
+    private var canEmail: Bool {
+        guard case .signedIn = graph.account, graph.email.settings?.configured == true else { return false }
+        return !model.locked && model.status != .blank
     }
 
     private var linkSheetShown: Binding<Bool> {
@@ -102,11 +123,11 @@ struct NoteScreen: View {
         if let doc = controller.document() { model.save(doc) }
     }
 
-    /// The note as plain Markdown, title first.
+    /// The note as Markdown, its title as the heading.
     private func share(_ doc: NotesCore.Document) -> String {
-        let title = doc.title ?? ""
+        let title = (doc.title ?? "").trimmed
         let body = Markdown.serialize(doc)
-        return title.isEmpty ? body : "\(title)\n\n\(body)"
+        return title.isEmpty ? body : "# \(title)\n\n\(body)"
     }
 }
 

@@ -191,6 +191,28 @@ public struct SyncPage: Decodable, Sendable {
     }
 }
 
+/// The server's email settings (Resend). The key itself never comes back, only its last characters.
+public struct EmailSettings: Decodable, Sendable, Hashable {
+    public var configured: Bool
+    public var from: String
+    public var keyHint: String
+
+    public init(configured: Bool = false, from: String = "", keyHint: String = "") {
+        self.configured = configured
+        self.from = from
+        self.keyHint = keyHint
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        configured = try c.decodeIfPresent(Bool.self, forKey: .configured) ?? false
+        from = try c.decodeIfPresent(String.self, forKey: .from) ?? ""
+        keyHint = try c.decodeIfPresent(String.self, forKey: .keyHint) ?? ""
+    }
+
+    private enum CodingKeys: String, CodingKey { case configured, from, keyHint }
+}
+
 /// JSON as this package writes it: stable key order, "/" unescaped.
 let jsonEncoder: JSONEncoder = {
     let encoder = JSONEncoder()

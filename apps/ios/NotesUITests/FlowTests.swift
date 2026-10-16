@@ -37,6 +37,8 @@ final class FlowTests: XCTestCase {
             let inBar = bars.contains { $0.contains(frame) }
             // Bars cap their text size; their labels show in the Large Content Viewer instead.
             if issue.auditType == .dynamicType && inBar { return true }
+            // A row scrolled partly under the bottom bar is cut off, not small.
+            if issue.auditType == .hitRegion && frame.maxY > screen.maxY - 110 { return true }
             print("AUDIT \(screen): \(issue.compactDescription) :: \(issue.element?.label ?? "-") \(frame)")
             return false
         }
@@ -56,7 +58,8 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["On this iPhone only"].exists)
     }
 
-    func testSignInWriteAndSync() throws {
+    /// Launches and signs in to the test server; `audited` checks the sign-in screen on the way.
+    private func signIn(audited: Bool = false) throws {
         let server = try XCTUnwrap(env["NOTESD_URL"], "run through scripts/with-server.sh")
         app.launch()
 
@@ -73,9 +76,16 @@ final class FlowTests: XCTestCase {
         let password = app.secureTextFields["Password"]
         password.tap()
         password.typeText(env["NOTESD_PASSWORD"] ?? "")
-        try audit("sign in")
-        screenshot("sign in")
+        if audited {
+            try audit("sign in")
+            screenshot("sign in")
+        }
         app.buttons["Sign in"].tap()
+        XCTAssertTrue(app.buttons["New note"].waitForExistence(timeout: 10))
+    }
+
+    func testSignInWriteAndSync() throws {
+        try signIn(audited: true)
 
         // A note with a checklist, a heading and a tag.
         let newNote = app.buttons["New note"]
@@ -119,5 +129,40 @@ final class FlowTests: XCTestCase {
         // The last row on screen leaves it as the text grows, which the Dynamic Type check reports as
         // partial support; the form's fonts are the ones the other screens check.
         try audit("settings", [.sufficientElementDescription, .hitRegion, .contrast])
+    }
+
+    func testEmailIsOfferedOnceSetUp() throws {
+        try signIn()
+        app.buttons["Tags"].tap()
+        app.buttons["Settings"].tap()
+        let key = app.secureTextFields["Resend API key"]
+        XCTAssertTrue(app.staticTexts["Signed in as"].waitForExistence(timeout: 5))
+        for _ in 0..<4 where !key.isHittable { app.swipeUp() }
+        XCTAssertTrue(key.exists, app.debugDescription)
+        key.tap()
+        key.typeText("re_123456789")
+        let from = app.textFields["From"]
+        from.tap()
+        from.typeText("Me <notes@example.com>")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["Saved. Choose Email… from a note’s ••• menu."].waitForExistence(timeout: 10))
+        screenshot("email settings")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        app.buttons["New note"].tap()
+        app.typeText("Letter\nDear Sam")
+        app.buttons["More"].tap()
+        let email = app.buttons["Email…"]
+        XCTAssertTrue(email.waitForExistence(timeout: 5))
+        email.tap()
+        XCTAssertTrue(app.navigationBars["Email this note"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["From Me <notes@example.com>. Separate addresses with commas."].exists)
+        // The sheet grows with the keyboard; audit it once it has settled.
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        sleep(1)
+        screenshot("email")
+        try audit("email")
+        app.buttons["Cancel"].tap()
     }
 }

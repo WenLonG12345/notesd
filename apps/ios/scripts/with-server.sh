@@ -8,7 +8,8 @@ bin=$1
 shift
 data=$(mktemp -d)
 log="$data/log"
-"$bin" --data-dir "$data" --listen 127.0.0.1:0 >"$log" 2>&1 &
+# Email goes nowhere: port 9 on loopback refuses, so a test can't reach the real Resend.
+"$bin" --data-dir "$data" --listen 127.0.0.1:0 --resend-url http://127.0.0.1:9 >"$log" 2>&1 &
 pid=$!
 trap 'kill $pid 2>/dev/null; rm -rf "$data"' EXIT
 for _ in $(seq 50); do

@@ -11,6 +11,8 @@ final class AppGraph {
     let store: NoteStore
     let accounts: AccountStore
     let engine: SyncEngine
+    let mailer: NoteMailer
+    let email: EmailSetup
     @ObservationIgnored private(set) lazy var scheduler = SyncScheduler(graph: self)
 
     /// The account as the screens show it, kept in step with the store.
@@ -54,6 +56,8 @@ final class AppGraph {
         store = NoteStore(db: database)
         self.accounts = accounts
         engine = SyncEngine(db: database, api: { [accounts] in accounts.client() })
+        mailer = NoteMailer(store: store, engine: engine, api: { [accounts] in accounts.client() })
+        email = EmailSetup(api: { [accounts] in accounts.client() })
         account = accounts.account.value
         onboardingDismissed = Self.defaults.bool(forKey: "onboardingDismissed")
         appearance = Appearance(rawValue: Self.defaults.string(forKey: "appearance") ?? "") ?? .system
@@ -94,6 +98,7 @@ final class AppGraph {
             _ = await withTimeout(seconds: 5) { await client.logout() }
         }
         accounts.signOut()
+        email.forget()
     }
 
     /// Back to a fresh install: no notes, no account, onboarding on next launch.
@@ -103,6 +108,7 @@ final class AppGraph {
         }
         try? await store.wipe()
         accounts.clear()
+        email.forget()
         listFilter = nil
         onboardingDismissed = false
     }

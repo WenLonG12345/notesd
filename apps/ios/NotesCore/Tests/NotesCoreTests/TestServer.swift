@@ -14,17 +14,20 @@ final class TestServer: Sendable {
     static let password = "correct horse"
 
     let dataDir: URL
+    /// Where notesd sends email (`--resend-url`), when a test fakes Resend.
+    private let resendURL: String?
     private let state = Mutex<(process: Process?, listen: String)>((nil, "127.0.0.1:0"))
 
     var url: URL { URL(string: "http://\(state.withLock { $0.listen })/")! }
 
-    private init() {
+    private init(resendURL: String?) {
+        self.resendURL = resendURL
         dataDir = FileManager.default.temporaryDirectory.appending(path: "notesd-\(UUID().uuidString)")
         try! FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
     }
 
-    static func start() async throws -> TestServer {
-        let server = TestServer()
+    static func start(resendURL: String? = nil) async throws -> TestServer {
+        let server = TestServer(resendURL: resendURL)
         let token = try #require(try await server.launch(), "no setup token in the server log")
         let setup = await ApiClient(baseURL: server.url).setup(
             setupToken: token, username: username, password: password)
@@ -39,7 +42,9 @@ final class TestServer: Sendable {
     private func launch() async throws -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: try Self.binary())
-        process.arguments = ["--data-dir", dataDir.path, "--listen", state.withLock { $0.listen }]
+        process.arguments =
+            ["--data-dir", dataDir.path, "--listen", state.withLock { $0.listen }]
+            + (resendURL.map { ["--resend-url", $0] } ?? [])
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe

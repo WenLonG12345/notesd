@@ -41,6 +41,9 @@ struct SettingsView: View {
                     SectionHeader("Sync")
                 }
             }
+            if case .signedIn = graph.account {
+                EmailSection()
+            }
             Section {
                 Picker("Theme", selection: $graph.appearance) {
                     ForEach(Appearance.allCases) { Text($0.label).tag($0) }
