@@ -4,14 +4,9 @@ The iPhone app keeps a full copy of your notes on the phone. Writing,
 search and tags all work offline, and the app syncs with your notesd server
 whenever it can. It runs on iOS 26 or later.
 
-It's an early version. It doesn't yet do what the web and Android apps do
-with images, locked notes or email:
-
-- **Images** from other devices show as a placeholder with their
-  description. Editing the note keeps them as they are.
-- **Locked notes** show their title and can't be opened here; open them on
-  the web or Android.
-- **Email** isn't there yet. Share a note as text from the ••• menu instead.
+It does what the web and Android apps do, with two exceptions: locked
+notes open with the lock password only (no Face ID yet), and there's no
+iPad layout.
 
 ## Install
 
@@ -90,3 +85,41 @@ lost. When both changed different parts (one the title, the other the
 text), the changes are combined. When both changed the text, this phone's
 version becomes a copy titled "(Conflicted copy)" that links back to the
 original.
+
+## Pictures
+
+Add a picture with the photo button on the bar above the keyboard, or paste
+one. It goes on a line of its own, below the line you're on. Pictures are
+resized (at most 2048 pixels on the long side) and their location and other
+metadata removed before they're stored. They upload with the next sync, so
+you can add them offline too. Pictures from your other devices download the
+first time you open their note, and stay on the phone for when you're
+offline. Backspace after a picture removes it.
+
+## Locked notes
+
+A locked note is encrypted on the phone; the server can't read it. Its title
+stays readable, so it shows in the list and in search by title.
+
+- **Lock a note** from its ••• menu. The first time, on any of your devices,
+  you create the lock password; every locked note uses it.
+- **Open a locked note** by typing the lock password. Locked notes stay open
+  until you leave the app, choose **Lock now**, or don't use the app for
+  five minutes.
+- **Remove the lock** from the ••• menu of an open locked note.
+- **Settings → Locked notes** changes the lock password, or resets it if you
+  forgot it. Resetting needs your account password, and notes locked with
+  the old password can never be opened again.
+
+While a locked note is open, the app covers it in the app switcher. iOS
+doesn't let apps block screenshots, so the iPhone app can't do what Android
+does there. Face ID unlock isn't there yet.
+
+## Email
+
+notesd can email a note through [Resend](https://resend.com). In
+**Settings → Email**, paste a Resend API key with sending access and the
+address emails come from (on a domain you verified with Resend). Then a
+note's ••• menu has **Email…**. The server sends the note as it is after a
+sync, as formatted HTML with the Markdown as plain text. Locked notes can't
+be emailed.

@@ -80,7 +80,7 @@ The full threat model is in
 | Server | Go, `net/http`, SQLite with WAL and FTS5 |
 | Web | React, TypeScript, Tiptap/ProseMirror, Vite; embedded in the server binary |
 | Android | Kotlin, Jetpack Compose, a native `EditText` editor, bundled SQLite with FTS5, WorkManager |
-| iOS | Swift, SwiftUI, a TextKit 2 `UITextView` editor, SQLite with FTS5, background refresh (early: no images, locked notes or email yet) |
+| iOS | Swift, SwiftUI, a TextKit 2 `UITextView` editor, SQLite with FTS5, CryptoKit for locked notes, background refresh (iPhone only; no Face ID unlock yet) |
 
 A few things that may be interesting if you're reading the code:
 

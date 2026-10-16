@@ -35,13 +35,16 @@ Run from the repository root:
 ```text
 apps/ios/
 ├── NotesCore/    Swift package, no UIKit: document model, Markdown codec, plain text and tags,
-│                 database and search, API client, sync engine. Builds for macOS too.
+│                 database and search, API client, sync engine, images, locked-notes crypto,
+│                 the mailer. Builds for macOS too.
 ├── Notes/        the app
 │   ├── Editor/   the UITextView (TextKit 2) editor: attributes, codec, normaliser, formatting bar
-│   ├── Notes/    list, tags, note screen and its model
+│   ├── Notes/    list, tags, note screen and its model, the email sheet
+│   ├── Images/   decoding and caching pictures for the editor
+│   ├── Locks/    unlocking, the lock password, the privacy cover
 │   ├── Account/  onboarding, the account in the Keychain
 │   ├── Sync/     when to sync: foreground triggers, background refresh
-│   ├── Settings/
+│   ├── Settings/ including email (Resend) and locked notes
 │   └── UI/       design tokens and type
 ├── NotesTests/   editor tests, hosted in the app
 ├── NotesUITests/ end-to-end flows and accessibility audits
@@ -86,8 +89,24 @@ those folders is in its target, with no project edit.
   run the accessibility audit on every screen. Screenshots stay in the test
   results.
 
+## Images, locked notes, email
+
+- **Pictures** (§7.6): `ImageStore` keeps added pictures in Application
+  Support with a `pending_images` row until sync uploads them (before any
+  note operation), and fetched ones in Caches. `PrepareImage` resizes and
+  re-encodes with ImageIO, dropping metadata. In the editor a
+  `notesd:image` run is still a `RawAttachment`, so it saves byte for byte;
+  it draws the picture at its size in points (`ImageLoader`).
+- **Locked notes** (§10.1): `LockedNotes` is CryptoKit plus CommonCrypto's
+  PBKDF2, checked against `shared/crypto-fixtures`. The keyring syncs every
+  cycle into `lock_keys`; `LockSession` holds the key in memory only and
+  drops it when the app goes to the background, after five idle minutes or
+  on Lock now, saving open notes first. No Face ID yet.
+- **Email**: the server renders and sends; `NoteMailer` syncs first and
+  passes the revision. The tests fake Resend with a small HTTP listener
+  (`FakeResend`), and `scripts/with-server.sh` points the UI tests' server
+  at a closed port so nothing reaches the real Resend.
+
 ## Not built yet
 
-Images, locked notes (crypto, keyring, Face ID), email and iPad layouts. The
-data layer already keeps what they need from sync (`locked_images`), and the
-editor shows image references as read-only placeholders.
+Face ID unlock, the recovery code (on no platform yet), and iPad layouts.
