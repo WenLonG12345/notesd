@@ -24,6 +24,8 @@ public struct SyncReport: Sendable {
 /// the server's revisions and cursor only, never the device clock.
 public final class SyncEngine: Sendable {
     public let store: SyncStore
+    /// The locked-notes keyring as last synced, for unlocking offline (§10.1).
+    public let lockKeys: LockKeyStore
     private let api: @Sendable () async -> ApiClient?
     private let images: ImageStore?
     private let pageSize: Int
@@ -37,6 +39,7 @@ public final class SyncEngine: Sendable {
         pageSize: Int = 100, clock: @escaping Clock = systemClock
     ) {
         store = SyncStore(db: db, clock: clock)
+        lockKeys = LockKeyStore(db: db)
         self.api = api
         self.images = images
         self.pageSize = pageSize
@@ -81,7 +84,22 @@ public final class SyncEngine: Sendable {
     private func cycle(_ api: ApiClient, _ events: inout [SyncEvent]) async throws -> Stop? {
         if let stop = try await push(api, &events) { return stop }
         if let stop = try await pull(api, &events) { return stop }
+        if let stop = try await keyring(api) { return stop }
         return try await store.nextOperation() != nil ? try await push(api, &events) : nil
+    }
+
+    /// The keyring is tiny and has no change feed: fetched whole every cycle.
+    /// A change made on this device while the fetch was out is newer; the
+    /// fetched copy is dropped, and the next cycle brings the server's.
+    private func keyring(_ api: ApiClient) async throws -> Stop? {
+        let since = lockKeys.generation()
+        switch await api.lockKeys() {
+        case .ok(let keys):
+            _ = try await lockKeys.replaceIfUnchanged(keys, generation: since)
+            return nil
+        case let other:
+            return stop(other)
+        }
     }
 
     /// Uploads every image waiting on this device; a Stop if one couldn't go.

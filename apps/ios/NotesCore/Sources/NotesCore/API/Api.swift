@@ -191,6 +191,43 @@ public struct SyncPage: Decodable, Sendable {
     }
 }
 
+/// One wrapped copy of the locked-notes key (§10.1); nothing here opens without its secret.
+public struct LockKey: Codable, Sendable, Hashable {
+    public var id: String
+    public var kind: String
+    public var credentialId: String?
+    public var salt: String
+    public var iterations: Int
+    public var wrapped: String
+    public var createdAt: Int64
+
+    public init(
+        id: String, kind: String, credentialId: String? = nil, salt: String, iterations: Int = 0, wrapped: String,
+        createdAt: Int64 = 0
+    ) {
+        self.id = id
+        self.kind = kind
+        self.credentialId = credentialId
+        self.salt = salt
+        self.iterations = iterations
+        self.wrapped = wrapped
+        self.createdAt = createdAt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        kind = try c.decode(String.self, forKey: .kind)
+        credentialId = try c.decodeIfPresent(String.self, forKey: .credentialId)
+        salt = try c.decode(String.self, forKey: .salt)
+        iterations = try c.decodeIfPresent(Int.self, forKey: .iterations) ?? 0
+        wrapped = try c.decode(String.self, forKey: .wrapped)
+        createdAt = try c.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, kind, credentialId, salt, iterations, wrapped, createdAt }
+}
+
 /// An image as stored on the server: its type, as served, and its bytes.
 public struct ImageFile: Sendable, Hashable {
     public var type: String

@@ -29,9 +29,9 @@ final class FlowTests: XCTestCase {
     }
 
     /// Calls the test server's API as the owner, as another device would.
-    private func api(_ method: String, _ path: String, body: Data? = nil, type: String = "application/json")
-        async throws -> [String: Any]
-    {
+    private func api(
+        _ method: String, _ path: String, query: String? = nil, body: Data? = nil, type: String = "application/json"
+    ) async throws -> [String: Any] {
         let server = try XCTUnwrap(env["NOTESD_URL"], "run through scripts/with-server.sh")
         if token == nil {
             let login = try JSONSerialization.data(withJSONObject: [
@@ -41,7 +41,9 @@ final class FlowTests: XCTestCase {
             token = ""  // the login itself goes without one
             token = try await api("POST", "api/v1/auth/login", body: login)["accessToken"] as? String
         }
-        var request = URLRequest(url: URL(string: server)!.appending(path: path))
+        var url = URL(string: server)!.appending(path: path)
+        if let query { url = URL(string: url.absoluteString + "?" + query)! }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
         request.setValue(type, forHTTPHeaderField: "Content-Type")
@@ -252,5 +254,70 @@ final class FlowTests: XCTestCase {
         XCTAssertGreaterThan(blue, 2000, "the picture is drawn")
         screenshot("picture")
         try audit("picture")
+    }
+
+    func testLockAndUnlockANote() async throws {
+        try signIn()
+        app.buttons["New note"].tap()
+        app.typeText("Secret plans\nMeet at noon")
+        app.buttons["More"].tap()
+        app.buttons["Lock note"].tap()
+
+        // The first lock on any device creates the lock password.
+        XCTAssertTrue(app.navigationBars["Create a lock password"].waitForExistence(timeout: 5))
+        let password = app.secureTextFields["Lock password"]
+        password.tap()
+        password.typeText("lock pass 123")
+        let confirm = app.secureTextFields["Confirm password"]
+        confirm.tap()
+        confirm.typeText("lock pass 123")
+        screenshot("create lock password")
+        try audit("create lock password")
+        app.buttons["Create and lock"].tap()
+
+        let lockNow = app.buttons["Lock now"]
+        XCTAssertTrue(lockNow.waitForExistence(timeout: 15))
+        // Saved encrypted: the server has an envelope, never the text.
+        var stored: [String: Any]?
+        for _ in 0..<30 where stored == nil {
+            let changes = try await api("GET", "api/v1/sync", query: "since=0&limit=100")["changes"] as? [[String: Any]]
+            stored = changes?.first {
+                ($0["title"] as? String) == "Secret plans"
+                    && (($0["content"] as? String)?.hasPrefix("notesd:locked:v1:") ?? false)
+            }
+            if stored == nil { try await Task.sleep(for: .seconds(1)) }
+        }
+        let content = try XCTUnwrap(stored?["content"] as? String, "the locked note reached the server")
+        XCTAssertFalse(content.contains("noon"))
+
+        lockNow.tap()
+        let field = app.secureTextFields["Lock password"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["This note is locked."].exists)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        sleep(1)
+        screenshot("locked note")
+        try audit("locked note")
+        field.tap()
+        field.typeText("wrong password")
+        app.buttons["Unlock"].tap()
+        XCTAssertTrue(app.staticTexts["Wrong password."].waitForExistence(timeout: 15))
+        field.tap()
+        field.typeText("lock pass 123")
+        app.buttons["Unlock"].tap()
+        let editor = app.textViews.firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 15))
+        XCTAssertTrue((editor.value as? String ?? "").contains("Meet at noon"), "\(editor.value ?? "")")
+
+        // Removing the lock stores the text plainly again.
+        app.buttons["More"].tap()
+        app.buttons["Remove lock"].tap()
+        var plain = false
+        for _ in 0..<30 where !plain {
+            let changes = try await api("GET", "api/v1/sync", query: "since=0&limit=100")["changes"] as? [[String: Any]]
+            plain = changes?.contains { ($0["content"] as? String)?.contains("Meet at noon") ?? false } ?? false
+            if !plain { try await Task.sleep(for: .seconds(1)) }
+        }
+        XCTAssertTrue(plain, "the unlocked note reached the server as text")
     }
 }

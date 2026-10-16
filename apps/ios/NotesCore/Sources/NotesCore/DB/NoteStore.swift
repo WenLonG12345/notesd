@@ -325,6 +325,7 @@ public final class NoteStore: Sendable {
             try sql.exec("DELETE FROM sync_outbox")
             try sql.exec("DELETE FROM locked_images")
             try sql.exec("DELETE FROM pending_images")
+            try sql.exec("DELETE FROM lock_keys")
             try sql.exec(
                 """
                 UPDATE sync_state SET cursor = 0, generation = NULL, last_sync_at = NULL, last_error = NULL,

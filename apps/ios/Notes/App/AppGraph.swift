@@ -12,6 +12,7 @@ final class AppGraph {
     let accounts: AccountStore
     let engine: SyncEngine
     let images: ImageStore
+    let locks: LockSession
     let mailer: NoteMailer
     let email: EmailSetup
     @ObservationIgnored private(set) lazy var scheduler = SyncScheduler(graph: self)
@@ -19,6 +20,7 @@ final class AppGraph {
     /// The account as the screens show it, kept in step with the store.
     private(set) var account: Account
     private(set) var syncStatus: SyncStatus = .notConnected
+    private(set) var lockState: LockSession.State = .none
 
     /// What the list shows. Kept so the app reopens on it.
     var listFilter: NoteFilter? {
@@ -60,7 +62,12 @@ final class AppGraph {
         images = ImageStore(
             db: database, pendingDir: dirs.pending, cacheDir: dirs.cache, api: { [accounts] in accounts.client() })
         engine = SyncEngine(db: database, api: { [accounts] in accounts.client() }, images: images)
-        ImageLoader.shared = ImageLoader(store: images)
+        let locks = LockSession(keys: engine.lockKeys, api: { [accounts] in accounts.client() })
+        self.locks = locks
+        let loader = ImageLoader(store: images) { sealed in
+            locks.key().flatMap { try? LockedNotes.decryptImage($0, sealed) }
+        }
+        ImageLoader.shared = loader
         mailer = NoteMailer(store: store, engine: engine, api: { [accounts] in accounts.client() })
         email = EmailSetup(api: { [accounts] in accounts.client() })
         account = accounts.account.value
@@ -72,9 +79,21 @@ final class AppGraph {
         Task { [weak self, accounts] in
             for await account in accounts.account.stream() { self?.account = account }
         }
-        Task { [weak self, engine] in
-            for await status in engine.status.stream() { self?.syncStatus = status }
+        Task { [weak self, engine, locks] in
+            for await status in engine.status.stream() {
+                self?.syncStatus = status
+                // The keyring came with the cycle: a password changed or reset elsewhere locks here too.
+                if case .synced = status { await locks.refresh() }
+            }
         }
+        Task { [weak self, locks] in
+            for await state in locks.state.stream() {
+                self?.lockState = state
+                // Decrypted pictures go with the key.
+                if state != .unlocked { loader.forgetLocked() }
+            }
+        }
+        Task { await locks.refresh() }
         Task { [weak self, engine] in
             for await event in engine.events() { self?.notice = Self.describe(event) }
         }
@@ -116,6 +135,7 @@ final class AppGraph {
         }
         accounts.signOut()
         email.forget()
+        await locks.forget()
     }
 
     /// Back to a fresh install: no notes, no account, onboarding on next launch.
@@ -127,6 +147,7 @@ final class AppGraph {
         try? await images.wipe()
         accounts.clear()
         email.forget()
+        await locks.forget()
         listFilter = nil
         onboardingDismissed = false
     }

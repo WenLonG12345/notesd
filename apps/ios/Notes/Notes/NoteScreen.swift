@@ -18,15 +18,18 @@ struct NoteScreen: View {
     @State private var confirmDelete = false
     @State private var emailing = false
     @State private var picked: PhotosPickerItem?
+    /// Lock note was chosen, and the session needs a password created or entered first.
+    @State private var lockSheet: LockPrompt?
 
     init(
-        store: NoteStore, images: ImageStore? = nil, id: String, startTag: String?, isNew: Bool,
-        path: Binding<[Route]>
+        store: NoteStore, images: ImageStore? = nil, locks: LockSession? = nil, id: String, startTag: String?,
+        isNew: Bool, path: Binding<[Route]>
     ) {
         self.id = id
         self.isNew = isNew
         _path = path
-        _model = State(initialValue: EditorModel(store: store, images: images, id: id, startTag: startTag))
+        _model = State(
+            initialValue: EditorModel(store: store, images: images, locks: locks, id: id, startTag: startTag))
     }
 
     var body: some View {
@@ -75,8 +78,8 @@ struct NoteScreen: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
-            if model.locked {
-                LockedPlaceholder(title: model.title)
+            if model.needsUnlock || model.unreadable {
+                LockedNoteView(title: model.title, unreadable: model.unreadable, locks: graph.locks)
             } else if model.document != nil {
                 EditorView(model: model, controller: controller, tags: model.tags, autofocus: isNew)
                     .ignoresSafeArea(.container, edges: .bottom)
@@ -85,18 +88,36 @@ struct NoteScreen: View {
             }
         }
         .background(Color.notesBg)
+        .overlay {
+            if model.locked && scenePhase != .active { PrivacyCover() }
+        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { SaveLabel(status: model.status) }
+            if model.locked && !model.needsUnlock {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Lock now", systemImage: "lock") {
+                        saveNow()
+                        Task { await graph.locks.lock() }
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    if !model.locked, let doc = controller.document() {
+                    if !model.needsUnlock, let doc = controller.document() {
                         ShareLink(item: share(doc)) { Label("Share", systemImage: "square.and.arrow.up") }
                     }
                     if canEmail {
                         Button("Email…", systemImage: "envelope") {
                             saveNow()
                             emailing = true
+                        }
+                    }
+                    if canChangeLock {
+                        if model.locked {
+                            Button("Remove lock", systemImage: "lock.open") { setLocked(false) }
+                        } else {
+                            Button("Lock note", systemImage: "lock") { setLocked(true) }
                         }
                     }
                     Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
@@ -121,6 +142,9 @@ struct NoteScreen: View {
             }
         }
         .task { await graph.email.refresh() }
+        .sheet(item: $lockSheet) { prompt in
+            LockSheet(locks: graph.locks, exists: prompt.exists) { setLocked(true) }
+        }
         .photosPicker(isPresented: pickerShown, selection: $picked, matching: .images, preferredItemEncoding: .current)
         .onChange(of: picked) { _, item in
             guard let item else { return }
@@ -135,6 +159,7 @@ struct NoteScreen: View {
         }
         .onAppear {
             controller.onPasteImage = { data in Task { await addImage(data) } }
+            model.currentDocument = { [controller] in controller.document() }
         }
         .sheet(isPresented: linkSheetShown) {
             LinkSheet(controller: controller)
@@ -149,6 +174,41 @@ struct NoteScreen: View {
     private var canEmail: Bool {
         guard case .signedIn = graph.account, graph.email.settings?.configured == true else { return false }
         return !model.locked && model.status != .blank
+    }
+
+    /// Locking needs a lock password, which needs the server unless one was made already.
+    private var canChangeLock: Bool {
+        guard !model.needsUnlock, !model.unreadable, model.document != nil else { return false }
+        if model.locked { return true }
+        if case .signedIn = graph.account { return true }
+        return graph.lockState != .none
+    }
+
+    /// Locks or unlocks the note. The pictures go with the lock (§10.1): stored
+    /// again encrypted, or plain, before the note is. Applied only once all
+    /// have moved: a failure partway leaves the note as it was.
+    private func setLocked(_ on: Bool) {
+        // The session itself, not the observed state: right after the sheet unlocks, that lags.
+        let now = graph.locks.state.value
+        if on && now != .unlocked {
+            lockSheet = LockPrompt(exists: now != .none)
+            return
+        }
+        Task {
+            var pending = controller.view?.imageIds() ?? []
+            var done = Set<String>()
+            var moved: [String: String] = [:]
+            while !pending.isEmpty {
+                guard let next = await model.moveImages(pending, locked: on) else { return }
+                moved.merge(next) { $1 }
+                done.formUnion(pending)
+                // Pictures added while those moved go with the lock too.
+                pending = (controller.view?.imageIds() ?? []).subtracting(done).subtracting(moved.values)
+            }
+            controller.run { $0.replaceImages(moved) }
+            guard let doc = controller.document() else { return }
+            model.setLocked(doc, on)
+        }
     }
 
     private var pickerShown: Binding<Bool> {
@@ -191,29 +251,6 @@ private struct SaveLabel: View {
         case .unsaved: "Editing"
         case .saved: "Saved"
         }
-    }
-}
-
-/// A locked note while this version can't open them: its title, and where to read it.
-private struct LockedPlaceholder: View {
-    let title: String
-
-    var body: some View {
-        VStack(spacing: 14) {
-            Spacer()
-            Image(systemName: "lock.fill").font(.system(size: 34)).foregroundStyle(Color.accentDeep)
-            Text(title.isEmpty ? "Locked note" : title).font(.notesTitle).foregroundStyle(Color.ink)
-            Text(
-                "This note is locked. This version of notesd for iPhone can’t open locked notes yet; open it on the web or on Android."
-            )
-            .font(.notesBody)
-            .foregroundStyle(Color.ink2)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 32)
-            Spacer()
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
     }
 }
 

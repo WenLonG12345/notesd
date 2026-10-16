@@ -67,6 +67,47 @@ public final class ImageStore: Sendable {
         return nil
     }
 
+    /// The note body `markdown` with each of its images stored again encrypted
+    /// (`locked`) or plain, as a lock change needs (§10.1): new images are
+    /// added as pending, and the references rewritten. Nil, changing nothing,
+    /// when an image is neither on this device nor downloadable (offline), or
+    /// won't open with `key`: a locked note must not point at plain images.
+    public func reseal(_ markdown: String, locked: Bool, key: Data) async -> String? {
+        guard let moved = await move(Set(ImageRef.ids(markdown)), locked: locked, key: key) else { return nil }
+        if moved.isEmpty { return markdown }
+        return markdown.replacing(ImageRef.reference) { m in
+            let old = String(m.1)
+            guard let next = moved[old] else { return String(m.0) }
+            return String(m.0).replacing(old, with: next)
+        }
+    }
+
+    /// `reseal` for images by id: each one not already stored the way `locked`
+    /// asks is added again, encrypted or decrypted. Returns old id → new id
+    /// for those, or nil (nothing added) if any can't be had or opened.
+    public func move(_ ids: Set<String>, locked: Bool, key: Data) async -> [String: String]? {
+        var next: [(id: String, bytes: Data, type: String)] = []
+        for id in ids {
+            guard let file = await load(id) else { return nil }
+            if (file.type == lockedImageType) == locked { continue }
+            if locked {
+                next.append((id, LockedNotes.encryptImage(key, file.bytes), lockedImageType))
+            } else {
+                guard let plain = try? LockedNotes.decryptImage(key, file.bytes), let type = Self.sniff(plain) else {
+                    return nil
+                }
+                next.append((id, plain, type))
+            }
+        }
+        // Only once every image is in hand: a refusal leaves nothing half-done.
+        var moved: [String: String] = [:]
+        for item in next {
+            guard let id = try? await add(item.bytes, type: item.type) else { return nil }
+            moved[item.id] = id
+        }
+        return moved
+    }
+
     public func pending() async throws -> [PendingImage] {
         try await db.read { sql in
             try sql.query("SELECT id, content_type FROM pending_images ORDER BY created_at, id") {

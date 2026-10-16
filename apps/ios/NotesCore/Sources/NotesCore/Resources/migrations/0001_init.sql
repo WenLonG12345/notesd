@@ -1,5 +1,5 @@
 -- The local replica (architecture §4.3): Android's schema through its 0007,
--- in one file. lock_keys and pending_images come with locked notes and images.
+-- in one file. pending_images (0002) and lock_keys (0003) were added with images and locked notes.
 
 CREATE TABLE notes (
     seq               INTEGER PRIMARY KEY, -- stable rowid, keys notes_fts (as on the server)

@@ -28,7 +28,11 @@ struct NotesApp: App {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active: graph.scheduler.enteredForeground()
-            case .background: graph.scheduler.enteredBackground()
+            case .background:
+                graph.scheduler.enteredBackground()
+                // Locked notes lock when the app leaves the screen (§10.1), after saving what's typed.
+                let locks = graph.locks
+                Task { await locks.lock() }
             default: break
             }
         }
@@ -60,8 +64,9 @@ struct RootView: View {
                             switch route {
                             case .note(let id, let startTag, let isNew):
                                 NoteScreen(
-                                    store: graph.store, images: graph.images, id: id, startTag: startTag,
-                                    isNew: isNew, path: $path
+                                    store: graph.store, images: graph.images, locks: graph.locks, id: id,
+                                    startTag: startTag, isNew: isNew,
+                                    path: $path
                                 )
                                 .id(id)
                             case .tags: TagsView(path: $path)

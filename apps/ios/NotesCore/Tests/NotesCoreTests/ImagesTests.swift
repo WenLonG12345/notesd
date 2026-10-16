@@ -132,4 +132,79 @@ final class ImagesTests {
         #expect(ImageStore.sniff(Data("RIFF\0\0\0\0WEBPVP8 ".utf8)) == "image/webp")
         #expect(ImageStore.sniff(Data("<svg".utf8)) == nil)
     }
+
+    /// The image ids the last `request` ("POST /api/v1/notes", ...) listed; nil if it listed none.
+    private func listed(_ c: TestClient, _ request: String) throws -> [String]? {
+        let body = try #require(c.transport.sentNotes.last { $0.0 == request }?.1)
+        let object = try JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any]
+        return object?["imageIds"] as? [String]
+    }
+
+    @Test func aLockedNotesSavesListItsImagesAndSoDoesAConflictedCopySyncMakes() async throws {
+        let a = try await client()
+        let b = try await client()
+        let key = Data((0..<32).map { UInt8($0) })
+        let (x, y, z) = ("a", "b", "c")
+        let ids = [x, y, z].map { String(repeating: $0, count: 64) }
+        func sealed(_ id: String) -> String {
+            LockedNotes.encrypt(key, ImageRef(id: id, width: 1, height: 1).markdown() + "\n")
+        }
+
+        try await a.save("p", "Plain", ImageRef(id: ids[0], width: 1, height: 1).markdown() + "\n")
+        _ = try await a.notes.save("n", title: "Secret", content: sealed(ids[0]), imageIds: [ids[0]])
+        #expect(await a.sync() == .done)
+        #expect(try listed(a, "POST /api/v1/notes") == [ids[0]])
+        // A plain note's images the server reads from its content.
+        let plain = try #require(a.transport.sentNotes.first { $0.1.contains("\"Plain\"") }?.1)
+        #expect(!plain.contains("imageIds"))
+        #expect(await b.sync() == .done)
+
+        // Both change the body: b's becomes a copy, which sync uploads without being able to read it.
+        _ = try await a.notes.save("n", title: "Secret", content: sealed(ids[1]), imageIds: [ids[1]])
+        _ = try await b.notes.save("n", title: "Secret", content: sealed(ids[2]), imageIds: [ids[2]])
+        #expect(await a.sync() == .done)
+        #expect(try listed(a, "PUT /api/v1/notes/n") == [ids[1]])
+        #expect(await b.sync() == .done)
+        #expect(try await b.notes.list().contains { $0.title == "Secret (Conflicted copy)" })
+        #expect(try listed(b, "POST /api/v1/notes") == [ids[2]], "the copy lists its images")
+    }
+
+    @Test func resealingEncryptsEveryImageForALockAndDecryptsThemForItsRemoval() async throws {
+        let a = try await client()
+        let key = LockedNotes.newKey()
+        let plain = try await a.images.add(png, type: "image/png")
+        let ref = ImageRef(id: plain, width: 1, height: 1)
+        let body = "Before\n\n\(ref.markdown(alt: "dot"))\n\n\(ref.markdown())\n"
+
+        let locked = try #require(await a.images.reseal(body, locked: true, key: key))
+        let sealedId = try #require(ImageRef.ids(locked).first)
+        #expect(sealedId != plain)
+        #expect(locked == body.replacing(plain, with: sealedId))
+        let sealed = try #require(await a.images.load(sealedId))
+        #expect(sealed.type == lockedImageType)
+        #expect(try LockedNotes.decryptImage(key, sealed.bytes) == png)
+        // Already encrypted: nothing to do.
+        #expect(await a.images.reseal(locked, locked: true, key: key) == locked)
+
+        #expect(await a.sync() == .done)
+        #expect(await try client().images.load(sealedId)?.type == lockedImageType)
+
+        // Removing the lock brings back the same plain bytes, so the same id.
+        #expect(await a.images.reseal(locked, locked: false, key: key) == body)
+        // With another key the image won't open, and nothing changes.
+        #expect(await a.images.reseal(locked, locked: false, key: LockedNotes.newKey()) == nil)
+    }
+
+    @Test func aLockChangeWaitsForImagesThisDeviceDoesntHave() async throws {
+        let a = try await client()
+        let b = try await client()
+        let id = try await a.images.add(png, type: "image/png")
+        #expect(await a.sync() == .done)
+        b.offline = true
+        let body = ImageRef(id: id, width: 1, height: 1).markdown() + "\n"
+        #expect(await b.images.reseal(body, locked: true, key: LockedNotes.newKey()) == nil)
+        #expect(try await b.images.pending().isEmpty)
+        b.offline = false
+        #expect(await b.images.reseal(body, locked: true, key: LockedNotes.newKey()) != nil)
+    }
 }

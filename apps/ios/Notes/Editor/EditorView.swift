@@ -6,7 +6,7 @@ import UIKit
 @MainActor
 @Observable
 final class EditorController {
-    fileprivate weak var view: NoteTextView?
+    fileprivate(set) weak var view: NoteTextView?
     var format = FormatState()
     /// The link sheet's starting text and address, while it's open.
     var linkSheet: (text: String, href: String?)?

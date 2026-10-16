@@ -41,6 +41,9 @@ struct SettingsView: View {
                     SectionHeader("Sync")
                 }
             }
+            if graph.lockState != .none || graph.account != .none {
+                LockedNotesSection()
+            }
             if case .signedIn = graph.account {
                 EmailSection()
             }

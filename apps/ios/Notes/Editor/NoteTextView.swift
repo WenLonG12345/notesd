@@ -348,6 +348,24 @@ final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDel
         }
     }
 
+    /// The pictures this note shows, by id.
+    func imageIds() -> Set<String> { Set(ImageRef.ids(Markdown.serialize(document()))) }
+
+    /// After a lock change moved the pictures (§10.1): points their runs at the new ids, old id → new id.
+    func replaceImages(_ moved: [String: String]) {
+        guard !moved.isEmpty else { return }
+        command { text in
+            var found: [(NSRange, String)] = []
+            text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+                guard let raw = value as? RawAttachment, let id = raw.picture?.id, let next = moved[id] else { return }
+                found.append((range, raw.source.replacing(id, with: next)))
+            }
+            for (range, source) in found {
+                text.addAttribute(.attachment, value: RawAttachment(source: source, isBlock: false), range: range)
+            }
+        }
+    }
+
     func linkContext() -> (text: String, href: String?) {
         let link = Marks.link(textStorage, at: selectedRange.location)
         return ((textStorage.string as NSString).substring(with: selectedRange), link?.0.href)

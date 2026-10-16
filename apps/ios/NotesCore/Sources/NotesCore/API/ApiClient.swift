@@ -176,6 +176,41 @@ public final class ApiClient: Sendable {
             { self.request("POST", "api/v1/notes/\(id)/email", body: body, access: $0) }, decode: { _ in () })
     }
 
+    // MARK: locked notes
+
+    /// The locked-notes keyring.
+    public func lockKeys() async -> ApiResult<[LockKey]> {
+        struct Keys: Decodable { var keys: [LockKey]? }
+        return await authed(
+            { self.request("GET", "api/v1/locks", access: $0) },
+            decode: { try JSONDecoder().decode(Keys.self, from: $0.data).keys ?? [] })
+    }
+
+    /// Creates or replaces a keyring entry; `verifier` proves this device holds the key (the first password entry sets it).
+    public func putLockKey(_ key: LockKey, verifier: String) async -> ApiResult<LockKey> {
+        struct Body: Encodable {
+            var kind: String
+            var credentialId: String?
+            var salt: String
+            var iterations: Int
+            var wrapped: String
+            var verifier: String
+        }
+        let body = Body(
+            kind: key.kind, credentialId: key.credentialId, salt: key.salt, iterations: key.iterations,
+            wrapped: key.wrapped, verifier: verifier)
+        return await authed(
+            { self.request("PUT", "api/v1/locks/keys/\(key.id)", body: body, access: $0) },
+            decode: json(LockKey.self))
+    }
+
+    /// Forgets the keyring: notes locked so far can never be opened again.
+    public func resetLocks(accountPassword: String) async -> ApiResult<Void> {
+        let body = ["accountPassword": accountPassword]
+        return await authed(
+            { self.request("DELETE", "api/v1/locks", body: body, access: $0) }, decode: { _ in () })
+    }
+
     // MARK: images
 
     /// Uploads an image (§7.6); `id` is the SHA-256 of `bytes`, so a retry stores nothing new.
