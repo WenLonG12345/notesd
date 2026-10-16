@@ -1,35 +1,28 @@
-<p align="center"><img src="apps/web/public/icon-512.png" alt="" width="96" height="96"></p>
+<p align="center"><img src="apps/web/public/icon-512.png" alt="" width="144" height="144"></p>
 
-<h1 align="center">notesd</h1>
+<h2 align="center">notesd</h1>
+<h3 align="center">Self-hosted notes</h1>
 
-<p align="center">A self-hosted notes app that stays out of your way. The server is a single lightweight
-binary you can drop onto a Raspberry Pi or a cheap VPS. The Android app works fully
-offline and syncs your notes in the background whenever a connection is available.</p>
+<p align="center">Single-binary, lightweight server (you can drop onto a Raspberry Pi or a cheap VPS).</p> 
+<p align="center">Android app that works fully
+offline and syncs your notes whenever a connection is available.</p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/web-dark.png">
-  <img src="docs/images/web-light.png" alt="The notesd web app: a tag sidebar, the note list, and a note with headings, a checklist, a bulleted list and a quote">
-</picture>
+<img width="1536" height="1024" alt="Image" src="https://github.com/user-attachments/assets/61603468-28eb-45aa-983a-609850966c15" />
 
 ## Features
 
-**Search.** Full-text search across titles and bodies, with title
-matches ranked higher and formatting ignored. On Android it queries the local
+- **Full-text Search** across titles and bodies. On Android it queries the local
 database, so it works offline.
 
-**Organize with tags.** Write `#work` in a note and it's tagged. The sidebar
-lists all your tags, so you can browse by topic. Tags can be nested with `/`
-(`#home/garden`).
+- **Organize with tags.** Add tags like `#work` and `#reading` anyewhere in your note. The sidebar lists all your tags, so you can browse by topic. Tags can be nested with `/` (`#home/garden`).
 
-**Images.** Add photos to a note from the toolbar, or paste or drop them on the
-web. They're downscaled and stripped of location data before upload, and on
-Android you can add them offline. GIFs are the exception: they're uploaded as
-they are, so they stay animated, and keep any metadata they hold.
+- **Locked notes.** You can secure notes with end-to-end encryption (AES-256-GCM). The server only stores ciphertext. Unlock with a password, a passkey (web) or biometric (Android).  
+  <img width="368" height="259" alt="Image" src="https://github.com/user-attachments/assets/607ed533-451f-42ed-90d6-e1cfe162deae" />  
+  See [Security](#security) for more details.
 
-**Locked notes.** Lock any note and its body is encrypted on-device with AES-256-GCM before
-they're saved or synced, so the server only stores ciphertext. Unlock with a
-password, a passkey (web) or biometric (Android).
-See [Security](#security) for more details on what this does and doesn't protect.
+- **Markdown under the hood.** Notes are stored as Markdown, and you can take them out at any
+time.  
+  See [Your data](#your-data) for more details.
 
 ## Get started
 
@@ -41,12 +34,22 @@ See [Security](#security) for more details on what this does and doesn't protect
    [Releases](https://github.com/cassiozen/notesd/releases) and connect it to
    your server. See [docs/android.md](docs/android.md).
 
-| Platform | Status |
-| --- | --- |
-| Server | Linux x86-64 and ARM64 (including Raspberry Pi), macOS on Apple silicon |
-| Web | Built into the server; current Chrome, Safari, Firefox and Edge |
-| Android | Android 9 or later |
-| iOS | Not started |
+## Your data
+
+Everything the server knows lives in one SQLite file, using **WAL mode** and **FTS5**.  
+SQLite runs inside the server process (a query is a function call instead of a network round trip). On an NVMe
+drive a commit takes a fraction of a millisecond.
+
+
+Notes are stored as Markdown, and you can export them with:
+
+```bash
+notesd export --out ~/notes-export
+```
+
+Locked notes are left out unless you add `--include-locked`. The command only reads the
+database, so it's safe to run while the server is up.
+
 
 ## Security
 
@@ -54,10 +57,9 @@ Regular notes are stored unencrypted on your server. Use disk encryption if that
 matters to you, and HTTPS for anything reachable from the internet.
 The Android app won't send your password over plain HTTP outside your local network.
 
-**Locked notes** are the exception, but within limits:
+**Locked notes** have their body and images encrypted. Be aware that:
 
-- **What the server still sees.** Titles, dates and tags written in the title
-  stay readable, and locked notes can't be searched by their text or emailed.
+- The server still sees the titles, and locked notes can't be searched by their text or emailed.
 - **Text from before locking.** When you lock a note, the server scrubs the
   previous text from its database. Backups made earlier still hold it.
 - **Images.** A locked note's images are encrypted too. Their plain copies
@@ -70,29 +72,6 @@ The Android app won't send your password over plain HTTP outside your local netw
 The full threat model is in
 [docs/architecture.md §10.1](docs/architecture.md#101-locked-notes).
 
-## Your data
-
-Everything the server knows lives in one SQLite file, `notes.db`, in the data
-directory. SQLite runs inside the server process, so there's no database server
-to run and a query is a function call instead of a network round trip. On an NVMe
-drive a commit takes a fraction of a millisecond, and a single file is easy to 
-back up and move.
-
-The database runs in **WAL mode**. Search uses **FTS5**.
-
-Notes are stored as Markdown, and you can take them out as plain files at any
-time:
-
-```bash
-notesd export --out ~/notes-export
-```
-
-Each note becomes a `.md` file named after its title. Its images go in an
-`images/` folder beside them, linked from the notes, so any Markdown viewer
-shows them. Locked notes are left out unless you add `--include-locked`, which
-asks you to confirm and to type the lock password, then writes them and their
-images unencrypted. The command only reads the
-database, so it's safe to run while the server is up.
 
 ## How it's built
 
