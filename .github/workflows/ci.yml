@@ -24,3 +24,14 @@ jobs:
           cache-provider: basic
       - run: mise run check
       - run: mise run test:android
+
+  ios:
+    # macOS runners cost 10× the minutes of Linux ones on a private repository.
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: mise run lint:ios
+      - run: mise run test:ios:core
+      - run: mise run test:ios
