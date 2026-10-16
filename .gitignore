@@ -11,3 +11,11 @@ node_modules/
 # Android signing keys (docs/releasing.md)
 *.jks
 *.keystore
+
+# iOS (apps/ios)
+xcuserdata/
+*.xcuserstate
+/apps/ios/Config/Local.xcconfig
+/apps/ios/NotesCore/.build/
+/apps/ios/NotesCore/.swiftpm/
+/apps/ios/build/
