@@ -1,7 +1,7 @@
 <p align="center"><img src="apps/web/public/icon-512.png" alt="" width="96" height="96"></p>
 
 <h2 align="center">notesd</h1>
-<h3 align="center">Self-hosted noted</h1>
+<h3 align="center">Self-hosted notes</h1>
 
 <p align="center">Single-binary, lightweight server (you can drop onto a Raspberry Pi or a cheap VPS).</p> 
 <p align="center">Android app that works fully
