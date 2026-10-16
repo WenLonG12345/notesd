@@ -122,8 +122,10 @@ struct NotesListView: View {
     }
 
     private func watch() async {
+        // Subscribed before the first read, so a change landing in between isn't missed.
+        let changes = graph.store.changes()
         await reload()
-        for await _ in graph.store.changes() { await reload() }
+        for await _ in changes { await reload() }
     }
 
     private func reload() async {

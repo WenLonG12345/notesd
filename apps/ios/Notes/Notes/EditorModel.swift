@@ -69,6 +69,8 @@ final class EditorModel {
     }
 
     private func load() async {
+        // Subscribed before the first read, so a change landing in between isn't missed.
+        let changes = store.changes()
         let note = try? await store.get(id)
         isNew = note == nil
         known = note.map { ($0.title, $0.content) }
@@ -81,7 +83,7 @@ final class EditorModel {
             document = Document.forNote(title: "", body: blankContent.isEmpty ? .empty : Markdown.parse(blankContent))
         }
         tags = (try? await store.tags()) ?? []
-        for await _ in store.changes() {
+        for await _ in changes {
             await refresh()
             tags = (try? await store.tags()) ?? tags
         }

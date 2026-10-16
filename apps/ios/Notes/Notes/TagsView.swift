@@ -42,8 +42,9 @@ struct TagsView: View {
         .background(Color.notesBg)
         .navigationTitle("Tags")
         .task {
+            let changes = graph.store.changes()
             await reload()
-            for await _ in graph.store.changes() { await reload() }
+            for await _ in changes { await reload() }
         }
     }
 
