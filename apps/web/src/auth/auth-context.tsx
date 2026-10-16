@@ -2,6 +2,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useState, type Rea
 import { auth } from '../api/auth'
 import { ApiError, onUnauthenticated, setCsrfToken } from '../api/client'
 import type { SessionInfo } from '../api/types'
+import { rememberSession } from './session-hint'
 
 export type AuthState =
   | { status: 'loading' }
@@ -29,6 +30,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void boot().then(setState)
   }, [])
+
+  useEffect(() => {
+    if (state.status === 'signed-in') rememberSession(true)
+    else if (state.status === 'signed-out' || state.status === 'setup') rememberSession(false)
+  }, [state.status])
 
   useEffect(
     () =>
@@ -63,10 +69,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 async function boot(): Promise<AuthState> {
+  // In parallel: boot is on the critical path of every app open.
+  const session = auth.session()
+  session.catch(() => {}) // unawaited when setup is required
   try {
     const { setupRequired } = await auth.status()
     if (setupRequired) return { status: 'setup' }
-    const info = await auth.session()
+    const info = await session
     setCsrfToken(info.csrfToken)
     return { status: 'signed-in', username: info.username }
   } catch (err) {

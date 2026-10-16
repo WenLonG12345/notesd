@@ -27,7 +27,7 @@ const NOTICE_MS = 5000
 
 const SIDEBAR_KEY = 'notes.sidebar.hidden'
 
-function loadSidebarHidden(): boolean {
+export function loadSidebarHidden(): boolean {
   try {
     return localStorage.getItem(SIDEBAR_KEY) === 'true'
   } catch {

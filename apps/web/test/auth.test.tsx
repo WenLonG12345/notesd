@@ -176,9 +176,10 @@ describe('sign in', () => {
     await user.click(screen.getByRole('button', { name: 'Settings' }))
     await user.click(await screen.findByRole('button', { name: 'Sign out' }))
     expect(await screen.findByRole('heading', { name: 'Welcome back.' })).toBeTruthy()
-    // The session is gone: a reload lands on sign-in again.
+    // The session is gone: a reload lands on sign-in again, without drawing the shell first.
     first.unmount()
     render(<App />)
+    expect(screen.queryByTestId('shell-skeleton')).toBeNull()
     expect(await screen.findByRole('heading', { name: 'Welcome back.' })).toBeTruthy()
   })
 
@@ -194,7 +195,10 @@ describe('sign in', () => {
 
     first.unmount()
     render(<App />)
+    // Drawn before the server has answered.
+    expect(screen.getByTestId('shell-skeleton')).toBeTruthy()
     await signedInAs(username)
+    expect(screen.queryByTestId('shell-skeleton')).toBeNull()
   })
 
   it('reports rate limiting with the wait time', async () => {
@@ -225,5 +229,16 @@ describe('server down', () => {
     expect(await screen.findByRole('heading', { name: 'Can’t reach the server' })).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByRole('heading', { name: 'Can’t reach the server' })).toBeTruthy()
+  })
+
+  it('swaps the shell skeleton for the error after a signed-in visit', async () => {
+    const server = await startServer()
+    await server.stop()
+    localStorage.setItem('notes.signed-in', 'true')
+    render(<App />)
+
+    expect(screen.getByTestId('shell-skeleton')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Can’t reach the server' })).toBeTruthy()
+    expect(screen.queryByTestId('shell-skeleton')).toBeNull()
   })
 })
