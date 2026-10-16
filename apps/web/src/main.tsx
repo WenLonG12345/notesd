@@ -17,3 +17,17 @@ createRoot(root).render(
     <App />
   </StrictMode>,
 )
+
+// Dev skipped: a cached shell would fight Vite's HMR.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  // Fails outside a secure context (plain-http LAN address); the app just loads from the network.
+  navigator.serviceWorker.register('/sw.js').then(
+    (reg) => {
+      // An installed app resumed from the background doesn't navigate, so the browser never checks for a new build itself.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {})
+      })
+    },
+    () => {},
+  )
+}

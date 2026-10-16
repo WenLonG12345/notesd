@@ -36,3 +36,19 @@ func TestServesManifestAsManifest(t *testing.T) {
 		t.Fatalf("got %d %q", rec.Code, got)
 	}
 }
+
+// Browsers check for a new service worker on each open; a long-cached sw.js would pin users to an old build.
+func TestServesServiceWorkerUncached(t *testing.T) {
+	root := fstest.MapFS{"sw.js": {Data: []byte("self.addEventListener('fetch', () => {})")}}
+	rec := httptest.NewRecorder()
+	handler(root).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sw.js", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("Cache-Control = %q, want no-cache", got)
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/javascript") {
+		t.Fatalf("Content-Type = %q, want text/javascript", got)
+	}
+}

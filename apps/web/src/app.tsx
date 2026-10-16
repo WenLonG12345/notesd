@@ -3,8 +3,10 @@ import { AuthProvider, useAuth } from './auth/auth-context'
 import { AuthLayout } from './auth/auth-layout'
 import { Login, LoginForm } from './auth/login'
 import { Onboarding } from './auth/onboarding'
+import { hadSession } from './auth/session-hint'
 import { takeSetupLink } from './auth/setup-link'
 import { Shell } from './notes/shell'
+import { ShellSkeleton } from './notes/shell-skeleton'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Kicker } from './ui/kicker'
@@ -23,7 +25,8 @@ function AuthGate({ setupToken }: { setupToken?: string }) {
   const { state, retry } = useAuth()
   switch (state.status) {
     case 'loading':
-      return null
+      // Signed out last time: blank beats a shell that turns into the login screen.
+      return !state.retrying && hadSession() ? <ShellSkeleton /> : null
     case 'unreachable':
       return (
         <AuthLayout>
