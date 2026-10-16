@@ -11,28 +11,28 @@
   --blur: blur(18px) saturate(1.3);
 
   color-scheme: light;
-  --bg: oklch(0.965 0.003 250);
+  --bg: oklch(0.965 0.0035 80);
   /* The note's sheet: solid, one step lighter than the window. */
-  --paper: oklch(0.988 0.002 250);
-  --ink: oklch(0.24 0.006 250);
-  --ink-2: oklch(0.42 0.006 250);
-  --ink-3: oklch(0.5 0.006 250);
-  --glass: rgb(252 253 254 / 0.74);
-  --glass-hi: rgb(252 253 254 / 0.88);
+  --paper: oklch(0.988 0.002 80);
+  --ink: oklch(0.24 0.006 60);
+  --ink-2: oklch(0.42 0.006 60);
+  --ink-3: oklch(0.5 0.006 60);
+  --glass: rgb(254 253 252 / 0.74);
+  --glass-hi: rgb(254 253 252 / 0.88);
   --edge: rgb(255 255 255 / 0.85);
-  --hair: rgb(30 35 45 / 0.09);
-  --hair-strong: rgb(30 35 45 / 0.16);
+  --hair: rgb(45 40 35 / 0.09);
+  --hair-strong: rgb(45 40 35 / 0.16);
   --field: rgb(255 255 255 / 0.78);
   --chip: rgb(255 255 255 / 0.62);
-  --hover: rgb(30 35 45 / 0.07);
-  --on: rgb(30 35 45 / 0.11);
+  --hover: rgb(45 40 35 / 0.07);
+  --on: rgb(45 40 35 / 0.11);
   --inset: inset 0 1px 0 rgb(255 255 255 / 0.9);
-  --shadow: 0 12px 32px -18px rgb(25 30 40 / 0.2);
-  --shadow-lg: 0 40px 90px -34px rgb(25 30 40 / 0.32);
-  --scrim: rgb(232 234 237 / 0.42);
-  --solid: oklch(0.25 0.006 250);
-  --on-solid: oklch(0.98 0.002 250);
-  --code: oklch(0.25 0.006 250 / 0.93);
+  --shadow: 0 12px 32px -18px rgb(48 40 33 / 0.22);
+  --shadow-lg: 0 40px 90px -34px rgb(48 40 33 / 0.35);
+  --scrim: rgb(236 234 230 / 0.42);
+  --solid: oklch(0.25 0.006 60);
+  --on-solid: oklch(0.98 0.0025 80);
+  --code: oklch(0.25 0.006 60 / 0.93);
   --code-ink: oklch(0.87 0.01 80);
   --code-dim: oklch(0.64 0.01 80);
   --code-hi: oklch(0.85 0.13 80);
@@ -53,8 +53,8 @@
   --warn-edge: oklch(0.87 0.07 62);
   --warn-ink: oklch(0.38 0.08 55);
   --focus: oklch(0.72 0.15 72 / 0.55);
-  --blob-1: oklch(0.9 0.05 82);
-  --blob-opacity: 0.14;
+  --blob-1: oklch(0.895 0.07 82);
+  --blob-opacity: 0.18;
 
   /* Save status: dot color, label color. */
   --status-saved: oklch(0.68 0.13 150);
