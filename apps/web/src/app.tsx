@@ -26,7 +26,7 @@ function AuthGate({ setupToken }: { setupToken?: string }) {
   switch (state.status) {
     case 'loading':
       // Signed out last time: blank beats a shell that turns into the login screen.
-      return hadSession() ? <ShellSkeleton /> : null
+      return !state.retrying && hadSession() ? <ShellSkeleton /> : null
     case 'unreachable':
       return (
         <AuthLayout>

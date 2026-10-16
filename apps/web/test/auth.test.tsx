@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { App } from '../src/app'
 import { createOwner, startServer } from './server'
 
@@ -240,5 +240,27 @@ describe('server down', () => {
     expect(screen.getByTestId('shell-skeleton')).toBeTruthy()
     expect(await screen.findByRole('heading', { name: 'Can’t reach the server' })).toBeTruthy()
     expect(screen.queryByTestId('shell-skeleton')).toBeNull()
+  })
+
+  it('retries without flashing the shell skeleton', async () => {
+    const server = await startServer()
+    await server.stop()
+    localStorage.setItem('notes.signed-in', 'true')
+    const user = userEvent.setup()
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Can’t reach the server' })).toBeTruthy()
+
+    // Held so the retry's loading state can be seen.
+    const real = globalThis.fetch
+    let release!: () => void
+    const held = new Promise<void>((r) => (release = r))
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => held.then(() => real(input, init)))
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(screen.queryByRole('heading', { name: 'Can’t reach the server' })).toBeNull()
+    expect(screen.queryByTestId('shell-skeleton')).toBeNull()
+
+    release()
+    expect(await screen.findByRole('heading', { name: 'Can’t reach the server' })).toBeTruthy()
+    spy.mockRestore()
   })
 })

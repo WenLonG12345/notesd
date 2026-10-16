@@ -13,7 +13,9 @@ const NETWORK_ONLY = ['/api/', '/healthz', '/readyz']
 sw.addEventListener('install', (event) => {
   // no-cache: index.html and the root files may sit stale in the HTTP cache.
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE.map((u) => new Request(u, { cache: 'no-cache' })))))
-  // No skipWaiting: open window keeps its build; new one takes over once all windows close.
+  // Don't wait for windows to close: next load gets this build. Safe with no lazy JS chunks;
+  // an open old page keeps its JS and at worst misses an unloaded font subset.
+  void sw.skipWaiting()
 })
 
 sw.addEventListener('activate', (event) => {

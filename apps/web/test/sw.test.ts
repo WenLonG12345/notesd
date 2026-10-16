@@ -12,6 +12,7 @@ type Listener = (event: Record<string, unknown>) => void
 let listeners: Record<string, Listener>
 let stores: Map<string, Map<string, string>>
 let fetched: string[]
+let skipped: number
 
 function store(name: string) {
   let s = stores.get(name)
@@ -43,6 +44,9 @@ async function loadWorker(version: string) {
   const self = {
     location: new URL(ORIGIN),
     clients: { claim: async () => {} },
+    skipWaiting: async () => {
+      skipped++
+    },
     addEventListener: (type: string, fn: Listener) => (listeners[type] = fn),
   }
   runInNewContext(`const PRECACHE = ${JSON.stringify(PRECACHE)}; const VERSION = '${version}';\n${code}`, {
@@ -78,6 +82,7 @@ beforeEach(async () => {
   listeners = {}
   stores = new Map()
   fetched = []
+  skipped = 0
   await loadWorker('v1')
   await lifecycle('install')
   await lifecycle('activate')
@@ -111,6 +116,13 @@ describe('service worker', () => {
   it('falls back to the network when the cache lost an entry', async () => {
     stores.get('shell-v1')?.delete('/index.html')
     expect(await request('/notes', { mode: 'navigate' })).toBe('network')
+  })
+
+  it('takes over from the previous build without waiting for its windows to close', async () => {
+    expect(skipped).toBe(1)
+    await loadWorker('v2')
+    await lifecycle('install')
+    expect(skipped).toBe(2)
   })
 
   it('drops the previous build when a new one activates', async () => {

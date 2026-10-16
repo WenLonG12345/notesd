@@ -5,7 +5,8 @@ import type { SessionInfo } from '../api/types'
 import { rememberSession } from './session-hint'
 
 export type AuthState =
-  | { status: 'loading' }
+  // retrying: after 'unreachable', where the shell skeleton would just flash between two error screens.
+  | { status: 'loading'; retrying?: boolean }
   | { status: 'unreachable' }
   | { status: 'setup' }
   | { status: 'signed-out' }
@@ -33,7 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (state.status === 'signed-in') rememberSession(true)
-    else if (state.status === 'signed-out' || state.status === 'setup') rememberSession(false)
+    else if (state.status === 'signed-out' || state.status === 'setup' || state.status === 'expired') rememberSession(false)
   }, [state.status])
 
   useEffect(
@@ -60,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const retry = useCallback(() => {
-    setState({ status: 'loading' })
+    setState({ status: 'loading', retrying: true })
     void boot().then(setState)
   }, [])
 
