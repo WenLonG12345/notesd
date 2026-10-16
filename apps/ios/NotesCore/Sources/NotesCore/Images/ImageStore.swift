@@ -1,0 +1,159 @@
+import Foundation
+
+/// An image added on this device that the server doesn't have yet.
+public struct PendingImage: Hashable, Sendable {
+    public var id: String
+    public var type: String
+}
+
+/// This device's images (architecture §7.6). One added here is written to
+/// `pendingDir` with a `pending_images` row and stays there until sync
+/// uploads it; then it moves to `cacheDir`, where images downloaded on first
+/// view live too. The system may clear the cache: a cached image is fetched
+/// again, a pending one is never lost. Locked notes' images stay encrypted on
+/// disk; they are decrypted in memory to be shown.
+public final class ImageStore: Sendable {
+    private let db: Database
+    private let pendingDir: URL
+    private let cacheDir: URL
+    private let api: @Sendable () async -> ApiClient?
+    private let clock: Clock
+
+    public init(
+        db: Database, pendingDir: URL, cacheDir: URL, api: @escaping @Sendable () async -> ApiClient?,
+        clock: @escaping Clock = systemClock
+    ) {
+        self.db = db
+        self.pendingDir = pendingDir
+        self.cacheDir = cacheDir
+        self.api = api
+        self.clock = clock
+    }
+
+    /// Stores a new image's bytes (already prepared, and encrypted for a locked note); returns its id.
+    public func add(_ bytes: Data, type: String) async throws -> String {
+        let id = ImageRef.sha256(bytes)
+        try Self.write(bytes, to: pendingDir.appending(path: try Self.fileName(id, type)))
+        // The file is durable before the row says it exists.
+        let now = clock()
+        try await db.write { sql in
+            try sql.exec(
+                "INSERT OR IGNORE INTO pending_images (id, content_type, created_at) VALUES (?, ?, ?)", id, type, now)
+        }
+        return id
+    }
+
+    /// An image from this device, or from the server the first time it's needed; nil if neither has it.
+    public func load(_ id: String) async -> ImageFile? {
+        if let file = local(id) { return file }
+        guard let client = await api(), let file = await client.getImage(id).value else { return nil }
+        // The id is the hash: anything else isn't this image.
+        guard ImageRef.sha256(file.bytes) == id, let name = try? Self.fileName(id, file.type) else { return nil }
+        try? Self.write(file.bytes, to: cacheDir.appending(path: name))
+        return file
+    }
+
+    /// Whether the image is on this device, so it can be shown (or re-encrypted) offline.
+    public func has(_ id: String) -> Bool { local(id) != nil }
+
+    private func local(_ id: String) -> ImageFile? {
+        for dir in [pendingDir, cacheDir] {
+            for (ext, type) in Self.types {
+                if let bytes = try? Data(contentsOf: dir.appending(path: "\(id).\(ext)")) {
+                    return ImageFile(type: type, bytes: bytes)
+                }
+            }
+        }
+        return nil
+    }
+
+    public func pending() async throws -> [PendingImage] {
+        try await db.read { sql in
+            try sql.query("SELECT id, content_type FROM pending_images ORDER BY created_at, id") {
+                PendingImage(id: $0.text(0), type: $0.text(1))
+            }
+        }
+    }
+
+    /// Uploads every pending image, oldest first. Called by sync before any
+    /// note operation goes out, so no device sees a reference before its bytes
+    /// exist. Stops at the first failure that a retry might fix.
+    public func upload(_ client: ApiClient) async throws -> ApiResult<Void> {
+        for image in try await pending() {
+            guard let name = try? Self.fileName(image.id, image.type),
+                let bytes = try? Data(contentsOf: pendingDir.appending(path: name))
+            else {
+                try await forget(image.id)
+                continue
+            }
+            switch await client.putImage(image.id, bytes: bytes, type: image.type) {
+            case .ok:
+                try await uploaded(image, name)
+            // Refused for good (bytes not matching the id, too large, not an
+            // image): retrying won't change that, and holding it back would
+            // stop every note from syncing. Its notes show it as missing.
+            case .rejected(let status, _, _, _) where Self.refused.contains(status):
+                try await uploaded(image, name)
+            case let other:
+                return other
+            }
+        }
+        return .ok(())
+    }
+
+    private func uploaded(_ image: PendingImage, _ name: String) async throws {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        let to = cacheDir.appending(path: name)
+        try? fm.removeItem(at: to)
+        try? fm.moveItem(at: pendingDir.appending(path: name), to: to)
+        try await forget(image.id)
+    }
+
+    private func forget(_ id: String) async throws {
+        try await db.write { try $0.exec("DELETE FROM pending_images WHERE id = ?", id) }
+    }
+
+    /// Removes every image from this device (signing out, removing all data).
+    public func wipe() async throws {
+        try await db.write { try $0.exec("DELETE FROM pending_images") }
+        try? FileManager.default.removeItem(at: pendingDir)
+        try? FileManager.default.removeItem(at: cacheDir)
+    }
+
+    /// hash_mismatch, image_too_large, unsupported_image.
+    private static let refused: Set<Int> = [400, 413, 415]
+
+    /// File extension by type: the type is kept in the name, so a cached file needs no row.
+    static let types: [(String, String)] = [
+        ("jpg", "image/jpeg"), ("png", "image/png"), ("webp", "image/webp"), ("gif", "image/gif"),
+        ("locked", lockedImageType),
+    ]
+
+    private static func fileName(_ id: String, _ type: String) throws -> String {
+        guard let ext = types.first(where: { $0.1 == type })?.0 else {
+            throw DatabaseError(code: 0, message: "Not an image type: \(type)")
+        }
+        return "\(id).\(ext)"
+    }
+
+    private static func write(_ bytes: Data, to target: URL) throws {
+        try FileManager.default.createDirectory(
+            at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Written to a temporary file and renamed, so a crash never leaves half an image.
+        try bytes.write(to: target, options: .atomic)
+    }
+
+    /// The image type of decrypted bytes, from their magic numbers.
+    public static func sniff(_ b: Data) -> String? {
+        let b = [UInt8](b.prefix(12))
+        func ascii(_ from: Int, _ to: Int) -> String {
+            b.count >= to ? String(decoding: b[from..<to], as: UTF8.self) : ""
+        }
+        if b.count >= 3 && b[0] == 0xff && b[1] == 0xd8 && b[2] == 0xff { return "image/jpeg" }
+        if b.count >= 4 && b[0] == 0x89 && ascii(1, 4) == "PNG" { return "image/png" }
+        if ascii(0, 4) == "GIF8" { return "image/gif" }
+        if ascii(0, 4) == "RIFF" && ascii(8, 12) == "WEBP" { return "image/webp" }
+        return nil
+    }
+}

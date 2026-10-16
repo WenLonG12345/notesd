@@ -11,6 +11,7 @@ final class AppGraph {
     let store: NoteStore
     let accounts: AccountStore
     let engine: SyncEngine
+    let images: ImageStore
     let mailer: NoteMailer
     let email: EmailSetup
     @ObservationIgnored private(set) lazy var scheduler = SyncScheduler(graph: self)
@@ -55,7 +56,11 @@ final class AppGraph {
         database = Database(path: databasePath)
         store = NoteStore(db: database)
         self.accounts = accounts
-        engine = SyncEngine(db: database, api: { [accounts] in accounts.client() })
+        let dirs = Self.imageDirectories()
+        images = ImageStore(
+            db: database, pendingDir: dirs.pending, cacheDir: dirs.cache, api: { [accounts] in accounts.client() })
+        engine = SyncEngine(db: database, api: { [accounts] in accounts.client() }, images: images)
+        ImageLoader.shared = ImageLoader(store: images)
         mailer = NoteMailer(store: store, engine: engine, api: { [accounts] in accounts.client() })
         email = EmailSetup(api: { [accounts] in accounts.client() })
         account = accounts.account.value
@@ -88,6 +93,18 @@ final class AppGraph {
         return dir.appending(path: "notes.db").path
     }
 
+    /// Pictures waiting to upload live with the database (never purged); fetched ones in Caches, which iOS may clear.
+    nonisolated static func imageDirectories() -> (pending: URL, cache: URL) {
+        let fm = FileManager.default
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+            let root = fm.temporaryDirectory.appending(path: "uitest-images-\(UUID().uuidString)")
+            return (root.appending(path: "pending"), root.appending(path: "cache"))
+        }
+        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        return (support.appending(path: "images"), caches.appending(path: "images"))
+    }
+
     /// How this phone appears in the server's list of signed-in devices.
     var deviceName: String { UIDevice.current.name }
 
@@ -107,6 +124,7 @@ final class AppGraph {
             _ = await withTimeout(seconds: 5) { await client.logout() }
         }
         try? await store.wipe()
+        try? await images.wipe()
         accounts.clear()
         email.forget()
         listFilter = nil

@@ -191,6 +191,20 @@ public struct SyncPage: Decodable, Sendable {
     }
 }
 
+/// An image as stored on the server: its type, as served, and its bytes.
+public struct ImageFile: Sendable, Hashable {
+    public var type: String
+    public var bytes: Data
+
+    public init(type: String, bytes: Data) {
+        self.type = type
+        self.bytes = bytes
+    }
+}
+
+/// The type a locked note's encrypted image is uploaded and served as (§10.1).
+public let lockedImageType = "application/vnd.notesd.locked"
+
 /// The server's email settings (Resend). The key itself never comes back, only its last characters.
 public struct EmailSettings: Decodable, Sendable, Hashable {
     public var configured: Bool

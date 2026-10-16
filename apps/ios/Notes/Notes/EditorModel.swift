@@ -29,6 +29,7 @@ struct Original: Equatable {
 final class EditorModel {
     let id: String
     private let store: NoteStore
+    private let images: ImageStore?
 
     /// The text to show, nil while loading.
     private(set) var document: Document?
@@ -45,6 +46,8 @@ final class EditorModel {
     private(set) var tags: [TagCount] = []
     /// The store had no such note when it was opened: a new note.
     private(set) var isNew = false
+    /// A picture couldn't be added: shown until dismissed.
+    var imageProblem: String?
 
     private var lastSave: Task<Void, Never>?
     private var edits = 0
@@ -57,8 +60,9 @@ final class EditorModel {
     private let blankContent: String
     private var watcher: Task<Void, Never>?
 
-    init(store: NoteStore, id: String, startTag: String? = nil) {
+    init(store: NoteStore, images: ImageStore? = nil, id: String, startTag: String? = nil) {
         self.store = store
+        self.images = images
         self.id = id
         blankContent = startTag.map { tagText($0) + "\n" } ?? ""
         watcher = Task { [weak self] in await self?.load() }
@@ -188,6 +192,22 @@ final class EditorModel {
     private func parse(_ note: Note) -> Document? {
         if note.locked { return nil }
         return Document.forNote(title: note.title, body: Markdown.parse(note.content))
+    }
+
+    /// Prepares and stores a picked or pasted picture; its Markdown to insert,
+    /// or nil (with `imageProblem` set) if it couldn't be used.
+    func addImage(_ data: Data) async -> String? {
+        guard let images else { return nil }
+        do {
+            let prepared = try await Task.detached(priority: .userInitiated) { try PrepareImage.prepare(data) }.value
+            let id = try await images.add(prepared.bytes, type: prepared.type)
+            return ImageRef(id: id, width: prepared.width, height: prepared.height).markdown()
+        } catch let error as ImageError {
+            imageProblem = error.message
+        } catch {
+            imageProblem = "That picture couldn’t be saved on this iPhone."
+        }
+        return nil
     }
 
     func delete() async {

@@ -1,4 +1,5 @@
 import NotesCore
+import PhotosUI
 import SwiftUI
 
 /// One note: the editor with its bar, the conflicted-copy banner, and the
@@ -16,12 +17,16 @@ struct NoteScreen: View {
     @State private var controller = EditorController()
     @State private var confirmDelete = false
     @State private var emailing = false
+    @State private var picked: PhotosPickerItem?
 
-    init(store: NoteStore, id: String, startTag: String?, isNew: Bool, path: Binding<[Route]>) {
+    init(
+        store: NoteStore, images: ImageStore? = nil, id: String, startTag: String?, isNew: Bool,
+        path: Binding<[Route]>
+    ) {
         self.id = id
         self.isNew = isNew
         _path = path
-        _model = State(initialValue: EditorModel(store: store, id: id, startTag: startTag))
+        _model = State(initialValue: EditorModel(store: store, images: images, id: id, startTag: startTag))
     }
 
     var body: some View {
@@ -53,6 +58,22 @@ struct NoteScreen: View {
                     .background(Color.errBg, in: .rect(cornerRadius: 12))
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
+            }
+            if let problem = model.imageProblem {
+                Button {
+                    model.imageProblem = nil
+                } label: {
+                    HStack(alignment: .top) {
+                        Text(problem).font(.notesSmall).frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "xmark").accessibilityLabel("Dismiss")
+                    }
+                    .foregroundStyle(Color.errInk)
+                    .padding(12)
+                    .background(Color.errBg, in: .rect(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
             if model.locked {
                 LockedPlaceholder(title: model.title)
@@ -100,6 +121,21 @@ struct NoteScreen: View {
             }
         }
         .task { await graph.email.refresh() }
+        .photosPicker(isPresented: pickerShown, selection: $picked, matching: .images, preferredItemEncoding: .current)
+        .onChange(of: picked) { _, item in
+            guard let item else { return }
+            picked = nil
+            Task {
+                guard let data = try? await item.loadTransferable(type: Data.self) else {
+                    model.imageProblem = "That picture couldn’t be read."
+                    return
+                }
+                await addImage(data)
+            }
+        }
+        .onAppear {
+            controller.onPasteImage = { data in Task { await addImage(data) } }
+        }
         .sheet(isPresented: linkSheetShown) {
             LinkSheet(controller: controller)
         }
@@ -113,6 +149,15 @@ struct NoteScreen: View {
     private var canEmail: Bool {
         guard case .signedIn = graph.account, graph.email.settings?.configured == true else { return false }
         return !model.locked && model.status != .blank
+    }
+
+    private var pickerShown: Binding<Bool> {
+        Binding(get: { controller.pickingImage }, set: { controller.pickingImage = $0 })
+    }
+
+    private func addImage(_ data: Data) async {
+        guard let markdown = await model.addImage(data) else { return }
+        controller.run { $0.insertImage(markdown) }
     }
 
     private var linkSheetShown: Binding<Bool> {

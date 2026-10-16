@@ -176,6 +176,26 @@ public final class ApiClient: Sendable {
             { self.request("POST", "api/v1/notes/\(id)/email", body: body, access: $0) }, decode: { _ in () })
     }
 
+    // MARK: images
+
+    /// Uploads an image (§7.6); `id` is the SHA-256 of `bytes`, so a retry stores nothing new.
+    public func putImage(_ id: String, bytes: Data, type: String) async -> ApiResult<Void> {
+        await authed(
+            { access in
+                var r = self.request("PUT", "api/v1/images/\(id)", access: access)
+                r.httpBody = bytes
+                r.setValue(type, forHTTPHeaderField: "Content-Type")
+                return r
+            }, decode: { _ in () })
+    }
+
+    /// Downloads an image with the type it is stored as.
+    public func getImage(_ id: String) async -> ApiResult<ImageFile> {
+        await authed(
+            { self.request("GET", "api/v1/images/\(id)", access: $0) },
+            decode: { ImageFile(type: $0.type ?? "application/octet-stream", bytes: $0.data) })
+    }
+
     // MARK: plumbing
 
     private func authed<T: Sendable>(
@@ -227,6 +247,8 @@ public final class ApiClient: Sendable {
     struct Reply {
         var code: Int
         var data: Data
+        /// The media type, without parameters.
+        var type: String?
     }
 
     private func send<T: Sendable>(_ request: URLRequest, decode: (Reply) throws -> T) async -> ApiResult<T> {
@@ -240,7 +262,9 @@ public final class ApiClient: Sendable {
         let code = response.statusCode
         if (200...299).contains(code) {
             do {
-                return .ok(try decode(Reply(code: code, data: data)))
+                let type = response.value(forHTTPHeaderField: "Content-Type")?
+                    .split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+                return .ok(try decode(Reply(code: code, data: data, type: type)))
             } catch {
                 return .rejected(
                     status: code, error: Self.unexpectedResponse, message: "The server's answer wasn't understood.",

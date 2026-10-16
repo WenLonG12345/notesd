@@ -1,5 +1,6 @@
 import NotesCore
 import UIKit
+import UniformTypeIdentifiers
 
 /// What the formatting bar shows for the current selection.
 struct FormatState: Equatable {
@@ -38,6 +39,8 @@ final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDel
     var onChange: (() -> Void)?
     var onFormatState: ((FormatState) -> Void)?
     var onLinkEdit: ((_ text: String, _ href: String?) -> Void)?
+    /// A picture was pasted: its bytes, for the note to store and insert.
+    var onPasteImage: ((Data) -> Void)?
 
     private var style = EditorStyle()
     private var normalizing = false
@@ -68,7 +71,16 @@ final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDel
         let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
         tap.delegate = self
         addGestureRecognizer(tap)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(imageReady), name: .notesImageReady, object: nil)
         setDocument(Document.forNote(title: "", body: .empty))
+    }
+
+    /// A picture loaded: lay out again, so its attachment draws it instead of the placeholder.
+    @objc private func imageReady() {
+        guard let layout = textLayoutManager else { return }
+        layout.invalidateLayout(for: layout.documentRange)
+        layout.textViewportLayoutController.layoutViewport()
     }
 
     @available(*, unavailable)
@@ -312,6 +324,30 @@ final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDel
     }
 
     /// The selected text and any link on it, for the link sheet.
+    /// Adds a picture (its Markdown, `ImageRef.markdown`) on a line of its own:
+    /// the empty line the cursor is on, otherwise a new line after the cursor's.
+    func insertImage(_ markdown: String) {
+        commandSelecting { text in
+            let blocks = Blocks.of(text)
+            guard !blocks.isEmpty else { return nil }
+            let block = blocks[Blocks.index(in: blocks, at: self.selectedRange.location)]
+            let run = NSMutableAttributedString()
+            let at: Int
+            if block.isEmpty && block.attr?.leaf != .title {
+                at = block.start
+            } else {
+                at = block.contentEnd
+                run.append(NSAttributedString(string: "\n"))
+            }
+            run.append(NSAttributedString(attachment: RawAttachment(source: markdown, isBlock: false)))
+            if let attr = block.attr {
+                run.addAttribute(.notesBlock, value: attr, range: NSRange(location: 0, length: run.length))
+            }
+            text.insert(run, at: at)
+            return NSRange(location: at + run.length, length: 0)
+        }
+    }
+
     func linkContext() -> (text: String, href: String?) {
         let link = Marks.link(textStorage, at: selectedRange.location)
         return ((textStorage.string as NSString).substring(with: selectedRange), link?.0.href)
@@ -477,8 +513,25 @@ final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDel
 
     /// Pasted text is text: Markdown or rich text from the clipboard isn't parsed into formatting.
     override func paste(_ sender: Any?) {
-        guard let string = UIPasteboard.general.string else { return super.paste(sender) }
+        let board = UIPasteboard.general
+        if !board.hasStrings, board.hasImages, let onPasteImage, let data = Self.imageData(board) {
+            return onPasteImage(data)
+        }
+        guard let string = board.string else { return super.paste(sender) }
         replace(selectedTextRange ?? UITextRange(), withText: string)
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(paste(_:)), onPasteImage != nil, UIPasteboard.general.hasImages { return true }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
+    /// The pasted picture's bytes as copied (a GIF stays animated), or re-encoded if only an image is there.
+    private static func imageData(_ board: UIPasteboard) -> Data? {
+        for type in [UTType.gif, .png, .jpeg, .heic, .webP] {
+            if let data = board.data(forPasteboardType: type.identifier) { return data }
+        }
+        return board.image?.pngData()
     }
 
     /// Copies plain text: hard breaks as new lines, raw runs as the Markdown they hold.

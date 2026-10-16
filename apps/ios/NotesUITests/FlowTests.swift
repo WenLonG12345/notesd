@@ -1,3 +1,5 @@
+import CryptoKit
+import UIKit
 import XCTest
 
 /// The app end to end against a real notesd: `scripts/with-server.sh` starts
@@ -20,6 +22,74 @@ final class FlowTests: XCTestCase {
         shot.name = name
         shot.lifetime = .keepAlways
         add(shot)
+        // For looking at by hand: TEST_RUNNER_SCREENSHOT_DIR=/some/dir.
+        if let dir = env["SCREENSHOT_DIR"] {
+            try? app.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: dir).appending(path: "\(name).png"))
+        }
+    }
+
+    /// Calls the test server's API as the owner, as another device would.
+    private func api(_ method: String, _ path: String, body: Data? = nil, type: String = "application/json")
+        async throws -> [String: Any]
+    {
+        let server = try XCTUnwrap(env["NOTESD_URL"], "run through scripts/with-server.sh")
+        if token == nil {
+            let login = try JSONSerialization.data(withJSONObject: [
+                "username": env["NOTESD_USERNAME"] ?? "owner", "password": env["NOTESD_PASSWORD"] ?? "",
+                "client": "device", "deviceName": "ui test",
+            ])
+            token = ""  // the login itself goes without one
+            token = try await api("POST", "api/v1/auth/login", body: login)["accessToken"] as? String
+        }
+        var request = URLRequest(url: URL(string: server)!.appending(path: path))
+        request.httpMethod = method
+        request.httpBody = body
+        request.setValue(type, forHTTPHeaderField: "Content-Type")
+        if let token, !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        XCTAssertTrue((200..<300).contains(code), "\(method) \(path): \(code) \(String(decoding: data, as: UTF8.self))")
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
+    private var token: String?
+
+    /// How many pixels are about the picture's blue (0.2, 0.4, 0.7).
+    private func bluePixels(_ image: UIImage) -> Int {
+        guard let cg = image.cgImage else { return 0 }
+        let w = cg.width / 4
+        let h = cg.height / 4
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        let ctx = CGContext(
+            data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var n = 0
+        for i in stride(from: 0, to: px.count, by: 4)
+        where abs(Int(px[i]) - 51) < 25 && abs(Int(px[i + 1]) - 102) < 25 && abs(Int(px[i + 2]) - 178) < 25 {
+            n += 1
+        }
+        return n
+    }
+
+    /// A note with a picture, made through the API as if on the web.
+    private func notesWithAPicture() async throws {
+        let picture = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 250)).jpegData(
+            withCompressionQuality: 0.8
+        ) {
+            ctx in
+            UIColor(red: 0.2, green: 0.4, blue: 0.7, alpha: 1).setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: 400, height: 250))
+            UIColor.systemYellow.setFill()
+            ctx.cgContext.fillEllipse(in: CGRect(x: 150, y: 75, width: 100, height: 100))
+        }
+        let id = SHA256.hash(data: picture).map { String(format: "%02x", $0) }.joined()
+        _ = try await api("PUT", "api/v1/images/\(id)", body: picture, type: "image/jpeg")
+        let note = try JSONSerialization.data(withJSONObject: [
+            "operationId": UUID().uuidString.lowercased(), "id": UUID().uuidString.lowercased(), "title": "Postcard",
+            "content": "Wish you were here:\n\n![sun over the sea](notesd:image/\(id)?w=1600&h=1000)\n\nMore soon.\n",
+        ])
+        _ = try await api("POST", "api/v1/notes", body: note)
     }
 
     private func audit(
@@ -164,5 +234,23 @@ final class FlowTests: XCTestCase {
         screenshot("email")
         try audit("email")
         app.buttons["Cancel"].tap()
+    }
+
+    func testAPictureFromAnotherDeviceShows() async throws {
+        try await notesWithAPicture()
+        try signIn()
+        let note = app.staticTexts["Postcard"]
+        XCTAssertTrue(note.waitForExistence(timeout: 15))
+        note.tap()
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 5))
+        // The picture is drawn into the text, not an element of its own: look for its blue.
+        var blue = 0
+        for _ in 0..<20 where blue < 2000 {
+            blue = bluePixels(app.screenshot().image)
+            if blue < 2000 { try await Task.sleep(for: .milliseconds(500)) }
+        }
+        XCTAssertGreaterThan(blue, 2000, "the picture is drawn")
+        screenshot("picture")
+        try audit("picture")
     }
 }

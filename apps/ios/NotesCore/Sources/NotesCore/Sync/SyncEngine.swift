@@ -25,6 +25,7 @@ public struct SyncReport: Sendable {
 public final class SyncEngine: Sendable {
     public let store: SyncStore
     private let api: @Sendable () async -> ApiClient?
+    private let images: ImageStore?
     private let pageSize: Int
     private let lock = AsyncLock()
     private let eventFeed = Broadcast<SyncEvent>(buffer: 16)
@@ -32,11 +33,12 @@ public final class SyncEngine: Sendable {
     public let status = StateCell<SyncStatus>(.notConnected)
 
     public init(
-        db: Database, api: @escaping @Sendable () async -> ApiClient?, pageSize: Int = 100,
-        clock: @escaping Clock = systemClock
+        db: Database, api: @escaping @Sendable () async -> ApiClient?, images: ImageStore? = nil,
+        pageSize: Int = 100, clock: @escaping Clock = systemClock
     ) {
         store = SyncStore(db: db, clock: clock)
         self.api = api
+        self.images = images
         self.pageSize = pageSize
     }
 
@@ -82,10 +84,27 @@ public final class SyncEngine: Sendable {
         return try await store.nextOperation() != nil ? try await push(api, &events) : nil
     }
 
+    /// Uploads every image waiting on this device; a Stop if one couldn't go.
+    private func uploadImages(_ api: ApiClient) async throws -> Stop? {
+        guard let images else { return nil }
+        switch try await images.upload(api) {
+        case .ok: return nil
+        case .rejected(let status, _, _, _):
+            return Stop(outcome: .failed, message: "The server had a problem (\(status)).")
+        case let other: return stop(other)
+        }
+    }
+
     private func push(_ api: ApiClient, _ events: inout [SyncEvent]) async throws -> Stop? {
+        // Every waiting image goes, whether or not a note operation follows.
+        if let stop = try await uploadImages(api) { return stop }
         while true {
             guard let next = try await store.nextOperation() else { return nil }
             guard let op = try await store.prepare(next) else { continue }
+            // For each operation, once it's in hand: an image's pending row is written
+            // before the note showing it is saved, so this sends every image the
+            // operation can show, including ones added while an earlier one was in flight.
+            if let stop = try await uploadImages(api) { return stop }
             switch await send(api, op) {
             case .ok(let result):
                 try await store.sent(op, result)

@@ -49,6 +49,8 @@ struct FormattingBar: View {
                     divider
                     button("decrease.indent", "Outdent", enabled: state.canOutdent) { $0.outdent() }
                     button("increase.indent", "Indent", enabled: state.canIndent) { $0.indent() }
+                    divider
+                    button("photo", "Add picture") { _ in controller.pickingImage = true }
                 }
             }
         }

@@ -10,6 +10,10 @@ final class EditorController {
     var format = FormatState()
     /// The link sheet's starting text and address, while it's open.
     var linkSheet: (text: String, href: String?)?
+    /// The photo picker is open, to add a picture.
+    var pickingImage = false
+    /// Pasted picture bytes, for the screen to store and insert.
+    var onPasteImage: ((Data) -> Void)?
 
     func run(_ command: (NoteTextView) -> Void) {
         if let view { command(view) }
@@ -46,6 +50,7 @@ struct EditorView: UIViewRepresentable {
         }
         view.onFormatState = { [weak controller] state in controller?.format = state }
         view.onLinkEdit = { [weak controller] text, href in controller?.linkSheet = (text, href) }
+        view.onPasteImage = { [weak controller] data in controller?.onPasteImage?(data) }
         let bar = UIHostingController(rootView: FormattingBar(controller: controller, tags: tags))
         bar.view.backgroundColor = .clear
         bar.sizingOptions = [.intrinsicContentSize]

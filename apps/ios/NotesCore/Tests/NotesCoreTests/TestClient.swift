@@ -94,6 +94,7 @@ final class TestClient: @unchecked Sendable {
     private(set) var db: Database
     private(set) var notes: NoteStore
     private(set) var engine: SyncEngine
+    private(set) var images: ImageStore
     private(set) var events: [SyncEvent] = []
     let transport = FaultyTransport()
     private let credentials = MemoryCredentials()
@@ -105,14 +106,22 @@ final class TestClient: @unchecked Sendable {
         try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         db = Database(path: dir.appending(path: "notes.db").path)
         notes = NoteStore(db: db)
+        images = ImageStore(db: db, pendingDir: dir, cacheDir: dir, api: { nil })
         engine = SyncEngine(db: db, api: { nil }, pageSize: pageSize)
+        images = newImages()
         engine = newEngine()
     }
 
     var api: ApiClient { ApiClient(baseURL: server.url, credentials: credentials, transport: transport) }
 
+    private func newImages() -> ImageStore {
+        ImageStore(
+            db: db, pendingDir: dir.appending(path: "images"), cacheDir: dir.appending(path: "cache/images"),
+            api: { [weak self] in self?.api })
+    }
+
     private func newEngine() -> SyncEngine {
-        SyncEngine(db: db, api: { [weak self] in self?.api }, pageSize: pageSize)
+        SyncEngine(db: db, api: { [weak self] in self?.api }, images: images, pageSize: pageSize)
     }
 
     var offline: Bool {
@@ -161,6 +170,7 @@ final class TestClient: @unchecked Sendable {
         await db.close()
         db = Database(path: dir.appending(path: "notes.db").path)
         notes = NoteStore(db: db)
+        images = newImages()
         engine = newEngine()
     }
 

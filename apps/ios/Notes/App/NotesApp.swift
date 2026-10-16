@@ -59,8 +59,11 @@ struct RootView: View {
                         .navigationDestination(for: Route.self) { route in
                             switch route {
                             case .note(let id, let startTag, let isNew):
-                                NoteScreen(store: graph.store, id: id, startTag: startTag, isNew: isNew, path: $path)
-                                    .id(id)
+                                NoteScreen(
+                                    store: graph.store, images: graph.images, id: id, startTag: startTag,
+                                    isNew: isNew, path: $path
+                                )
+                                .id(id)
                             case .tags: TagsView(path: $path)
                             case .settings: SettingsView()
                             }
