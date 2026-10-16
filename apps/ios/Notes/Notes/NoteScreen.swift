@@ -1,0 +1,201 @@
+import NotesCore
+import SwiftUI
+
+/// One note: the editor with its bar, the conflicted-copy banner, and the
+/// locked placeholder. Saves on a pause, when the screen goes, and when the
+/// app leaves the foreground.
+struct NoteScreen: View {
+    @Environment(AppGraph.self) private var graph
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
+    @Binding var path: [Route]
+
+    let id: String
+    let isNew: Bool
+    @State private var model: EditorModel
+    @State private var controller = EditorController()
+    @State private var confirmDelete = false
+
+    init(store: NoteStore, id: String, startTag: String?, isNew: Bool, path: Binding<[Route]>) {
+        self.id = id
+        self.isNew = isNew
+        _path = path
+        _model = State(initialValue: EditorModel(store: store, id: id, startTag: startTag))
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let original = model.original {
+                Button {
+                    path.append(.note(id: original.id))
+                } label: {
+                    HStack {
+                        Text("Conflicted copy of “\(original.title.isEmpty ? "Untitled" : original.title)”")
+                            .font(.notesSmall)
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                    }
+                    .foregroundStyle(Color.warnInk)
+                    .padding(12)
+                    .background(Color.warnBg, in: .rect(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            }
+            if model.gone {
+                Text("This note was deleted on another device. Anything you hadn’t synced is kept as a recovered copy.")
+                    .font(.notesSmall)
+                    .foregroundStyle(Color.errInk)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.errBg, in: .rect(cornerRadius: 12))
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+            }
+            if model.locked {
+                LockedPlaceholder(title: model.title)
+            } else if model.document != nil {
+                EditorView(model: model, controller: controller, tags: model.tags, autofocus: isNew)
+                    .ignoresSafeArea(.container, edges: .bottom)
+            } else {
+                Spacer()
+            }
+        }
+        .background(Color.notesBg)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) { SaveLabel(status: model.status) }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if !model.locked, let doc = controller.document() {
+                        ShareLink(item: share(doc)) { Label("Share", systemImage: "square.and.arrow.up") }
+                    }
+                    Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                } label: {
+                    Label("More", systemImage: "ellipsis")
+                }
+            }
+        }
+        .confirmationDialog("Delete this note?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    await model.delete()
+                    dismiss()
+                }
+            }
+        }
+        .sheet(isPresented: linkSheetShown) {
+            LinkSheet(controller: controller)
+        }
+        .onDisappear { saveNow() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { saveNow() }
+        }
+    }
+
+    private var linkSheetShown: Binding<Bool> {
+        Binding(get: { controller.linkSheet != nil }, set: { if !$0 { controller.linkSheet = nil } })
+    }
+
+    private func saveNow() {
+        if let doc = controller.document() { model.save(doc) }
+    }
+
+    /// The note as plain Markdown, title first.
+    private func share(_ doc: NotesCore.Document) -> String {
+        let title = doc.title ?? ""
+        let body = Markdown.serialize(doc)
+        return title.isEmpty ? body : "\(title)\n\n\(body)"
+    }
+}
+
+private struct SaveLabel: View {
+    let status: SaveStatus
+
+    var body: some View {
+        Text(text).font(.notesSmall).foregroundStyle(Color.ink2)
+            .accessibilityLabel(text.isEmpty ? "New note" : text)
+            .accessibilityShowsLargeContentViewer()
+    }
+
+    private var text: String {
+        switch status {
+        case .blank: ""
+        case .unsaved: "Editing"
+        case .saved: "Saved"
+        }
+    }
+}
+
+/// A locked note while this version can't open them: its title, and where to read it.
+private struct LockedPlaceholder: View {
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "lock.fill").font(.system(size: 34)).foregroundStyle(Color.accentDeep)
+            Text(title.isEmpty ? "Locked note" : title).font(.notesTitle).foregroundStyle(Color.ink)
+            Text(
+                "This note is locked. This version of notesd for iPhone can’t open locked notes yet; open it on the web or on Android."
+            )
+            .font(.notesBody)
+            .foregroundStyle(Color.ink2)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 32)
+            Spacer()
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// Add, change or remove the link on the selection.
+private struct LinkSheet: View {
+    let controller: EditorController
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @State private var href = ""
+    @State private var label = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Address", text: $href)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.notesMono)
+                if controller.linkSheet?.text.isEmpty ?? true, controller.linkSheet?.href == nil {
+                    TextField("Text to show (optional)", text: $label)
+                }
+                if let existing = controller.linkSheet?.href {
+                    Section {
+                        Button("Open link", systemImage: "safari") {
+                            if let url = URL(string: existing) { openURL(url) }
+                        }
+                        Button("Remove link", systemImage: "link.badge.minus", role: .destructive) {
+                            controller.run { $0.removeLink() }
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle(controller.linkSheet?.href == nil ? "Add link" : "Edit link")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        controller.run { $0.setLink(href, label: label) }
+                        dismiss()
+                    }
+                    .disabled(NoteTextView.normalizeHref(href) == nil)
+                }
+            }
+            .onAppear { href = controller.linkSheet?.href ?? "" }
+        }
+        .presentationDetents([.medium])
+    }
+}
