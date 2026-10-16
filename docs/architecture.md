@@ -164,7 +164,7 @@ V1 retains operation records indefinitely; expiring them needs an explicit proto
 
 ### 4.3 Mobile schema
 
-As built on Android (`apps/android/core/src/main/resources/migrations`); iOS follows the same shape.
+As built on Android (`apps/android/core/src/main/resources/migrations`); iOS has the same tables in one file (`apps/ios/NotesCore/Sources/NotesCore/Resources/migrations`).
 
 ```sql
 CREATE TABLE notes (
@@ -622,7 +622,7 @@ A monorepo, because server and clients share protocol definitions, test fixtures
 notes/
 ├── server/           cmd/notesd, internal/{api,auth,database,mail,notes,sync,search,web}, migrations, go.mod
 ├── apps/
-│   ├── ios/          App, Editor, Database, Search, Sync
+│   ├── ios/          NotesCore/ (document model, Markdown codec, database, search, API client, sync; a Swift package), Notes/ (SwiftUI, TextKit editor, accounts, scheduling)
 │   ├── android/      core/ (document model, Markdown codec, database, search, API client, sync; plain Kotlin), app/ (Compose UI, editor, accounts, WorkManager)
 │   └── web/          src/{api,auth,notes,editor,settings,ui,styles}, test/, package.json
 ├── shared/           markdown-fixtures (plaintext, roundtrip), sync-fixtures, api

@@ -80,6 +80,7 @@ The full threat model is in
 | Server | Go, `net/http`, SQLite with WAL and FTS5 |
 | Web | React, TypeScript, Tiptap/ProseMirror, Vite; embedded in the server binary |
 | Android | Kotlin, Jetpack Compose, a native `EditText` editor, bundled SQLite with FTS5, WorkManager |
+| iOS | Swift, SwiftUI, a TextKit 2 `UITextView` editor, SQLite with FTS5, background refresh (early: no images, locked notes or email yet) |
 
 A few things that may be interesting if you're reading the code:
 
@@ -87,7 +88,7 @@ A few things that may be interesting if you're reading the code:
   specification: data model, sync protocol, conflict rules, Markdown dialect,
   search ranking and the locked-notes design. Changes to any of those start
   there.
-- **Shared rules.** The three platforms implement the Markdown round trip,
+- **Shared rules.** The platforms implement the Markdown round trip,
   plain-text extraction, tag parsing and the locked-notes crypto separately.
   Fixtures in [`shared/`](shared) pin all four, and every platform's tests run
   against them, so the server, the web app and the phone agree.
@@ -104,6 +105,7 @@ A few things that may be interesting if you're reading the code:
 | --- | --- |
 | [Hosting](docs/hosting.md) | Installing and configuring the server, HTTPS, systemd |
 | [Android](docs/android.md) | Installing the app, connecting, how sync works |
+| [iPhone](docs/ios.md) | Building and installing the iPhone app, connecting |
 | [Operations](docs/operations.md) | Upgrades, maintenance, monitoring |
 | [Development](docs/development.md) | Building from source and working on notesd |
 | [Architecture](docs/architecture.md) | How it works: data model, sync protocol, conflicts |
