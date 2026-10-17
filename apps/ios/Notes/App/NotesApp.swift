@@ -101,5 +101,16 @@ struct RootView: View {
         }
         .background(Color.notesBg)
         .task { graph.scheduler.start() }
+        // Asked here, not on the screen the password was typed on: that goes as soon as notes unlock.
+        .alert(
+            "Use \(graph.biometry.name) for locked notes?",
+            // Its buttons answer; the binding's own reset mustn't answer before them.
+            isPresented: Binding(get: { graph.biometrics.asking }, set: { _ in })
+        ) {
+            Button("Not Now", role: .cancel) { graph.biometrics.answer(false) }
+            Button("Use \(graph.biometry.name)") { graph.biometrics.answer(true) }
+        } message: {
+            Text("Open locked notes with \(graph.biometry.name) instead of the lock password on this iPhone.")
+        }
     }
 }

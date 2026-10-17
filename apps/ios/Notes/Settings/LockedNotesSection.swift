@@ -7,6 +7,9 @@ struct LockedNotesSection: View {
     @State private var changing = false
     @State private var resetting = false
     @State private var message: String?
+    /// Turning Face ID on while locked notes are locked: the password first.
+    @State private var unlocking = false
+    @State private var turningOn = false
 
     var body: some View {
         Section {
@@ -17,6 +20,19 @@ struct LockedNotesSection: View {
             } else {
                 if graph.lockState == .unlocked {
                     Button("Lock now") { Task { await graph.locks.lock() } }
+                }
+                if graph.biometrics.available() {
+                    Toggle(
+                        "Unlock with \(graph.biometry.name)",
+                        isOn: Binding(
+                            get: { graph.biometrics.enabled || turningOn },
+                            set: { on in
+                                message = nil
+                                if on { turnOn() } else { graph.biometrics.turnOff() }
+                            })
+                    )
+                    .disabled(turningOn)
+                    .tint(Color.accent)
                 }
                 Button("Change lock password") { changing = true }
                 Button("Forgot the lock password?", role: .destructive) { resetting = true }
@@ -32,12 +48,41 @@ struct LockedNotesSection: View {
                 .font(.notesSmall).foregroundStyle(Color.ink2)
         }
         .sheet(isPresented: $changing) {
-            ChangeLockPassword(locks: graph.locks) {
+            ChangeLockPassword(locks: graph.locks, biometrics: graph.biometrics) {
                 message = "Lock password changed. Other devices use the new one once they sync."
             }
         }
         .sheet(isPresented: $resetting) {
-            ResetLocks(locks: graph.locks) { message = nil }
+            ResetLocks(locks: graph.locks) {
+                // The kept key went with the keyring.
+                graph.biometrics.disable()
+                message = nil
+            }
+        }
+        .sheet(isPresented: $unlocking) {
+            LockSheet(locks: graph.locks, exists: true, unlockFor: "Unlock locked notes") { _ in enable() }
+        }
+    }
+
+    private func turnOn() {
+        // The session itself, not the observed state: right after the sheet unlocks, that lags.
+        if graph.locks.state.value != .unlocked {
+            unlocking = true
+            return
+        }
+        enable()
+    }
+
+    private func enable() {
+        turningOn = true
+        Task {
+            let outcome = await graph.biometrics.enable()
+            turningOn = false
+            switch outcome {
+            case .done: message = "\(graph.biometry.name) unlock is on for this iPhone."
+            case .cancelled: message = nil
+            default: message = "Couldn’t turn on \(graph.biometry.name) unlock. Try again."
+            }
         }
     }
 }
@@ -106,6 +151,7 @@ private struct KeyringSheet<Fields: View>: View {
 
 private struct ChangeLockPassword: View {
     let locks: LockSession
+    let biometrics: BiometricUnlock
     let done: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var current = ""
@@ -140,10 +186,13 @@ private struct ChangeLockPassword: View {
         guard found.isEmpty else { return }
         busy = true
         Task {
+            let rewrapped = try? await locks.passwordEntry()
             let outcome = await locks.changePassword(current: current, next: next)
             busy = false
             switch outcome {
             case .done:
+                // Same key, new entry: Face ID unlock follows it.
+                biometrics.passwordChanged(rewrapped: rewrapped ?? nil)
                 done()
                 dismiss()
             case .wrongPassword: errors = ["current": "That isn’t your lock password."]

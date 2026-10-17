@@ -174,6 +174,31 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["New note"].waitForExistence(timeout: 10))
     }
 
+    /// The lock sheet after Lock note: the first lock on any device creates
+    /// the lock password; after that (the flows share a server) it's asked for.
+    private func enterLockPassword(audited: Bool = false) throws {
+        let create = app.navigationBars["Create a lock password"]
+        let existing = app.navigationBars["Lock this note"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5) || existing.exists)
+        let password = app.secureTextFields["Lock password"]
+        password.tap()
+        password.typeText(lockPassword)
+        if existing.exists {
+            app.buttons["Lock"].tap()
+            return
+        }
+        let confirm = app.secureTextFields["Confirm password"]
+        confirm.tap()
+        confirm.typeText(lockPassword)
+        if audited {
+            screenshot("create lock password")
+            try audit("create lock password")
+        }
+        app.buttons["Create and lock"].tap()
+    }
+
+    private let lockPassword = "lock pass 123"
+
     func testSignInWriteAndSync() async throws {
         try signIn(audited: true)
 
@@ -280,24 +305,94 @@ final class FlowTests: XCTestCase {
         try audit("picture")
     }
 
+    /// Face ID (faked: it matches at once) is offered right after the lock
+    /// password, then opens the locked note without it.
+    func testFaceIDUnlocksALockedNote() throws {
+        app.launchArguments += ["--fake-biometrics=match"]
+        try signIn()
+        app.buttons["New note"].tap()
+        app.typeText("Bank\nPIN 4321")
+        app.buttons["More"].tap()
+        app.buttons["Lock note"].tap()
+        try enterLockPassword()
+
+        let offer = app.alerts["Use Face ID for locked notes?"]
+        XCTAssertTrue(offer.waitForExistence(timeout: 15))
+        screenshot("face id offer")
+        // A system alert: iOS sizes its text, capped, and the audit reports the cap.
+        try audit("face id offer", [.sufficientElementDescription, .hitRegion, .contrast])
+        offer.buttons["Use Face ID"].tap()
+
+        // Locked from its own screen: Face ID waits to be asked.
+        let lockNow = app.buttons["Lock now"]
+        XCTAssertTrue(lockNow.waitForExistence(timeout: 15))
+        lockNow.tap()
+        let useFaceID = app.buttons["Use Face ID"]
+        XCTAssertTrue(useFaceID.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.secureTextFields["Lock password"].exists)
+        screenshot("locked note with face id")
+        try audit("locked note with face id")
+
+        // Opened again: Face ID is asked for at once and opens it.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Bank")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        let editor = app.textViews.firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        XCTAssertTrue((editor.value as? String ?? "").contains("PIN 4321"), "\(editor.value ?? "")")
+
+        // Settings has it on; turned off, the password is the only way in.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["Tags"].tap()
+        app.buttons["Settings"].tap()
+        let toggle = app.switches["Unlock with Face ID"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.value as? String, "1")
+        toggle.switches.firstMatch.tap()
+        XCTAssertEqual(toggle.value as? String, "0")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(lockNow.waitForExistence(timeout: 10))
+        lockNow.tap()
+        XCTAssertTrue(app.secureTextFields["Lock password"].waitForExistence(timeout: 5))
+        XCTAssertFalse(useFaceID.exists)
+    }
+
+    /// Dismissing the Face ID prompt is a choice: the password alone next time, not asked again.
+    func testDismissedFaceIDIsNotOfferedAgain() throws {
+        app.launchArguments += ["--fake-biometrics=cancel"]
+        try signIn()
+        app.buttons["New note"].tap()
+        app.typeText("Diary\nDear diary")
+        app.buttons["More"].tap()
+        app.buttons["Lock note"].tap()
+        try enterLockPassword()
+        let offer = app.alerts["Use Face ID for locked notes?"]
+        XCTAssertTrue(offer.waitForExistence(timeout: 15))
+        offer.buttons["Use Face ID"].tap()
+
+        let lockNow = app.buttons["Lock now"]
+        XCTAssertTrue(lockNow.waitForExistence(timeout: 15))
+        lockNow.tap()
+        let field = app.secureTextFields["Lock password"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Use Face ID"].exists)
+        field.tap()
+        field.typeText(lockPassword)
+        app.buttons["Unlock"].tap()
+        XCTAssertTrue(lockNow.waitForExistence(timeout: 15))
+        XCTAssertFalse(offer.waitForExistence(timeout: 2), "Face ID was offered again")
+    }
+
     func testLockAndUnlockANote() async throws {
         try signIn()
         app.buttons["New note"].tap()
         app.typeText("Secret plans\nMeet at noon")
         app.buttons["More"].tap()
         app.buttons["Lock note"].tap()
-
-        // The first lock on any device creates the lock password.
-        XCTAssertTrue(app.navigationBars["Create a lock password"].waitForExistence(timeout: 5))
-        let password = app.secureTextFields["Lock password"]
-        password.tap()
-        password.typeText("lock pass 123")
-        let confirm = app.secureTextFields["Confirm password"]
-        confirm.tap()
-        confirm.typeText("lock pass 123")
-        screenshot("create lock password")
-        try audit("create lock password")
-        app.buttons["Create and lock"].tap()
+        try enterLockPassword(audited: true)
 
         let lockNow = app.buttons["Lock now"]
         XCTAssertTrue(lockNow.waitForExistence(timeout: 15))
@@ -327,7 +422,7 @@ final class FlowTests: XCTestCase {
         app.buttons["Unlock"].tap()
         XCTAssertTrue(app.staticTexts["Wrong password."].waitForExistence(timeout: 15))
         field.tap()
-        field.typeText("lock pass 123")
+        field.typeText(lockPassword)
         app.buttons["Unlock"].tap()
         let editor = app.textViews.firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 15))

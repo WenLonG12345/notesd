@@ -13,6 +13,9 @@ final class AppGraph {
     let engine: SyncEngine
     let images: ImageStore
     let locks: LockSession
+    /// Face ID unlock for locked notes, and what this iPhone calls it.
+    let biometrics: BiometricUnlock
+    let biometry: BiometryKind
     let mailer: NoteMailer
     let email: EmailSetup
     @ObservationIgnored private(set) lazy var scheduler = SyncScheduler(graph: self)
@@ -64,7 +67,10 @@ final class AppGraph {
     ) {
         if Self.uiTesting {
             accounts.clear()
-            for key in ["listFilter", "onboardingDismissed", "appearance", "openTags"] {
+            for key in [
+                "listFilter", "onboardingDismissed", "appearance", "openTags", BiometricUnlock.bound,
+                BiometricUnlock.declined,
+            ] {
                 Self.defaults.removeObject(forKey: key)
             }
         }
@@ -77,6 +83,13 @@ final class AppGraph {
         engine = SyncEngine(db: database, api: { [accounts] in accounts.client() }, images: images)
         let locks = LockSession(keys: engine.lockKeys, api: { [accounts] in accounts.client() })
         self.locks = locks
+        let kind = Self.uiTesting ? BiometryKind.faceID : BiometryKind.current()
+        biometry = kind
+        biometrics = BiometricUnlock(
+            locks: locks,
+            biometrics: Self.uiTesting
+                ? FakeBiometrics(arguments: ProcessInfo.processInfo.arguments)
+                : KeychainBiometrics(service: "notesd.locks.biometric", kind: kind))
         let loader = ImageLoader(store: images) { sealed in
             locks.key().flatMap { try? LockedNotes.decryptImage($0, sealed) }
         }
@@ -149,6 +162,7 @@ final class AppGraph {
         accounts.signOut()
         email.forget()
         await locks.forget()
+        biometrics.disable()
     }
 
     /// Back to a fresh install: no notes, no account, onboarding on next launch.
@@ -161,6 +175,7 @@ final class AppGraph {
         accounts.clear()
         email.forget()
         await locks.forget()
+        biometrics.disable()
         listFilter = nil
         onboardingDismissed = false
     }

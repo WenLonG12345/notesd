@@ -20,6 +20,10 @@ struct NoteScreen: View {
     @State private var picked: PhotosPickerItem?
     /// Lock note was chosen, and the session needs a password created or entered first.
     @State private var lockSheet: LockPrompt?
+    /// The lock password was typed in the sheet: once it's gone, Face ID unlock is offered.
+    @State private var typedPassword = false
+    /// Locked with this screen's Lock now: the placeholder doesn't ask for Face ID straight back.
+    @State private var lockedHere = false
 
     init(
         store: NoteStore, images: ImageStore? = nil, locks: LockSession? = nil, id: String, startTag: String?,
@@ -80,7 +84,9 @@ struct NoteScreen: View {
                 .padding(.top, 8)
             }
             if model.needsUnlock || model.unreadable {
-                LockedNoteView(title: model.title, unreadable: model.unreadable, locks: graph.locks)
+                LockedNoteView(
+                    title: model.title, unreadable: model.unreadable, locks: graph.locks,
+                    promptBiometrics: !lockedHere)
             } else if model.document != nil {
                 EditorView(model: model, controller: controller, tags: model.tags, autofocus: isNew)
                     .ignoresSafeArea(.container, edges: .bottom)
@@ -97,6 +103,7 @@ struct NoteScreen: View {
             if model.locked && !model.needsUnlock {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Lock now", systemImage: "lock") {
+                        lockedHere = true
                         saveNow()
                         Task { await graph.locks.lock() }
                     }
@@ -152,8 +159,14 @@ struct NoteScreen: View {
             }
         }
         .task { await graph.email.refresh() }
-        .sheet(item: $lockSheet) { prompt in
-            LockSheet(locks: graph.locks, exists: prompt.exists) { setLocked(true) }
+        .sheet(item: $lockSheet) {
+            if typedPassword { graph.biometrics.offer() }
+            typedPassword = false
+        } content: { prompt in
+            LockSheet(locks: graph.locks, exists: prompt.exists) { typed in
+                typedPassword = typed
+                setLocked(true)
+            }
         }
         .photosPicker(isPresented: pickerShown, selection: $picked, matching: .images, preferredItemEncoding: .current)
         .onChange(of: picked) { _, item in
@@ -175,6 +188,7 @@ struct NoteScreen: View {
             LinkSheet(controller: controller)
         }
         .onDisappear { saveNow() }
+        .onChange(of: model.needsUnlock) { _, locked in if !locked { lockedHere = false } }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { saveNow() }
         }

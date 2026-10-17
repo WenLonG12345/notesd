@@ -19,16 +19,30 @@ extension LockSession.Outcome {
 
 /// A locked note while locked notes are locked: its title and the lock password field.
 struct LockedNoteView: View {
+    @Environment(AppGraph.self) private var graph
+    @Environment(\.scenePhase) private var scenePhase
     let title: String
     /// Locked with a key that was reset: no password opens it.
     let unreadable: Bool
     let locks: LockSession
+    /// Ask for Face ID as soon as this shows: the note was opened, not just locked from its screen.
+    let promptBiometrics: Bool
+    /// Face ID was asked for since the app last came to the front: a dismissed prompt isn't asked again.
+    @State private var prompted: Bool
     @State private var password = ""
     @State private var error: String?
     @State private var busy = false
     /// Counts wrong passwords: each one shakes the field.
     @State private var misses = 0
     @FocusState private var focused: Bool
+
+    init(title: String, unreadable: Bool, locks: LockSession, promptBiometrics: Bool = true) {
+        self.title = title
+        self.unreadable = unreadable
+        self.locks = locks
+        self.promptBiometrics = promptBiometrics
+        _prompted = State(initialValue: !promptBiometrics)
+    }
 
     var body: some View {
         ScrollView {
@@ -81,13 +95,27 @@ struct LockedNoteView: View {
                     }
                     .buttonStyle(PressScaleStyle(scale: 0.97))
                     .disabled(busy)
+                    if graph.biometrics.enabled {
+                        BiometricButton(kind: graph.biometry, action: useBiometrics).disabled(busy)
+                    }
                 }
             }
             .padding(.horizontal, 32)
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
-        .onAppear { if !unreadable { focused = true } }
+        .onAppear {
+            // The keyboard waits while Face ID is about to ask.
+            if !unreadable && (prompted || !graph.biometrics.enabled) { focused = true }
+        }
+        // Asked once the app is in front (Face ID can't ask before), and again each time it comes back.
+        // Face ID's own prompt makes the app inactive for a moment; that isn't coming back.
+        .task(id: scenePhase) {
+            if scenePhase == .background { prompted = false }
+            guard scenePhase == .active, !prompted, !unreadable, graph.biometrics.enabled else { return }
+            prompted = true
+            useBiometrics()
+        }
     }
 
     private func unlock() {
@@ -96,22 +124,74 @@ struct LockedNoteView: View {
         Task {
             let ok = await locks.unlock(password)
             busy = false
-            if !ok {
+            if ok {
+                graph.biometrics.offer()
+            } else {
                 error = "Wrong password."
                 password = ""
                 misses += 1
             }
         }
     }
+
+    private func useBiometrics() {
+        guard !busy else { return }
+        busy = true
+        error = nil
+        // The keyboard would show under the prompt.
+        focused = false
+        Task {
+            let outcome = await graph.biometrics.unlock()
+            busy = false
+            if let message = outcome.message(graph.biometry) {
+                error = message
+            }
+            if outcome != .done { focused = true }
+        }
+    }
+}
+
+extension BiometricUnlock.Outcome {
+    /// What the unlock screen says when Face ID didn't open locked notes; nil when there's nothing to say.
+    func message(_ kind: BiometryKind) -> String? {
+        switch self {
+        case .done, .cancelled: nil
+        case .stale:
+            "\(kind.name) unlock is off: the lock password or your \(kind.name) changed. Use the password."
+        case .needsUnlock, .failed: "\(kind.name) didn’t work. Use the password."
+        }
+    }
+}
+
+/// "Use Face ID": the second way in, under Unlock.
+struct BiometricButton: View {
+    let kind: BiometryKind
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Use \(kind.name)", systemImage: kind.symbol)
+                .font(.notesButton)
+                .foregroundStyle(Color(Palette.link))
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .contentShape(.capsule)
+        }
+        .buttonStyle(PressScaleStyle(scale: 0.97))
+    }
 }
 
 /// Locking a note while locked notes are locked (or there's no lock password
-/// yet): unlock with the password, or create one. `done` runs once unlocked.
+/// yet): unlock with the password (or Face ID), or create one. Settings uses
+/// it to unlock before turning Face ID on (`unlockFor`). `done` runs once
+/// unlocked; `typed` says it was with the password, so Face ID can be offered.
 struct LockSheet: View {
+    @Environment(AppGraph.self) private var graph
     let locks: LockSession
     /// Whether a lock password exists already.
     let exists: Bool
-    let done: () -> Void
+    /// Unlocking for something other than locking a note: the sheet's title.
+    var unlockFor: String?
+    let done: (_ typed: Bool) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var password = ""
     @State private var confirm = ""
@@ -128,6 +208,11 @@ struct LockSheet: View {
                         .contentShape(.rect)
                         .onChange(of: password) { errors = [:] }
                     if let e = errors["password"] { Text(e).font(.notesSmall).foregroundStyle(Color.errInk) }
+                    if exists && unlockFor == nil && graph.biometrics.enabled {
+                        Button("Use \(graph.biometry.name)", systemImage: graph.biometry.symbol, action: useBiometrics)
+                            .frame(minHeight: 44)
+                            .disabled(busy)
+                    }
                     if !exists {
                         SecureField("Confirm password", text: $confirm)
                             .textContentType(.newPassword)
@@ -138,9 +223,11 @@ struct LockSheet: View {
                     }
                 } footer: {
                     Text(
-                        exists
-                            ? "Locked notes share one lock password, made the first time a note was locked on any of your devices. Enter it to lock this note."
-                            : "Locked notes are encrypted on your devices; the server can’t read them. Every locked note uses this password. If you forget it, those notes can’t be recovered."
+                        unlockFor != nil
+                            ? "Enter the lock password your locked notes share."
+                            : exists
+                                ? "Locked notes share one lock password, made the first time a note was locked on any of your devices. Enter it to lock this note."
+                                : "Locked notes are encrypted on your devices; the server can’t read them. Every locked note uses this password. If you forget it, those notes can’t be recovered."
                     )
                     .font(.notesSmall).foregroundStyle(Color.ink2)
                 }
@@ -151,7 +238,7 @@ struct LockSheet: View {
             .font(.notesBody)
             .scrollContentBackground(.hidden)
             .background(Color.notesBg)
-            .navigationTitle(exists ? "Lock this note" : "Create a lock password")
+            .navigationTitle(unlockFor ?? (exists ? "Lock this note" : "Create a lock password"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -161,8 +248,11 @@ struct LockSheet: View {
                     if busy {
                         ProgressView().accessibilityLabel(exists ? "Unlocking…" : "Creating…")
                     } else {
-                        Button(exists ? "Lock" : "Create and lock", systemImage: "lock", action: submit)
-                            .buttonStyle(.glassProminent)
+                        Button(
+                            unlockFor != nil ? "Unlock" : exists ? "Lock" : "Create and lock",
+                            systemImage: unlockFor != nil ? "lock.open" : "lock", action: submit
+                        )
+                        .buttonStyle(.glassProminent)
                     }
                 }
             }
@@ -179,7 +269,7 @@ struct LockSheet: View {
                 busy = false
                 if ok {
                     dismiss()
-                    done()
+                    done(true)
                 } else {
                     errors = ["password": "Wrong password."]
                 }
@@ -199,9 +289,24 @@ struct LockSheet: View {
             busy = false
             if outcome == .done {
                 dismiss()
-                done()
+                done(true)
             } else {
                 errors = ["form": outcome.message ?? ""]
+            }
+        }
+    }
+
+    private func useBiometrics() {
+        busy = true
+        errors = [:]
+        Task {
+            let outcome = await graph.biometrics.unlock()
+            busy = false
+            if outcome == .done {
+                dismiss()
+                done(false)
+            } else if let message = outcome.message(graph.biometry) {
+                errors = ["password": message]
             }
         }
     }
