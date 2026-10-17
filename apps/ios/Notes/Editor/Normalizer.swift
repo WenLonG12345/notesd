@@ -30,17 +30,20 @@ nonisolated struct Normalizer {
         let ranges = Blocks.of(text)
         let infos = assign(text, ranges)
         let markers = markers(infos)
+        let edges = quoteEdges(infos)
         var changed = IndexSet()
         for (k, r) in ranges.enumerated() {
             let info = infos[k]
             let current = r.attr
-            if let current, current.sameAs(path: info.path, leaf: info.leaf, marker: markers[k]),
+            if let current, current.sameAs(path: info.path, leaf: info.leaf, marker: markers[k], quoteEdges: edges[k]),
                 attributeCovers(text, current, r.whole)
             {
                 continue
             }
             text.addAttribute(
-                .notesBlock, value: BlockAttr(path: info.path, leaf: info.leaf, marker: markers[k]), range: r.whole)
+                .notesBlock,
+                value: BlockAttr(path: info.path, leaf: info.leaf, marker: markers[k], quoteEdges: edges[k]),
+                range: r.whole)
             changed.insert(k)
         }
         clipMarks(text, Blocks.of(text))
@@ -166,6 +169,17 @@ nonisolated struct Normalizer {
                 next[item.listId] = n + 1
                 return .number(n)
             }
+        }
+    }
+
+    /// Which quotes each line starts and ends: those its neighbour isn't in.
+    private static func quoteEdges(_ infos: [Info]) -> [QuoteEdges] {
+        infos.indices.map { k in
+            let quotes = infos[k].path.filter { !isItem($0) }
+            let above = k > 0 ? infos[k - 1].path : []
+            let below = k + 1 < infos.count ? infos[k + 1].path : []
+            return QuoteEdges(
+                starts: quotes.count { !above.contains($0) }, ends: quotes.count { !below.contains($0) })
         }
     }
 

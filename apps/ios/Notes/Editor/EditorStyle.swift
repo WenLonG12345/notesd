@@ -16,6 +16,10 @@ nonisolated struct EditorStyle {
     /// Width one quote level adds; the bar sits at its start.
     let quoteIndent: CGFloat = 18
     let quoteBar: CGFloat = 2
+    /// Space a quote adds above and below itself (with a line's own 4 after,
+    /// about the web's 0.6em), so two quotes in a row read as two.
+    let quoteSpaceBefore: CGFloat = 6
+    let quoteSpaceAfter: CGFloat = 10
     let boxSize: CGFloat = 18
     // Under half a space: two tags in a row keep a gap between their pills.
     let tagPadX: CGFloat = 2
@@ -56,6 +60,8 @@ nonisolated struct EditorStyle {
         default:
             p.paragraphSpacing = 4
         }
+        if attr.quoteEdges.starts > 0 { p.paragraphSpacingBefore += quoteSpaceBefore }
+        if attr.quoteEdges.ends > 0 { p.paragraphSpacing = max(p.paragraphSpacing, quoteSpaceAfter) }
         return p
     }
 

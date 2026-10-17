@@ -37,15 +37,19 @@ nonisolated final class BlockAttr: NSObject {
     let path: [Container]
     let leaf: Leaf
     let marker: Marker?
+    /// How many of its innermost quotes start and end on this line: separate
+    /// quotes get space between them, and their bars stop at their own lines.
+    let quoteEdges: QuoteEdges
 
-    init(path: [Container], leaf: Leaf, marker: Marker? = nil) {
+    init(path: [Container], leaf: Leaf, marker: Marker? = nil, quoteEdges: QuoteEdges = .init()) {
         self.path = path
         self.leaf = leaf
         self.marker = marker
+        self.quoteEdges = quoteEdges
     }
 
-    func sameAs(path: [Container], leaf: Leaf, marker: Marker?) -> Bool {
-        self.path == path && self.leaf == leaf && self.marker == marker
+    func sameAs(path: [Container], leaf: Leaf, marker: Marker?, quoteEdges: QuoteEdges) -> Bool {
+        self.path == path && self.leaf == leaf && self.marker == marker && self.quoteEdges == quoteEdges
     }
 
     var item: Container.Item? {
@@ -59,6 +63,12 @@ nonisolated final class BlockAttr: NSObject {
     var dim: Bool { path.contains { if case .item(let i) = $0 { i.kind == .task && i.checked } else { false } } }
 
     var listDepth: Int { path.filter { if case .item = $0 { true } else { false } }.count }
+}
+
+/// The innermost `starts` quotes of a line's path begin on it; the innermost `ends` end on it.
+nonisolated struct QuoteEdges: Equatable {
+    var starts = 0
+    var ends = 0
 }
 
 /// A link's target. Equal by value, so adjacent runs of one link merge.

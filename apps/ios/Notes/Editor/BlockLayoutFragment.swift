@@ -28,15 +28,23 @@ nonisolated final class BlockLayoutFragment: NSTextLayoutFragment {
         let height = layoutFragmentFrame.height
         let originX = point.x - layoutFragmentFrame.minX
 
-        // Quote bars, one per quote level, in the path's order.
+        // Quote bars, one per quote level, in the path's order. A quote that starts or ends on this
+        // line has its bar start or end with the text, not in the space between it and the next.
+        let levels = attr.path.count { !isItem($0) }
+        let textTop = textLineFragments.first.map { point.y + $0.typographicBounds.minY } ?? point.y
+        let textBottom = textLineFragments.last.map { point.y + $0.typographicBounds.maxY } ?? point.y + height
         var offset: CGFloat = 0
+        var level = 0
         for container in attr.path {
             if isItem(container) {
                 offset += style.itemIndent
             } else {
+                let top = level >= levels - attr.quoteEdges.starts ? textTop : point.y
+                let bottom = level >= levels - attr.quoteEdges.ends ? textBottom : point.y + height
                 context.setFillColor(Palette.accent.cgColor)
-                context.fill(CGRect(x: originX + offset, y: point.y, width: style.quoteBar, height: height))
+                context.fill(CGRect(x: originX + offset, y: top, width: style.quoteBar, height: bottom - top))
                 offset += style.quoteIndent
+                level += 1
             }
         }
 

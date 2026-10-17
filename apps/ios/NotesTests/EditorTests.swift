@@ -166,6 +166,20 @@ struct EditorTests {
         #expect(markdown == "> ## one\n\ntwo\n")
     }
 
+    @Test func eachQuoteKnowsWhereItStartsAndEnds() {
+        load("> one\n\n> two\n>\n> > three\n\nafter\n")
+        func edges(_ text: String) -> QuoteEdges? {
+            let at = (view.textStorage.string as NSString).range(of: text).location
+            return (view.textStorage.attribute(.notesBlock, at: at, effectiveRange: nil) as? BlockAttr)?.quoteEdges
+        }
+        #expect(edges("one") == QuoteEdges(starts: 1, ends: 1))
+        #expect(edges("two") == QuoteEdges(starts: 1, ends: 0))
+        // The nested quote ends with the one around it.
+        #expect(edges("three") == QuoteEdges(starts: 1, ends: 2))
+        #expect(edges("after") == QuoteEdges())
+        #expect(markdown == "> one\n\n> two\n>\n> > three\n\nafter\n")
+    }
+
     @Test func indentNestsUnderThePreviousItem() {
         load("- a\n- b\n")
         cursor(after: "b")
