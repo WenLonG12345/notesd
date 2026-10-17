@@ -101,7 +101,11 @@ those folders is in its target, with no project edit.
   PBKDF2, checked against `shared/crypto-fixtures`. The keyring syncs every
   cycle into `lock_keys`; `LockSession` holds the key in memory only and
   drops it when the app goes to the background, after five idle minutes or
-  on Lock now, saving open notes first. No Face ID yet.
+  on Lock now, saving open notes first. Face ID unlock (`BiometricUnlock`,
+  a port of Android's `FingerprintUnlock`) keeps the key in a Keychain item
+  behind `.biometryCurrentSet`, on this device only, bound to the password
+  entry it was made with (`KeychainBiometrics`). UI tests fake it with
+  `--fake-biometrics=match|cancel`.
 - **Email**: the server renders and sends; `NoteMailer` syncs first and
   passes the revision. The tests fake Resend with a small HTTP listener
   (`FakeResend`), and `scripts/with-server.sh` points the UI tests' server
@@ -109,4 +113,4 @@ those folders is in its target, with no project edit.
 
 ## Not built yet
 
-Face ID unlock, the recovery code (on no platform yet), and iPad layouts.
+The recovery code (on no platform yet) and iPad layouts.

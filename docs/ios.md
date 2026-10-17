@@ -4,9 +4,8 @@ The iPhone app keeps a full copy of your notes on the phone. Writing,
 search and tags all work offline, and the app syncs with your notesd server
 whenever it can. It runs on iOS 26 or later.
 
-It does what the web and Android apps do, with two exceptions: locked
-notes open with the lock password only (no Face ID yet), and there's no
-iPad layout.
+It does what the web and Android apps do, except that there's no iPad
+layout.
 
 ## Install
 
@@ -107,9 +106,18 @@ stays readable, so it shows in the list and in search by title.
 
 - **Lock a note** from its ••• menu. The first time, on any of your devices,
   you create the lock password; every locked note uses it.
-- **Open a locked note** by typing the lock password. Locked notes stay open
+- **Open a locked note** by typing the lock password, or with Face ID
+  (Touch ID on an iPhone that has it) once that's on. Locked notes stay open
   until you leave the app, choose **Lock now**, or don't use the app for
   five minutes.
+- **Face ID**: the first time you type the lock password on the iPhone, it
+  asks whether to use Face ID for locked notes from then on. After that,
+  opening a locked note asks for your face straight away; **Use Password**
+  falls back to the lock password. **Not Now** is remembered.
+  **Settings → Locked notes → Unlock with Face ID** turns it on or off.
+  It turns itself off, and asks for the password again, when the lock
+  password is changed on another device or reset, or when you set up
+  Face ID again. Changing the lock password on the iPhone keeps it on.
 - **Remove the lock** from the ••• menu of an open locked note.
 - **Settings → Locked notes** changes the lock password, or resets it if you
   forgot it. Resetting needs your account password, and notes locked with
@@ -117,7 +125,7 @@ stays readable, so it shows in the list and in search by title.
 
 While a locked note is open, the app covers it in the app switcher. iOS
 doesn't let apps block screenshots, so the iPhone app can't do what Android
-does there. Face ID unlock isn't there yet.
+does there.
 
 ## Email
 

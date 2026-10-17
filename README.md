@@ -16,7 +16,7 @@ database, so it works offline.
 
 - **Organize with tags.** Add tags like `#work` and `#reading` anyewhere in your note. The sidebar lists all your tags, so you can browse by topic. Tags can be nested with `/` (`#home/garden`).
 
-- **Locked notes.** You can secure notes with end-to-end encryption (AES-256-GCM). The server only stores ciphertext. Unlock with a password, a passkey (web) or biometric (Android).  
+- **Locked notes.** You can secure notes with end-to-end encryption (AES-256-GCM). The server only stores ciphertext. Unlock with a password, a passkey (web) or biometrics (Android and iOS).  
   <img width="368" height="259" alt="Image" src="https://github.com/user-attachments/assets/607ed533-451f-42ed-90d6-e1cfe162deae" />  
   See [Security](#security) for more details.
 
@@ -80,7 +80,7 @@ The full threat model is in
 | Server | Go, `net/http`, SQLite with WAL and FTS5 |
 | Web | React, TypeScript, Tiptap/ProseMirror, Vite; embedded in the server binary |
 | Android | Kotlin, Jetpack Compose, a native `EditText` editor, bundled SQLite with FTS5, WorkManager |
-| iOS | Swift, SwiftUI, a TextKit 2 `UITextView` editor, SQLite with FTS5, CryptoKit for locked notes, background refresh (iPhone only; no Face ID unlock yet) |
+| iOS | Swift, SwiftUI, a TextKit 2 `UITextView` editor, SQLite with FTS5, CryptoKit for locked notes, background refresh, Face ID for locked notes (iPhone only) |
 
 A few things that may be interesting if you're reading the code:
 
