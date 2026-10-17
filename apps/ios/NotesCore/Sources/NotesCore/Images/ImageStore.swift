@@ -108,6 +108,36 @@ public final class ImageStore: Sendable {
         return moved
     }
 
+    /// Removes the images with ids `ids` from this device, pending upload or
+    /// cached, unless a note still uses them: after a lock change they were
+    /// stored again, and a plain copy of a locked note's picture mustn't stay
+    /// behind, nor upload.
+    public func purge(_ ids: Set<String>) async {
+        var gone: [String] = []
+        for id in ids {
+            let removed = try? await db.write { sql -> Bool in
+                // A note's text, a locked body's list, or an edit not sent yet.
+                let used = try sql.int64(
+                    """
+                    SELECT EXISTS(SELECT 1 FROM notes WHERE instr(content, ?1) > 0)
+                        OR EXISTS(SELECT 1 FROM locked_images WHERE instr(image_ids, ?1) > 0)
+                        OR EXISTS(SELECT 1 FROM sync_outbox WHERE sent = 0 AND instr(payload_json, ?1) > 0)
+                    """,
+                    id)
+                if used != 0 { return false }
+                try sql.exec("DELETE FROM pending_images WHERE id = ?", id)
+                return true
+            }
+            if removed == true { gone.append(id) }
+        }
+        let fm = FileManager.default
+        for id in gone {
+            for dir in [pendingDir, cacheDir] {
+                for (ext, _) in Self.types { try? fm.removeItem(at: dir.appending(path: "\(id).\(ext)")) }
+            }
+        }
+    }
+
     public func pending() async throws -> [PendingImage] {
         try await db.read { sql in
             try sql.query("SELECT id, content_type FROM pending_images ORDER BY created_at, id") {
@@ -121,11 +151,23 @@ public final class ImageStore: Sendable {
     /// exist. Stops at the first failure that a retry might fix.
     public func upload(_ client: ApiClient) async throws -> ApiResult<Void> {
         for image in try await pending() {
-            guard let name = try? Self.fileName(image.id, image.type),
-                let bytes = try? Data(contentsOf: pendingDir.appending(path: name))
-            else {
+            // A type that can't be stored can't be uploaded either: nothing to retry.
+            guard let name = try? Self.fileName(image.id, image.type) else {
                 try await forget(image.id)
                 continue
+            }
+            let file = pendingDir.appending(path: name)
+            let bytes: Data
+            do {
+                bytes = try Data(contentsOf: file)
+            } catch {
+                // Gone for good: forgotten, so it doesn't hold every note back. Only unreadable for now
+                // (the phone locked during a background sync): kept, and the cycle stops to try again.
+                if !FileManager.default.fileExists(atPath: file.path) {
+                    try await forget(image.id)
+                    continue
+                }
+                throw error
             }
             switch await client.putImage(image.id, bytes: bytes, type: image.type) {
             case .ok:

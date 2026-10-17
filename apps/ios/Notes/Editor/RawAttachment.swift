@@ -56,9 +56,14 @@ nonisolated final class RawAttachment: NSTextAttachment {
         let font = font(attributes)
         let available = max(proposedLineFragment.width - position.x, 40)
         if let picture {
-            let w = min(CGFloat(picture.width), available)
-            let h = max((w * CGFloat(picture.height) / CGFloat(picture.width)).rounded(), 1)
-            return CGRect(x: 0, y: font.descender, width: w.rounded(.down), height: h)
+            let ratio = CGFloat(picture.height) / CGFloat(picture.width)
+            var w = min(CGFloat(picture.width), available)
+            // At most four lines' width tall: the size comes from the note's text, and a made-up one
+            // (w=999&h=999999) would otherwise draw a bitmap thousands of screens high.
+            let tallest = available * 4
+            if w * ratio > tallest { w = max(tallest / ratio, 1) }
+            let h = min(max((w * ratio).rounded(), 1), tallest)
+            return CGRect(x: 0, y: font.descender, width: max(w.rounded(.down), 1), height: h)
         }
         if isBlock {
             let measured = text(font, wraps: true).boundingRect(

@@ -173,6 +173,8 @@ final class AppGraph {
         try? await store.wipe()
         try? await images.wipe()
         accounts.clear()
+        // Through the key store, which moves its generation on: a keyring fetch still in flight can't put it back.
+        try? await engine.lockKeys.replace([])
         email.forget()
         await locks.forget()
         biometrics.disable()

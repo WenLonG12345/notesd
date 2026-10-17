@@ -41,7 +41,8 @@ struct SettingsView: View {
                     SectionHeader("Sync")
                 }
             }
-            if graph.lockState != .none || graph.account != .none {
+            // With no lock password, creating one needs the server: signed out, there's nothing to offer.
+            if graph.lockState != .none || graph.account.isSignedIn {
                 LockedNotesSection()
             }
             if case .signedIn = graph.account {

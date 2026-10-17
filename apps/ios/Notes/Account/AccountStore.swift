@@ -11,6 +11,10 @@ nonisolated enum Account: Equatable, Sendable {
     /// The server stays fixed: these notes belong to it.
     case signedOut(server: String, username: String)
 
+    var isSignedIn: Bool {
+        if case .signedIn = self { true } else { false }
+    }
+
     var server: String? {
         switch self {
         case .none: nil

@@ -348,8 +348,17 @@ final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDel
         }
     }
 
-    /// The pictures this note shows, by id.
-    func imageIds() -> Set<String> { Set(ImageRef.ids(Markdown.serialize(document()))) }
+    /// The pictures this note shows, by id: its picture runs, as `replaceImages` rewrites them. Not
+    /// the Markdown's pattern, which a link to `notesd:image/…` also matches: a lock change would
+    /// then try to move an image the note doesn't show, and stop if it isn't on this iPhone.
+    func imageIds() -> Set<String> {
+        var ids = Set<String>()
+        textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length)) {
+            value, _, _ in
+            if let id = (value as? RawAttachment)?.picture?.id { ids.insert(id) }
+        }
+        return ids
+    }
 
     /// After a lock change moved the pictures (§10.1): points their runs at the new ids, old id → new id.
     func replaceImages(_ moved: [String: String]) {

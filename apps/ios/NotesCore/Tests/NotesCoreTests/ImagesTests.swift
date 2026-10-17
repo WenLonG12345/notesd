@@ -195,6 +195,28 @@ final class ImagesTests {
         #expect(await a.images.reseal(locked, locked: false, key: LockedNotes.newKey()) == nil)
     }
 
+    @Test func aPlainCopyALockReplacedIsRemovedUnlessAnotherNoteShowsIt() async throws {
+        let a = try await client()
+        a.offline = true
+        let key = LockedNotes.newKey()
+        let plain = try await a.images.add(png, type: "image/png")
+        let body = ImageRef(id: plain, width: 1, height: 1).markdown() + "\n"
+        _ = try await a.save("n", "Trip", body)
+        _ = try await a.save("m", "Also", body)
+        let locked = try #require(await a.images.reseal(body, locked: true, key: key))
+        _ = try await a.save("n", "Trip", LockedNotes.encrypt(key, locked))
+
+        // Note m still shows it.
+        await a.images.purge([plain])
+        #expect(a.images.has(plain))
+        // Its unsent create now holds the new text too.
+        _ = try await a.save("m", "Also", "Nothing here\n")
+        await a.images.purge([plain])
+        #expect(!a.images.has(plain))
+        // Never uploaded: the plain bytes don't go now either.
+        #expect(try await a.images.pending().map(\.id) == [ImageRef.ids(locked).first])
+    }
+
     @Test func aLockChangeWaitsForImagesThisDeviceDoesntHave() async throws {
         let a = try await client()
         let b = try await client()

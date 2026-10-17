@@ -56,6 +56,10 @@ final class FakeBiometrics: Biometrics {
                 s.cancelNext = false
                 return .cancelled
             }
+            if s.failNext {
+                s.failNext = false
+                return .failed
+            }
             guard let kept = s.kept else { return .invalidated }
             return .ok(kept)
         }
@@ -167,6 +171,27 @@ struct BiometricUnlockTests {
         #expect(await face.unlock() == .stale)
         #expect(!face.enabled)
         #expect(session.state.value == .locked)
+    }
+
+    @Test func aFailedFaceIDKeepsItOnForNextTime() async throws {
+        let face = unlock()
+        #expect(await session.unlock("lock pass 123"))
+        #expect(await face.enable() == .done)
+        await session.lock()
+        biometrics.failNext = true
+        #expect(await face.unlock() == .failed)
+        #expect(face.enabled)
+        #expect(await face.unlock() == .done)
+    }
+
+    @Test func aKeyFromAnOlderKeyringIsntKeptAgainstTheNewEntry() async throws {
+        let face = unlock()
+        #expect(await session.unlock("lock pass 123"))
+        // A reset and new password elsewhere synced; the session hasn't refreshed yet.
+        try await keys.replace([Keyring.create("another one", iterations: 10_000).entry])
+        #expect(await face.enable() == .needsUnlock)
+        #expect(!face.enabled)
+        #expect(biometrics.asked == 0)
     }
 
     @Test func turningItOnNeedsLockedNotesUnlocked() async throws {

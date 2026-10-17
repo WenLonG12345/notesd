@@ -71,11 +71,14 @@ final class EditorModel {
     private var known: (title: String, content: String)?
     /// The plain text the stored envelope holds: unchanged text is saved as the same envelope.
     private var sealed: (plain: String, envelope: String)?
+    /// Pictures a lock change stored again: their old copies go once the note is saved the new way.
+    private var superseded: Set<String> = []
     /// A locked note's edit that came too late to encrypt; saved on the next unlock.
     private var stranded: Document?
     /// What a new note starts with; unchanged, it isn't stored.
     private let blankContent: String
     @ObservationIgnored private var watcher: Task<Void, Never>?
+    @ObservationIgnored private var lockWatcher: Task<Void, Never>?
     @ObservationIgnored private var unhook: (@Sendable () -> Void)?
 
     /// `initial`: the note as already read, so the screen opens with its text;
@@ -103,6 +106,7 @@ final class EditorModel {
     deinit {
         MainActor.assumeIsolated {
             watcher?.cancel()
+            lockWatcher?.cancel()
             unhook?()
         }
     }
@@ -119,7 +123,8 @@ final class EditorModel {
         tags = (try? await store.tags()) ?? []
         if let locks {
             let states = locks.state.stream()
-            Task { [weak self] in
+            // Cancelled with the model: otherwise it waits on the stream for good.
+            lockWatcher = Task { [weak self] in
                 for await state in states {
                     guard let self else { return }
                     self.lockChanged(state)
@@ -176,9 +181,11 @@ final class EditorModel {
 
     /// Locks or unlocks the note: saved like an edit. Locking needs the session
     /// unlocked (the screen asks for the password or creates one first).
-    func setLocked(_ doc: Document, _ on: Bool) {
+    /// `superseded`: pictures stored again for the change, removed once it's saved.
+    func setLocked(_ doc: Document, _ on: Bool, superseded: Set<String> = []) {
         if locked == on { return }
         locked = on
+        self.superseded.formUnion(superseded)
         sealed = nil
         edited()
         save(doc)
@@ -249,6 +256,12 @@ final class EditorModel {
         }
         self.title = note.title
         if locked && note.content == content { sealed = (plain, content) }
+        if !superseded.isEmpty && LockedNotes.isLocked(note.content) == locked {
+            // Saved the new way: a plain copy of a locked note's picture mustn't stay behind, nor upload.
+            let old = superseded
+            superseded = []
+            await images?.purge(old)
+        }
         if !(note.title == title && note.content == content) && edit == edits {
             // Merged with a sync change: the editor shows the result.
             known = (note.title, note.content)
@@ -327,7 +340,8 @@ final class EditorModel {
             let prepared = try await Task.detached(priority: .userInitiated) { try PrepareImage.prepare(data) }.value
             var bytes = prepared.bytes
             var type = prepared.type
-            if locked {
+            var encrypted = locked
+            if encrypted {
                 guard let key = locks?.key() else {
                     imageProblem = "Unlock locked notes to add pictures to this note."
                     return nil
@@ -335,7 +349,19 @@ final class EditorModel {
                 bytes = LockedNotes.encryptImage(key, bytes)
                 type = lockedImageType
             }
-            let id = try await images.add(bytes, type: type)
+            var id = try await images.add(bytes, type: type)
+            // Locked or unlocked while it was stored: the picture goes with the lock, as the
+            // note's others did, and the copy stored the old way goes.
+            while encrypted != locked {
+                encrypted = locked
+                let old = id
+                guard let moved = await moveImages([old], locked: encrypted) else {
+                    await images.purge([old])
+                    return nil
+                }
+                id = moved[old] ?? old
+                if id != old { await images.purge([old]) }
+            }
             return ImageRef(id: id, width: prepared.width, height: prepared.height).markdown()
         } catch let error as ImageError {
             imageProblem = error.message

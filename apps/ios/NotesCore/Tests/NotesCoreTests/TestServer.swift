@@ -85,7 +85,11 @@ final class TestServer: Sendable {
             return
         }
         process.terminate()
-        process.waitUntilExit()
+        // Not waitUntilExit: it waits on the run loop for the exit notification, and from a deinit on
+        // a concurrency thread it can miss one already delivered, hanging the run for good.
+        let deadline = Date().addingTimeInterval(10)
+        while process.isRunning && Date() < deadline { usleep(10_000) }
+        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
     }
 
     func restart() async throws {

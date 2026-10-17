@@ -17,6 +17,11 @@ extension LockSession.Outcome {
     }
 }
 
+extension LockSession {
+    /// When this iPhone's copy of the lock password couldn't be read: not a wrong password.
+    static let unreadKeyring = "The lock password couldn’t be checked on this iPhone. Try again."
+}
+
 /// A locked note while locked notes are locked: its title and the lock password field.
 struct LockedNoteView: View {
     @Environment(AppGraph.self) private var graph
@@ -122,14 +127,16 @@ struct LockedNoteView: View {
         guard !busy, !password.isEmpty else { return }
         busy = true
         Task {
-            let ok = await locks.unlock(password)
+            let outcome = await locks.unlocking(password)
             busy = false
-            if ok {
-                graph.biometrics.offer()
-            } else {
+            switch outcome {
+            case .done: graph.biometrics.offer()
+            case .wrongPassword:
                 error = "Wrong password."
                 password = ""
                 misses += 1
+            // The password may be right: it stays, to try again.
+            default: error = LockSession.unreadKeyring
             }
         }
     }
@@ -265,13 +272,14 @@ struct LockSheet: View {
         if exists {
             busy = true
             Task {
-                let ok = await locks.unlock(password)
+                let outcome = await locks.unlocking(password)
                 busy = false
-                if ok {
+                switch outcome {
+                case .done:
                     dismiss()
                     done(true)
-                } else {
-                    errors = ["password": "Wrong password."]
+                case .wrongPassword: errors = ["password": "Wrong password."]
+                default: errors = ["password": LockSession.unreadKeyring]
                 }
             }
             return

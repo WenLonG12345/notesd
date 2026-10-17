@@ -58,6 +58,18 @@ struct PrepareImageTests {
         #expect(opaque.type == "image/jpeg")
     }
 
+    @Test func aSmallTransparentPartOfALargePictureKeepsPNG() throws {
+        let ctx = CGContext(
+            data: nil, width: 1600, height: 1200, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: 1600, height: 1200))
+        // A 2×2 hole: drawn at 64×64 it would average away.
+        ctx.clear(CGRect(x: 801, y: 601, width: 2, height: 2))
+        let prepared = try PrepareImage.prepare(encode(ctx.makeImage()!, .png))
+        #expect(prepared.type == "image/png")
+    }
+
     @Test func gifsPassThroughAndOtherBytesAreRefused() throws {
         let gif = encode(image(3, 2, alpha: false), .gif)
         let prepared = try PrepareImage.prepare(gif)

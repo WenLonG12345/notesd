@@ -15,5 +15,6 @@ while kill -0 $pid 2>/dev/null; do
   fi
 done
 # XCTest reports per test case; Swift Testing per run (✔ / ✘).
-grep -E "^/.*error:|Test [Cc]ase .*(passed|failed)|Test run with|✘" "$log"
+# AUDIT: what an accessibility audit found (FlowTests.audit prints it), so CI says which element.
+grep -E "^/.*error:|^AUDIT |Test [Cc]ase .*(passed|failed)|Test run with|✘" "$log"
 grep -qE "Test [Cc]ase .*passed|✔ Test run" "$log" && ! grep -qE "Test [Cc]ase .*failed|error:|✘" "$log"

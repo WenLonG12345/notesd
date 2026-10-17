@@ -61,8 +61,12 @@ nonisolated final class KeychainBiometrics: Biometrics {
         probe.interactionNotAllowed = true
         var check = query
         check[kSecUseAuthenticationContext as String] = probe
-        let found = SecItemCopyMatching(check as CFDictionary, nil)
-        guard found == errSecInteractionNotAllowed || found == errSecSuccess else { return .invalidated }
+        switch SecItemCopyMatching(check as CFDictionary, nil) {
+        case errSecInteractionNotAllowed, errSecSuccess: break
+        case errSecItemNotFound, errSecAuthFailed: return .invalidated
+        // Anything else (the Keychain not available for now) says nothing about the item: try again later.
+        default: return .failed
+        }
 
         let context = LAContext()
         context.localizedFallbackTitle = "Use Password"

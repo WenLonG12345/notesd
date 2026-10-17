@@ -100,10 +100,24 @@ public final class BiometricUnlock {
     }
 
     public func enable() async -> Outcome {
-        guard let key = locks.key(), let bound = try? await locks.passwordEntry() else { return .needsUnlock }
-        switch await biometrics.seal(key) {
+        guard let held = locks.keyWithEntry() else { return .needsUnlock }
+        let current: String?
+        do {
+            current = try await locks.passwordEntry()
+        } catch {
+            return .failed
+        }
+        // The key in memory goes with an older keyring (a new password or a reset just synced, and the
+        // session hasn't locked yet): kept against the new entry, it would encrypt notes no password opens.
+        guard current == held.entry else { return .needsUnlock }
+        switch await biometrics.seal(held.key) {
         case .ok:
-            defaults.set(bound, forKey: Self.bound)
+            // The keyring may have moved on while Face ID was asked for.
+            guard (try? await locks.passwordEntry()) == held.entry else {
+                biometrics.forget()
+                return .failed
+            }
+            defaults.set(held.entry, forKey: Self.bound)
             defaults.removeObject(forKey: Self.declined)
             enabled = true
             return .done
@@ -114,7 +128,14 @@ public final class BiometricUnlock {
 
     public func unlock() async -> Outcome {
         guard let bound = defaults.string(forKey: Self.bound) else { return stale() }
-        guard (try? await locks.passwordEntry()) == bound else { return stale() }
+        let current: String?
+        do {
+            current = try await locks.passwordEntry()
+        } catch {
+            // An unread keyring says nothing about the kept key: it stays on, and the password works meanwhile.
+            return .failed
+        }
+        guard current == bound else { return stale() }
         switch await biometrics.open() {
         case .ok(let key):
             return await locks.unlockWithKey(key, boundTo: bound) ? .done : stale()

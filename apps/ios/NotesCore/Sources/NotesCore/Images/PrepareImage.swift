@@ -70,17 +70,18 @@ public enum PrepareImage {
         case .none, .noneSkipFirst, .noneSkipLast: return false
         default: break
         }
-        // Drawn small: enough to see transparency, cheap at any size.
-        let side = 64
-        var pixels = [UInt8](repeating: 255, count: side * side * 4)
+        // At full size (already at most 2048 px): drawn smaller, a small transparent part averages away.
+        let w = image.width
+        let h = image.height
+        var pixels = [UInt8](repeating: 255, count: w * h * 4)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
             guard
                 let ctx = CGContext(
-                    data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                    data: buffer.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                     space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
             else { return false }
-            ctx.clear(CGRect(x: 0, y: 0, width: side, height: side))
-            ctx.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+            ctx.clear(CGRect(x: 0, y: 0, width: w, height: h))
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
             return true
         }
         guard drawn else { return true }

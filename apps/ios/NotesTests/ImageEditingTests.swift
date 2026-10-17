@@ -42,6 +42,23 @@ struct ImageEditingTests {
         #expect(bounds.width == 360 && bounds.height == 270)
     }
 
+    @Test func aMadeUpTallSizeIsCappedKeepingItsShape() {
+        let tall = ImageRef(id: String(repeating: "b", count: 64), width: 999, height: 999_999)
+        load("\(tall.markdown())\n")
+        let bounds = pictures[0].attachmentBounds(
+            for: [.font: UIFont.systemFont(ofSize: 17)], location: view.textLayoutManager!.documentRange.location,
+            textContainer: nil, proposedLineFragment: CGRect(x: 0, y: 0, width: 360, height: 20), position: .zero)
+        #expect(bounds.height == 1440)
+        #expect(bounds.width >= 1 && bounds.width < 2)
+    }
+
+    @Test func aLinkToAnImageIsntOneOfTheNotesPictures() {
+        load("[see](notesd:image/\(a.id)?w=10&h=10) and \(a.markdown())\n")
+        #expect(view.imageIds() == [a.id])
+        load("[see](notesd:image/\(a.id)?w=10&h=10)\n")
+        #expect(view.imageIds().isEmpty)
+    }
+
     @Test func otherImagesAndCodeStayPlainRawRuns() {
         load("![a](cat.png) and `\(a.markdown())`\n")
         #expect(pictures.isEmpty)

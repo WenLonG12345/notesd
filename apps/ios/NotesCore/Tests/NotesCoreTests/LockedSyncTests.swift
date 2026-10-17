@@ -89,6 +89,8 @@ final class LockedSyncTests {
         let a = try await client()
         _ = try await setUp(a)
         await syncAll(a)
+        let server = try await a.engine.lockKeys.keys()
+        #expect(!server.isEmpty)
         // A setup or new password on this device lands while the cycle's fetch is out.
         let local = Keyring.create("newer", iterations: 10_000).entry
         let store = a.engine.lockKeys
@@ -98,7 +100,7 @@ final class LockedSyncTests {
 
         // The next cycle takes the server's again.
         #expect(await a.sync() == .done)
-        #expect(try await a.engine.lockKeys.keys().allSatisfy { $0.wrapped != local.wrapped })
+        #expect(try await a.engine.lockKeys.keys() == server)
     }
 
     @Test func setupNewPasswordAndResetGoThroughTheServer() async throws {

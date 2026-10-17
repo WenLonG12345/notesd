@@ -21,19 +21,23 @@ struct EmailSheet: View {
                         .accessibilityAddTraits(.updatesFrequently)
                 } else {
                     Section {
-                        TextField("name@example.com", text: $to)
-                            .keyboardType(.emailAddress)
-                            .textContentType(.emailAddress)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .submitLabel(.send)
-                            .frame(minHeight: 44)
-                            .contentShape(.rect)
-                            .focused($focused)
-                            .disabled(busy)
-                            .onSubmit(submit)
-                            .onChange(of: to) { error = nil }
-                            .accessibilityLabel("To")
+                        // The system's placeholder grey is too faint on the sheet; ink3 reads.
+                        TextField(
+                            "To", text: $to,
+                            prompt: Text(verbatim: "name@example.com").foregroundStyle(Color.ink3)
+                        )
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.send)
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
+                        .focused($focused)
+                        .disabled(busy)
+                        .onSubmit(submit)
+                        .onChange(of: to) { error = nil }
+                        .accessibilityLabel("To")
                     } header: {
                         SectionHeader("To")
                     } footer: {

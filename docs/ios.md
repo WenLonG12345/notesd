@@ -94,7 +94,9 @@ original.
 Add a picture with the photo button on the bar above the keyboard, or paste
 one. It goes on a line of its own, below the line you're on. Pictures are
 resized (at most 2048 pixels on the long side) and their location and other
-metadata removed before they're stored. They upload with the next sync, so
+metadata removed before they're stored. GIFs are the exception: they're kept
+exactly as they are, so they stay animated, keep their size and keep any
+metadata they carry. They upload with the next sync, so
 you can add them offline too. Pictures from your other devices download the
 first time you open their note, and stay on the phone for when you're
 offline. Backspace after a picture removes it.

@@ -231,7 +231,7 @@ struct NoteScreen: View {
             }
             controller.run { $0.replaceImages(moved) }
             guard let doc = controller.document() else { return }
-            model.setLocked(doc, on)
+            model.setLocked(doc, on, superseded: Set(moved.keys))
         }
     }
 

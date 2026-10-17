@@ -60,6 +60,14 @@ public final class LockSession: Sendable {
     /// The lock password entry the key in memory goes with; nil while locked.
     public func keyEntry() -> String? { inner.withLock { $0.keyEntry } }
 
+    /// The key in memory and the entry it goes with, read together; nil while locked.
+    public func keyWithEntry() -> (key: Data, entry: String)? {
+        inner.withLock { inner in
+            guard let key = inner.key, let entry = inner.keyEntry else { return nil }
+            return (key, entry)
+        }
+    }
+
     /// Runs before the key is dropped, e.g. to save an open locked note while it
     /// can still be encrypted. False when that failed: the key is kept.
     /// Returns the call that removes the hook.
@@ -73,22 +81,37 @@ public final class LockSession: Sendable {
     /// whether the key in memory still goes with it (see the class comment).
     public func refresh() async {
         let stale = await mutex.withLock {
-            let entry = try? await self.passwordEntry()
-            if self.state.value == .unlocked { return entry != self.inner.withLock { $0.keyEntry } }
-            self.state.set(entry == nil ? .none : .locked)
-            return false
+            let entry: String?
+            do {
+                entry = try await self.passwordEntry()
+            } catch {
+                // An unread keyring says nothing about it: only one read showing another entry locks.
+                return false
+            }
+            guard self.state.value == .unlocked else {
+                self.state.set(entry == nil ? .none : .locked)
+                return false
+            }
+            if entry == self.inner.withLock({ $0.keyEntry }) { return false }
+            // The key may be gone from the keyring: from now on nothing is encrypted with it, not
+            // even what the hooks save on the way out (an open note's edit waits for the next unlock).
+            self.inner.withLock { $0.key = nil }
+            return true
         }
         if stale { await lock(force: true) }
     }
 
-    /// False on a wrong password.
-    public func unlock(_ password: String) async -> Bool {
+    /// False on a wrong password, or when the keyring couldn't be read.
+    public func unlock(_ password: String) async -> Bool { await unlocking(password) == .done }
+
+    /// `unlock`, telling a wrong password (`.wrongPassword`) from a keyring
+    /// this device couldn't read (`.failed`).
+    public func unlocking(_ password: String) async -> Outcome {
         await mutex.withLock {
-            guard let stored = try? await self.keys.keys(), let key = try? Keyring.unlock(stored, password) else {
-                return false
-            }
+            guard let stored = try? await self.keys.keys() else { return .failed }
+            guard let key = try? Keyring.unlock(stored, password) else { return .wrongPassword }
             self.adopt(key, entry: Self.passwordEntry(stored))
-            return true
+            return .done
         }
     }
 
