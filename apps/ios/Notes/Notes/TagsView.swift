@@ -1,46 +1,75 @@
 import NotesCore
 import SwiftUI
 
-/// All notes, Untagged, Locked and the tag tree with counts. Choosing one
-/// filters the list and search; Settings opens from here.
+/// The sidebar: All notes, Untagged, Locked and the tag tree with counts, and
+/// Settings in its header. Choosing one filters the list and search, and
+/// closes the sidebar.
 struct TagsView: View {
     @Environment(AppGraph.self) private var graph
-    @Binding var path: [Route]
+    @Environment(Drawer.self) private var drawer
+    let openSettings: () -> Void
 
     @State private var tags: [TagCount] = []
     @State private var lockedCount = 0
     @State private var open: Set<String> = Self.savedOpen
 
     var body: some View {
-        List {
-            Section {
-                filterRow("All notes", systemImage: "note.text", filter: nil)
-                filterRow("Untagged", systemImage: "number.square", filter: .untagged)
-                if lockedCount > 0 {
-                    filterRow("Locked", systemImage: "lock", filter: .locked, count: lockedCount)
-                }
-            }
-            if !tags.isEmpty {
-                Section {
-                    ForEach(visibleTags, id: \.key) { tag in
-                        tagRow(tag)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    BrandMark(size: 26)
+                    Spacer()
+                    Button(action: openSettings) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(Color.ink)
+                            .frame(width: 40, height: 40)
+                            .background(Color.chip, in: .rect(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.edge)
+                            )
+                            .frame(width: 48, height: 48)
+                            .contentShape(.rect)
                     }
-                } header: {
-                    SectionHeader("Tags")
+                    .buttonStyle(PressScaleStyle())
+                    .accessibilityLabel("Settings")
+                }
+                .padding(.leading, 20)
+                .padding(.trailing, 8)
+                .padding(.bottom, 10)
+
+                row("All notes", filter: nil)
+                row("Untagged", filter: .untagged)
+                // Kept while chosen, so unlocking the last one doesn't pull the row from under the list.
+                if lockedCount > 0 || graph.listFilter == .locked {
+                    row("Locked", icon: "lock", filter: .locked)
+                }
+
+                Text("Tags")
+                    .font(.notesKicker)
+                    .foregroundStyle(Color.ink3)
+                    .padding(.leading, 62)
+                    .padding(.top, 18)
+                    .padding(.bottom, 4)
+                    .accessibilityAddTraits(.isHeader)
+                ForEach(visibleTags, id: \.key) { tag in
+                    tagRow(tag)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if tags.isEmpty {
+                    Text("Type #tag in a note to group it here. #parent/child nests.")
+                        .font(.notesSmall)
+                        .foregroundStyle(Color.ink3)
+                        .padding(.leading, 62)
+                        .padding(.trailing, 20)
+                        .padding(.top, 6)
                 }
             }
-            Section {
-                Button {
-                    path.append(.settings)
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .foregroundStyle(Color.ink)
-            }
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
-        .scrollContentBackground(.hidden)
-        .background(Color.notesBg)
-        .navigationTitle("Tags")
+        .scrollIndicators(.hidden)
+        .background { Backdrop() }
         .task {
             let changes = graph.store.changes()
             await reload()
@@ -49,8 +78,12 @@ struct TagsView: View {
     }
 
     private func reload() async {
-        tags = (try? await graph.store.tags()) ?? tags
-        lockedCount = (try? await graph.store.lockedCount()) ?? 0
+        let next = (try? await graph.store.tags()) ?? tags
+        let locked = (try? await graph.store.lockedCount()) ?? 0
+        withAnimation(.snappy) {
+            tags = next
+            lockedCount = locked
+        }
     }
 
     /// Tags whose every parent is open.
@@ -65,66 +98,89 @@ struct TagsView: View {
         tags.contains { $0.key.hasPrefix(tag.key + "/") }
     }
 
-    private func filterRow(_ title: String, systemImage: String, filter: NoteFilter?, count: Int? = nil) -> some View {
-        Button {
-            choose(filter)
-        } label: {
-            HStack {
-                Label(title, systemImage: systemImage)
-                Spacer()
-                if let count { Text("\(count)").foregroundStyle(Color.ink3) }
-                if graph.listFilter == filter { Image(systemName: "checkmark").foregroundStyle(Color.notesTint) }
+    /// All notes, Untagged, Locked: no expander, so they line up with the tags' names.
+    private func row(_ title: String, icon: String? = nil, filter: NoteFilter?) -> some View {
+        let selected = graph.listFilter == filter
+        return HStack(spacing: 0) {
+            Spacer().frame(width: 48)
+            Button {
+                choose(filter)
+            } label: {
+                HStack(spacing: 8) {
+                    if let icon {
+                        Image(systemName: icon).font(.system(size: 13, weight: .medium)).foregroundStyle(Color.ink3)
+                    }
+                    Text(title)
+                        .font(.notesLede.weight(selected ? .semibold : .regular))
+                        .foregroundStyle(Color.ink)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .frame(minHeight: 48)
             }
+            .buttonStyle(RowButtonStyle(selected: selected, radius: 12))
+            .accessibilityAddTraits(selected ? .isSelected : [])
         }
-        .foregroundStyle(Color.ink)
-        .accessibilityAddTraits(graph.listFilter == filter ? .isSelected : [])
+        .padding(.leading, 4)
+        .padding(.trailing, 8)
     }
 
     private func tagRow(_ tag: TagCount) -> some View {
         let depth = tag.key.split(separator: "/").count - 1
-        let leaf = tag.name.split(separator: "/").last.map(String.init) ?? tag.name
+        let leaf = depth == 0 ? tag.name : tag.name.split(separator: "/").last.map(String.init) ?? tag.name
         let filter = NoteFilter.tag(key: tag.key, name: tag.name)
-        return HStack(spacing: 8) {
+        let selected = graph.listFilter == filter
+        let isOpen = open.contains(tag.key)
+        return HStack(spacing: 0) {
             if hasChildren(tag) {
                 Button {
                     toggle(tag.key)
                 } label: {
-                    Image(systemName: open.contains(tag.key) ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 24, height: 24)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.ink3)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                        .frame(width: 48, height: 48)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(open.contains(tag.key) ? "Collapse \(leaf)" : "Expand \(leaf)")
+                .accessibilityLabel(isOpen ? "Collapse \(leaf)" : "Expand \(leaf)")
             } else {
-                Color.clear.frame(width: 24, height: 24)
+                Spacer().frame(width: 48)
             }
             Button {
                 choose(filter)
             } label: {
-                HStack {
-                    Text("#" + leaf).font(.notesBody)
-                    Spacer()
-                    Text("\(tag.count)").font(.notesSmall).foregroundStyle(Color.ink3)
-                    if graph.listFilter == filter {
-                        Image(systemName: "checkmark").foregroundStyle(Color.notesTint)
-                    }
+                HStack(spacing: 8) {
+                    Text("#").font(.notesBody).foregroundStyle(Color.ink3)
+                    Text(leaf)
+                        .font(.notesLede.weight(selected ? .semibold : .regular))
+                        .foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text("\(tag.count)").font(.notesSmall).foregroundStyle(Color.ink3).monospacedDigit()
                 }
-                .contentShape(.rect)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 48)
             }
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(graph.listFilter == filter ? .isSelected : [])
+            .buttonStyle(RowButtonStyle(selected: selected, radius: 12))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("#\(tag.name), \(tag.count == 1 ? "1 note" : "\(tag.count) notes")")
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         }
-        .padding(.leading, CGFloat(depth) * 18)
-        .foregroundStyle(Color.ink)
+        .padding(.leading, 4 + CGFloat(depth) * 16)
+        .padding(.trailing, 8)
     }
 
     private func choose(_ filter: NoteFilter?) {
         graph.listFilter = filter
-        if path.last == .tags { path.removeLast() }
+        drawer.close()
     }
 
     private func toggle(_ key: String) {
-        if open.contains(key) { open.remove(key) } else { open.insert(key) }
+        withAnimation(.snappy) {
+            if open.contains(key) { open.remove(key) } else { open.insert(key) }
+        }
         UserDefaults.standard.set(Array(open), forKey: "openTags")
     }
 

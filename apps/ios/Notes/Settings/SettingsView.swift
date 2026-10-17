@@ -75,6 +75,7 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Color.notesBg)
         .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.large)
         .task(id: graph.syncStatus) {
             pendingNotes = (try? await graph.store.pendingNotes()) ?? 0
             let state = try? await graph.engine.store.state()

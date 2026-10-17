@@ -7,6 +7,7 @@ struct NotesApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        Self.styleBars()
         let graph = AppGraph()
         _graph = State(initialValue: graph)
         // Registered before launch ends, as BGTaskScheduler requires.
@@ -38,6 +39,18 @@ struct NotesApp: App {
         }
     }
 
+    /// Titles in the serif, as on the web and Android; bar buttons in the accent.
+    private static func styleBars() {
+        let bar = UINavigationBar.appearance()
+        bar.tintColor = Palette.tint
+        bar.largeTitleTextAttributes = [
+            .font: Typeface.scaled(Typeface.serif(36), as: .largeTitle), .foregroundColor: Palette.ink,
+        ]
+        bar.titleTextAttributes = [
+            .font: Typeface.scaled(Typeface.serif(21), as: .headline), .foregroundColor: Palette.ink,
+        ]
+    }
+
     private func applyAppearance() {
         for scene in UIApplication.shared.connectedScenes {
             for window in (scene as? UIWindowScene)?.windows ?? [] {
@@ -48,32 +61,42 @@ struct NotesApp: App {
 }
 
 /// Onboarding until there's an account (or the user chose to go without),
-/// then the notes.
+/// then the notes, with the tags in a sidebar that slides in from the left.
 struct RootView: View {
     @Environment(AppGraph.self) private var graph
     @State private var path: [Route] = []
+    @State private var drawer = Drawer()
 
     var body: some View {
         Group {
             if graph.account == .none && !graph.onboardingDismissed {
                 OnboardingView(model: OnboardingModel(accounts: graph.accounts, deviceName: graph.deviceName))
             } else {
-                NavigationStack(path: $path) {
-                    NotesListView(path: $path)
-                        .navigationDestination(for: Route.self) { route in
-                            switch route {
-                            case .note(let id, let startTag, let isNew):
-                                NoteScreen(
-                                    store: graph.store, images: graph.images, locks: graph.locks, id: id,
-                                    startTag: startTag, isNew: isNew,
-                                    path: $path
-                                )
-                                .id(id)
-                            case .tags: TagsView(path: $path)
-                            case .settings: SettingsView()
+                DrawerContainer(drawer: drawer, swipeToOpen: path.isEmpty) {
+                    NavigationStack(path: $path) {
+                        NotesListView(path: $path)
+                            .navigationDestination(for: Route.self) { route in
+                                switch route {
+                                case .note(let id, let startTag, let isNew):
+                                    NoteScreen(
+                                        store: graph.store, images: graph.images, locks: graph.locks, id: id,
+                                        startTag: startTag, isNew: isNew, initial: graph.opening(id),
+                                        path: $path
+                                    )
+                                    .id(id)
+                                case .settings: SettingsView()
+                                }
                             }
-                        }
+                    }
+                } side: {
+                    TagsView {
+                        drawer.close()
+                        path.append(.settings)
+                    }
                 }
+                .environment(drawer)
+                // A note opened from elsewhere (a conflicted copy's banner) closes the sidebar under it.
+                .onChange(of: path) { if !path.isEmpty && drawer.isOpen { drawer.close() } }
             }
         }
         .background(Color.notesBg)

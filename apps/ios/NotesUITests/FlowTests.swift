@@ -94,10 +94,13 @@ final class FlowTests: XCTestCase {
         _ = try await api("POST", "api/v1/notes", body: note)
     }
 
+    /// `glow`: the screen has the list's backdrop.
     private func audit(
-        _ screen: String,
+        _ screen: String, glow: Bool = false,
         _ types: XCUIAccessibilityAuditType = [.dynamicType, .sufficientElementDescription, .hitRegion, .contrast]
     ) throws {
+        // Rows fade in as the list changes: audit what they settle to.
+        sleep(1)
         // The navigation bars, and the bottom bar's strip (the toolbar element itself spans the screen).
         let screen = app.frame
         let bars =
@@ -106,9 +109,14 @@ final class FlowTests: XCTestCase {
         try app.performAccessibilityAudit(for: types) {
             issue in
             let frame = issue.element?.frame ?? .zero
+            // Nothing on screen (the keyboard's bookkeeping): nothing anyone can read.
+            if frame.isEmpty { return true }
             let inBar = bars.contains { $0.contains(frame) }
             // Bars cap their text size; their labels show in the Large Content Viewer instead.
             if issue.auditType == .dynamicType && inBar { return true }
+            // The list's warm glow (Backdrop, top of the screen) varies under the text, which the audit
+            // reports however strong the contrast; worked out, ink3 on its peak is 5.6:1 dark, 5.2:1 light.
+            if issue.auditType == .contrast && frame.maxY < screen.height * 0.45 && glow { return true }
             // A row scrolled partly under the bottom bar is cut off, not small.
             if issue.auditType == .hitRegion && frame.maxY > screen.maxY - 110 { return true }
             print("AUDIT \(screen): \(issue.compactDescription) :: \(issue.element?.label ?? "-") \(frame)")
@@ -122,12 +130,22 @@ final class FlowTests: XCTestCase {
         screenshot("onboarding")
         app.buttons["Use without a server"].tap()
         XCTAssertTrue(app.staticTexts["No notes yet"].waitForExistence(timeout: 5))
-        try audit("empty list")
+        try audit("empty list", glow: true)
         app.buttons["New note"].tap()
         app.typeText("Offline thoughts\nWritten with no server.")
+        // Undo and Redo in the bar step through the typing.
+        let editor = app.textViews.firstMatch
+        let typed = editor.value as? String ?? ""
+        let undo = app.buttons["Undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5) && undo.isEnabled)
+        undo.tap()
+        XCTAssertNotEqual(editor.value as? String ?? "", typed, "Undo took the typing back")
+        app.buttons["Redo"].tap()
+        XCTAssertEqual(editor.value as? String ?? "", typed, "Redo put it back")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["Offline thoughts"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["On this iPhone only"].exists)
+        let local = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "On this iPhone only"))
+        XCTAssertTrue(local.firstMatch.exists)
     }
 
     /// Launches and signs in to the test server; `audited` checks the sign-in screen on the way.
@@ -156,7 +174,7 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["New note"].waitForExistence(timeout: 10))
     }
 
-    func testSignInWriteAndSync() throws {
+    func testSignInWriteAndSync() async throws {
         try signIn(audited: true)
 
         // A note with a checklist, a heading and a tag.
@@ -172,28 +190,35 @@ final class FlowTests: XCTestCase {
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["Weekend"].waitForExistence(timeout: 5))
-        // Pushed 5 s after the last edit.
-        XCTAssertTrue(app.staticTexts["Synced"].waitForExistence(timeout: 20))
+        // Pushed 5 s after the last edit; while sync is fine the list says nothing about it.
+        var pushed = false
+        for _ in 0..<30 where !pushed {
+            let changes = try await api("GET", "api/v1/sync", query: "since=0&limit=100")["changes"] as? [[String: Any]]
+            pushed = changes?.contains { ($0["title"] as? String) == "Weekend" } ?? false
+            if !pushed { try await Task.sleep(for: .seconds(1)) }
+        }
+        XCTAssertTrue(pushed, "the note reached the server")
+        let count = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[0-9]+ notes?")).firstMatch
+        XCTAssertTrue(count.waitForExistence(timeout: 5), app.debugDescription)
         screenshot("list")
-        try audit("list")
+        try audit("list", glow: true)
 
         // Search finds it by a word in the body.
-        // With a bottom toolbar, iOS 26 shows search as a button there first.
-        if !app.searchFields.firstMatch.exists { app.buttons["Search"].firstMatch.tap() }
-        let search = app.searchFields.firstMatch
+        let search = app.textFields["Search notes"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
         search.typeText("bre")
-        XCTAssertTrue(app.staticTexts["Weekend"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["1 result"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Weekend"].exists)
         screenshot("search")
-        let close = ["Cancel", "Close", "Done"].lazy.map { self.app.buttons[$0].firstMatch }.first { $0.exists }
-        if let close { close.tap() } else { print("TREE", app.debugDescription) }
+        try audit("search", glow: true)
+        app.buttons["Clear search"].tap()
 
-        // Tags list the new tag.
+        // The sidebar lists the new tag.
         app.buttons["Tags"].tap()
-        XCTAssertTrue(app.staticTexts["#groceries"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["#groceries, 1 note"].waitForExistence(timeout: 5))
         screenshot("tags")
-        try audit("tags")
+        try audit("tags", glow: true)
         app.buttons["Settings"].tap()
         let account = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "owner"))
         XCTAssertTrue(account.firstMatch.waitForExistence(timeout: 5))
@@ -219,7 +244,6 @@ final class FlowTests: XCTestCase {
         app.buttons["Save"].tap()
         XCTAssertTrue(app.staticTexts["Saved. Choose Email… from a note’s ••• menu."].waitForExistence(timeout: 10))
         screenshot("email settings")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
         app.buttons["New note"].tap()
@@ -319,5 +343,90 @@ final class FlowTests: XCTestCase {
             if !plain { try await Task.sleep(for: .seconds(1)) }
         }
         XCTAssertTrue(plain, "the unlocked note reached the server as text")
+    }
+
+    /// Screenshots of every main screen, for looking at by hand. Only with
+    /// TEST_RUNNER_SCREENSHOT_DIR set; TEST_RUNNER_TOUR_ONLY skips the audits' flows.
+    func testTour() async throws {
+        try XCTSkipIf(env["SCREENSHOT_DIR"] == nil, "set TEST_RUNNER_SCREENSHOT_DIR to take the tour")
+        let notes: [(String, String)] = [
+            (
+                "Perfect World adventure",
+                "#rpg, #original_content\n\nThe players find themselves cutting a deal with the prosecutors "
+                    + "after being charged of civil order disturbance.\n\n- [ ] Print the maps\n- [x] Pick the soundtrack"
+            ),
+            ("Phonetic pronunciation", "#quickref\n\nKah-ssio, not Cass-ee-oh."),
+            ("Stocks", "#quickref\n\nGoogle, Cloudflare, Apple."),
+            ("Camping List", "General: bottle opener, lantern, rope."),
+            ("Villany", "#rpg, #original_content\n\nA mayor who sells the town's water."),
+            ("IBAN Santander", "#quickref\n\nES13 0049 1500 0512 3456 7892"),
+            ("Spain Data", "#quickref\n\nNIE: Z5189123"),
+        ]
+        for (title, content) in notes {
+            let body = try JSONSerialization.data(withJSONObject: [
+                "operationId": UUID().uuidString.lowercased(), "id": UUID().uuidString.lowercased(), "title": title,
+                "content": content,
+            ])
+            _ = try await api("POST", "api/v1/notes", body: body)
+        }
+        try signIn()
+        let first = app.staticTexts["Perfect World adventure"]
+        XCTAssertTrue(first.waitForExistence(timeout: 15))
+        sleep(2)
+        screenshot("01 list")
+
+        app.buttons["Tags"].tap()
+        sleep(1)
+        screenshot("02 tags")
+        let rpg = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "rpg")).firstMatch
+        if rpg.waitForExistence(timeout: 3) {
+            rpg.tap()
+            sleep(1)
+            screenshot("03 filtered")
+            // Swiping in from the left edge opens the sidebar too; tapping the list closes it.
+            let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+            edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)))
+            sleep(1)
+            XCTAssertTrue(app.buttons["Settings"].isHittable, "the swipe opened the sidebar")
+            app.buttons["Close sidebar"].tap()
+            sleep(1)
+            XCTAssertFalse(app.buttons["Settings"].exists, "tapping the list closed it")
+            app.buttons["Tags"].tap()
+            let all = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "All notes")).firstMatch
+            if all.waitForExistence(timeout: 3) { all.tap() }
+            sleep(1)
+        }
+
+        first.tap()
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 5))
+        sleep(1)
+        screenshot("04 note")
+        app.textViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        sleep(2)
+        screenshot("05 keyboard")
+        app.buttons["More"].tap()
+        sleep(1)
+        screenshot("06 menu")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(1)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        sleep(1)
+
+        let search = app.textFields["Search notes"]
+        if search.waitForExistence(timeout: 5) {
+            search.tap()
+            search.typeText("players")
+            sleep(1)
+            screenshot("07 search")
+            app.buttons["Clear search"].tap()
+            sleep(1)
+        } else {
+            print("TREE", app.debugDescription)
+        }
+
+        app.buttons["Tags"].tap()
+        app.buttons["Settings"].tap()
+        sleep(1)
+        screenshot("08 settings")
     }
 }

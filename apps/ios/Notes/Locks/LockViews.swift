@@ -26,6 +26,8 @@ struct LockedNoteView: View {
     @State private var password = ""
     @State private var error: String?
     @State private var busy = false
+    /// Counts wrong passwords: each one shakes the field.
+    @State private var misses = 0
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -59,12 +61,25 @@ struct LockedNoteView: View {
                         }
                     }
                     .padding(.top, 8)
-                    Button(action: unlock) {
-                        Text(busy ? "Unlocking…" : "Unlock").frame(maxWidth: .infinity, minHeight: 36)
+                    .keyframeAnimator(initialValue: 0.0, trigger: misses) { content, x in
+                        content.offset(x: x)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            for x in [-10.0, 9, -6, 4, 0] { SpringKeyframe(x, duration: 0.07) }
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
-                    .tint(Color(Palette.link))
+                    .sensoryFeedback(.error, trigger: misses)
+                    Button(action: unlock) {
+                        HStack(spacing: 8) {
+                            if busy { ProgressView().tint(Color.onAccent) }
+                            Text(busy ? "Unlocking…" : "Unlock")
+                        }
+                        .font(.notesButton)
+                        .foregroundStyle(Color.onAccent)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .background(Color.accent, in: .capsule)
+                    }
+                    .buttonStyle(PressScaleStyle(scale: 0.97))
                     .disabled(busy)
                 }
             }
@@ -84,6 +99,7 @@ struct LockedNoteView: View {
             if !ok {
                 error = "Wrong password."
                 password = ""
+                misses += 1
             }
         }
     }

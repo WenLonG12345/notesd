@@ -60,6 +60,8 @@ final class EditorModel {
     /// A locked note while locked notes are locked: ask for the password instead of showing the text.
     var needsUnlock: Bool { locked && lockState != .unlocked }
 
+    /// The note has been read (or is new) and is showing.
+    private var ready = false
     private var lastSave: Task<Void, Never>?
     private var edits = 0
     private var saved = 0
@@ -76,13 +78,23 @@ final class EditorModel {
     @ObservationIgnored private var watcher: Task<Void, Never>?
     @ObservationIgnored private var unhook: (@Sendable () -> Void)?
 
-    init(store: NoteStore, images: ImageStore? = nil, locks: LockSession? = nil, id: String, startTag: String? = nil) {
+    /// `initial`: the note as already read, so the screen opens with its text;
+    /// `fresh`: a new note, which shows at once without looking in the store.
+    init(
+        store: NoteStore, images: ImageStore? = nil, locks: LockSession? = nil, id: String, startTag: String? = nil,
+        initial: Note? = nil, fresh: Bool = false
+    ) {
         self.store = store
         self.images = images
         self.locks = locks
         self.id = id
         blankContent = startTag.map { tagText($0) + "\n" } ?? ""
         lockState = locks?.state.value ?? .none
+        if let initial {
+            apply(initial)
+        } else if fresh {
+            apply(nil)
+        }
         watcher = Task { [weak self] in await self?.load() }
         // What's typed is saved (encrypted) before the key goes; a save that fails keeps the key.
         unhook = locks?.onBeforeLock { [weak self] in await self?.saveBeforeLock() ?? true }
@@ -98,16 +110,11 @@ final class EditorModel {
     private func load() async {
         // Subscribed before the first read, so a change landing in between isn't missed.
         let changes = store.changes()
-        let note = try? await store.get(id)
-        isNew = note == nil
-        known = note.map { ($0.title, $0.content) }
-        locked = note?.locked ?? false
-        title = note?.title ?? ""
-        if let note {
-            document = parse(note)
-            show(note)
+        if ready {
+            // Opened with the note already read: catch up with anything since.
+            await refresh()
         } else {
-            document = Document.forNote(title: "", body: blankContent.isEmpty ? .empty : Markdown.parse(blankContent))
+            apply(try? await store.get(id))
         }
         tags = (try? await store.tags()) ?? []
         if let locks {
@@ -122,6 +129,21 @@ final class EditorModel {
         for await _ in changes {
             await refresh()
             tags = (try? await store.tags()) ?? tags
+        }
+    }
+
+    /// Shows `note` as opened; nil for a new note.
+    private func apply(_ note: Note?) {
+        ready = true
+        isNew = note == nil
+        known = note.map { ($0.title, $0.content) }
+        locked = note?.locked ?? false
+        title = note?.title ?? ""
+        if let note {
+            document = parse(note)
+            show(note)
+        } else {
+            document = Document.forNote(title: "", body: blankContent.isEmpty ? .empty : Markdown.parse(blankContent))
         }
     }
 

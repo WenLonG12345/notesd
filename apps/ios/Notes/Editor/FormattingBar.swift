@@ -1,9 +1,9 @@
 import NotesCore
 import SwiftUI
 
-/// The bar above the keyboard: marks, headings, lists, quote, link and
-/// indentation, or the tags that complete the one being typed. With text
-/// selected it shows marks only; in the title, nothing applies.
+/// The bar above the keyboard, as on Android: headings, lists, quote, picture
+/// and indentation while writing; marks and link once text is selected; or
+/// the tags that complete the one being typed. In the title, nothing applies.
 struct FormattingBar: View {
     let controller: EditorController
     let tags: [TagCount]
@@ -15,59 +15,91 @@ struct FormattingBar: View {
             if let tag = state.tag, !suggestions(tag).isEmpty {
                 tagStrip(tag)
             } else {
-                buttons
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 2) {
+                        if state.selecting { selectionTools } else { writingTools }
+                    }
+                    .padding(.horizontal, 2)
+                    .animation(.snappy(duration: 0.2), value: state.canIndent || state.canOutdent)
+                }
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                .disabled(state.inTitle)
+                .opacity(state.inTitle ? 0.4 : 1)
+                .id(state.selecting)
+                .transition(.opacity)
             }
         }
-        .frame(height: 44)
-        .padding(.horizontal, 8)
+        .animation(.easeOut(duration: 0.15), value: state.selecting)
+        .frame(height: 48)
+        .padding(.horizontal, 6)
         .glassEffect(.regular, in: .capsule)
         .padding(.horizontal, 8)
         .padding(.bottom, 4)
     }
 
-    private var buttons: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
-                button("bold", "Bold", on: state.bold) { $0.toggleBold() }
-                button("italic", "Italic", on: state.italic) { $0.toggleItalic() }
-                button("strikethrough", "Strikethrough", on: state.strike) { $0.toggleStrike() }
-                button("link", "Link", on: state.link) { _ in controller.editLink() }
-                if !state.selecting {
-                    divider
-                    Menu {
-                        ForEach(1...3, id: \.self) { level in
-                            Button("Heading \(level)") { controller.run { $0.toggleHeading(level) } }
-                        }
-                    } label: {
-                        icon("textformat.size", on: state.heading > 0)
-                    }
-                    .accessibilityLabel("Heading")
-                    button("list.bullet", "Bulleted list", on: state.list == .bullet) { $0.toggleList(.bullet) }
-                    button("list.number", "Numbered list", on: state.list == .ordered) { $0.toggleList(.ordered) }
-                    button("checklist", "Checklist", on: state.list == .task) { $0.toggleList(.task) }
-                    button("text.quote", "Quote", on: state.quote) { $0.toggleQuote() }
-                    divider
-                    button("decrease.indent", "Outdent", enabled: state.canOutdent) { $0.outdent() }
-                    button("increase.indent", "Indent", enabled: state.canIndent) { $0.indent() }
-                    divider
-                    button("photo", "Add picture") { _ in controller.pickingImage = true }
-                }
-            }
+    @ViewBuilder private var writingTools: some View {
+        glyph("H1", "Heading 1", font: .custom("InstrumentSerif-Regular", size: 22), on: state.heading == 1) {
+            $0.toggleHeading(1)
         }
-        .disabled(state.inTitle)
-        .opacity(state.inTitle ? 0.4 : 1)
+        glyph("H2", "Heading 2", font: .custom("InstrumentSerif-Regular", size: 19), on: state.heading == 2) {
+            $0.toggleHeading(2)
+        }
+        glyph(
+            "H3", "Heading 3", font: .custom("InstrumentSans-Regular", size: 15).weight(.semibold),
+            on: state.heading == 3
+        ) { $0.toggleHeading(3) }
+        divider
+        button("list.bullet", "Bulleted list", on: state.list == .bullet) { $0.toggleList(.bullet) }
+        button("list.number", "Numbered list", on: state.list == .ordered) { $0.toggleList(.ordered) }
+        button("checklist", "Checklist", on: state.list == .task) { $0.toggleList(.task) }
+        button("text.quote", "Quote", on: state.quote) { $0.toggleQuote() }
+        button("photo", "Add picture") { _ in controller.pickingImage = true }
+        if state.canIndent || state.canOutdent {
+            divider
+            button("decrease.indent", "Outdent", enabled: state.canOutdent) { $0.outdent() }
+            button("increase.indent", "Indent", enabled: state.canIndent) { $0.indent() }
+        }
+    }
+
+    @ViewBuilder private var selectionTools: some View {
+        glyph("B", "Bold", font: .custom("InstrumentSans-Regular", size: 18).weight(.bold), on: state.bold) {
+            $0.toggleBold()
+        }
+        glyph("I", "Italic", font: .custom("InstrumentSerif-Italic", size: 22), on: state.italic) {
+            $0.toggleItalic()
+        }
+        glyph("S", "Strikethrough", font: .custom("InstrumentSans-Regular", size: 18), strike: true, on: state.strike) {
+            $0.toggleStrike()
+        }
+        divider
+        button("link", "Link", on: state.link) { _ in controller.editLink() }
     }
 
     private var divider: some View {
-        Rectangle().fill(Color.hair).frame(width: 1, height: 20).padding(.horizontal, 4)
+        Rectangle().fill(Color.hairStrong).frame(width: 1, height: 22).padding(.horizontal, 5)
     }
 
-    private func icon(_ symbol: String, on: Bool) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 16, weight: .medium))
-            .foregroundStyle(on ? Color.onAccent : Color.ink2)
-            .frame(width: 40, height: 36)
-            .background(on ? Color.accent : .clear, in: .rect(cornerRadius: 10))
+    /// A 44-point tool, filled while on (web: .tool[aria-pressed]).
+    private func tool(on: Bool, @ViewBuilder _ label: () -> some View) -> some View {
+        label()
+            .foregroundStyle(on ? Color.onAccent : Color.ink)
+            .frame(width: 44, height: 40)
+            .background(on ? Color.accent : .clear, in: .rect(cornerRadius: 12, style: .continuous))
+            .contentShape(.rect)
+    }
+
+    private func glyph(
+        _ text: String, _ label: String, font: Font, strike: Bool = false, on: Bool,
+        _ action: @escaping (NoteTextView) -> Void
+    ) -> some View {
+        Button {
+            controller.run(action)
+        } label: {
+            tool(on: on) { Text(text).font(font).strikethrough(strike).fixedSize() }
+        }
+        .buttonStyle(PressScaleStyle(scale: 0.88))
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     private func button(
@@ -77,8 +109,9 @@ struct FormattingBar: View {
         Button {
             controller.run(action)
         } label: {
-            icon(symbol, on: on)
+            tool(on: on) { Image(systemName: symbol).font(.system(size: 17, weight: .medium)) }
         }
+        .buttonStyle(PressScaleStyle(scale: 0.88))
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.35)
         .accessibilityLabel(label)

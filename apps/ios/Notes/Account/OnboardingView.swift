@@ -37,6 +37,7 @@ struct OnboardingView: View {
                         .frame(minHeight: 50)
                         .background(Color.accent, in: .capsule)
                     }
+                    .buttonStyle(PressScaleStyle(scale: 0.97))
                     .disabled(model.busy)
                     if model.step == .server && !presented {
                         Button {
@@ -72,7 +73,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 8) {
             if model.step == .server {
                 HStack(spacing: 10) {
-                    Image("BrandMark").resizable().frame(width: 36, height: 36).accessibilityHidden(true)
+                    BrandMark(size: 36)
                     Text("notesd").font(.notesBrand).foregroundStyle(Color.ink)
                 }
                 .padding(.bottom, 12)

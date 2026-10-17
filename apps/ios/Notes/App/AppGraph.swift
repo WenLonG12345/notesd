@@ -39,6 +39,19 @@ final class AppGraph {
     /// Something sync did that the user should hear about, until they've seen it.
     var notice: String?
 
+    /// The note about to open, read before its screen is pushed so it opens with its text.
+    @ObservationIgnored private var preloaded: Note?
+
+    /// Reads note `id` ahead of opening it.
+    func preload(_ id: String) async {
+        preloaded = try? await store.get(id)
+    }
+
+    /// The note `preload` read, if it was `id`.
+    func opening(_ id: String) -> Note? {
+        preloaded?.id == id ? preloaded : nil
+    }
+
     private static let defaults = UserDefaults.standard
 
     /// UI tests start from nothing: a new database and Keychain item each launch, and no saved preferences.

@@ -23,13 +23,14 @@ struct NoteScreen: View {
 
     init(
         store: NoteStore, images: ImageStore? = nil, locks: LockSession? = nil, id: String, startTag: String?,
-        isNew: Bool, path: Binding<[Route]>
+        isNew: Bool, initial: Note? = nil, path: Binding<[Route]>
     ) {
         self.id = id
         self.isNew = isNew
         _path = path
         _model = State(
-            initialValue: EditorModel(store: store, images: images, locks: locks, id: id, startTag: startTag))
+            initialValue: EditorModel(
+                store: store, images: images, locks: locks, id: id, startTag: startTag, initial: initial, fresh: isNew))
     }
 
     var body: some View {
@@ -93,7 +94,6 @@ struct NoteScreen: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) { SaveLabel(status: model.status) }
             if model.locked && !model.needsUnlock {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Lock now", systemImage: "lock") {
@@ -101,6 +101,16 @@ struct NoteScreen: View {
                         Task { await graph.locks.lock() }
                     }
                 }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            }
+            if !model.needsUnlock && !model.unreadable && model.document != nil {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button("Undo", systemImage: "arrow.uturn.backward") { controller.undo() }
+                        .disabled(!controller.canUndo)
+                    Button("Redo", systemImage: "arrow.uturn.forward") { controller.redo() }
+                        .disabled(!controller.canRedo)
+                }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -233,24 +243,6 @@ struct NoteScreen: View {
         let title = (doc.title ?? "").trimmed
         let body = Markdown.serialize(doc)
         return title.isEmpty ? body : "# \(title)\n\n\(body)"
-    }
-}
-
-private struct SaveLabel: View {
-    let status: SaveStatus
-
-    var body: some View {
-        Text(text).font(.notesSmall).foregroundStyle(Color.ink2)
-            .accessibilityLabel(text.isEmpty ? "New note" : text)
-            .accessibilityShowsLargeContentViewer()
-    }
-
-    private var text: String {
-        switch status {
-        case .blank: ""
-        case .unsaved: "Editing"
-        case .saved: "Saved"
-        }
     }
 }
 

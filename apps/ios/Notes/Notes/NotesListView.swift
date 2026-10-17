@@ -5,102 +5,259 @@ import SwiftUI
 enum Route: Hashable {
     /// A note by id; a new note gets its id up front and exists once it has text.
     case note(id: String, startTag: String? = nil, isNew: Bool = false)
-    case tags
     case settings
 }
 
 /// The notes, newest first, in date sections; search as you type; the
-/// filter chosen under Tags. Deleting is undoable for a few seconds.
+/// filter chosen in the sidebar. Deleting is undoable for a few seconds.
 struct NotesListView: View {
     @Environment(AppGraph.self) private var graph
+    @Environment(Drawer.self) private var drawer
     @Binding var path: [Route]
 
     @State private var notes: [NoteSummary] = []
+    @State private var loaded = false
     @State private var hits: [SearchHit]?
     @State private var query = ""
     @State private var pendingDeletes: [String: Task<Void, Never>] = [:]
     @State private var pendingNotes = 0
+    /// The large title has scrolled away: the bar shows it small.
+    @State private var collapsed = false
+    @State private var syncSheet = false
+    /// A note is being read before it opens; a second tap waits.
+    @State private var opening = false
+    @FocusState private var searching: Bool
 
     var body: some View {
         List {
+            header
+            if !notes.isEmpty || !query.isEmpty || graph.listFilter != nil {
+                SearchField(query: $query, prompt: scope.map { "Search in \($0)" } ?? "Search", focused: $searching)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 6, trailing: 16))
+                    .plainRow()
+            }
             if let notice = graph.notice {
-                Notice(text: notice) { graph.notice = nil }
-                    .listRowSeparator(.hidden)
+                Notice(text: notice) { withAnimation { graph.notice = nil } }
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .plainRow()
             }
             if case .signedOut = graph.account {
                 SignedOutBanner { path.append(.settings) }
-                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .plainRow()
             }
             if let hits {
                 if hits.isEmpty {
-                    Text("No notes match “\(query)”.").font(.notesBody).foregroundStyle(Color.ink3)
-                        .listRowBackground(Color.clear)
+                    EmptyList(
+                        kicker: "Search", title: "No matches",
+                        text: "Nothing in your notes matches “\(query.trimmed)”.")
+                } else {
+                    GroupLabel(hits.count == 1 ? "1 result" : "\(hits.count) results")
                 }
                 ForEach(hits) { hit in
-                    NavigationLink(value: Route.note(id: hit.id)) { SearchRow(hit: hit) }
-                        .listRowBackground(Color.clear)
+                    row(id: hit.id, locked: hit.locked) {
+                        NoteRow(
+                            title: hit.title, time: listTime(hit.updatedAt), preview: highlighted(hit.excerpt),
+                            locked: hit.locked)
+                    }
                 }
-            } else {
+            } else if loaded {
                 let visible = notes.filter { pendingDeletes[$0.id] == nil }
-                if visible.isEmpty {
-                    EmptyList(filtered: graph.listFilter != nil)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                }
+                if visible.isEmpty { empty }
                 ForEach(groupByDate(visible, updatedAt: \.updatedAt), id: \.label) { group in
-                    Section {
-                        ForEach(group.items) { note in
-                            NavigationLink(value: Route.note(id: note.id)) { NoteRow(note: note) }
-                                .listRowBackground(Color.clear)
-                                .swipeActions {
-                                    Button("Delete", systemImage: "trash", role: .destructive) { delete(note) }
-                                }
+                    GroupLabel(group.label)
+                    ForEach(group.items) { note in
+                        row(id: note.id, locked: note.locked) {
+                            NoteRow(
+                                title: note.title, time: listTime(note.updatedAt),
+                                preview: AttributedString(preview(note)), locked: note.locked)
                         }
-                    } header: {
-                        Text(group.label).font(.notesLabel).foregroundStyle(Color.ink3).textCase(nil)
                     }
                 }
             }
         }
         .listStyle(.plain)
+        .environment(\.defaultMinListRowHeight, 0)
         .scrollContentBackground(.hidden)
-        .background(Color.notesBg)
+        .scrollDismissesKeyboard(.immediately)
+        .background { Backdrop() }
         .navigationTitle(title)
-        .toolbarTitleDisplayMode(.inlineLarge)
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
+        .navigationBarTitleDisplayMode(.inline)
         .refreshable { _ = await graph.engine.sync() }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    path.append(.tags)
-                } label: {
-                    Label("Tags", systemImage: "sidebar.left")
+                Button("Tags", systemImage: "sidebar.left") {
+                    searching = false
+                    drawer.open()
                 }
             }
-            ToolbarItem(placement: .bottomBar) { SyncLabel(status: graph.syncStatus, pending: pendingNotes) }
-                .sharedBackgroundVisibility(.hidden)
-            ToolbarSpacer(.flexible, placement: .bottomBar)
-            ToolbarItem(placement: .bottomBar) {
-                Button {
-                    newNote()
-                } label: {
-                    Label("New note", systemImage: "square.and.pencil")
+            ToolbarItem(placement: .principal) {
+                if collapsed {
+                    Text(title).font(.custom("InstrumentSerif-Regular", size: 21)).foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                        .transition(.opacity)
+                } else {
+                    // Something must hold the place, or the bar shows the title anyway.
+                    Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
                 }
-                .keyboardShortcut("n", modifiers: .command)
             }
         }
-        .safeAreaInset(edge: .bottom) { undoBar }
+        .safeAreaBar(edge: .bottom) {
+            // While searching, the keyboard needs the room more than the compose button does.
+            if !searching { footer }
+        }
         .task(id: graph.listFilter) { await watch() }
         .task(id: query) { await search() }
         .onDisappear { commitDeletes() }
+        .sheet(isPresented: $syncSheet) {
+            SyncSheet(status: graph.syncStatus, pending: pendingNotes) {
+                syncSheet = false
+                graph.scheduler.request()
+            }
+        }
     }
 
-    private var title: String {
+    private var title: String { scope ?? "Notes" }
+
+    /// The filter's name, or nil for every note.
+    private var scope: String? {
         switch graph.listFilter {
-        case nil: "Notes"
+        case nil: nil
         case .untagged: "Untagged"
         case .locked: "Locked"
         case .tag(_, let name): "#" + name
+        }
+    }
+
+    /// The large title, led by the mark; with a filter, a way back to all notes.
+    private var header: some View {
+        HStack(spacing: 12) {
+            BrandMark(size: 28)
+            Text(title)
+                .font(.notesDisplay)
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+            if graph.listFilter != nil {
+                Button {
+                    withAnimation(.snappy) { graph.listFilter = nil }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.ink2)
+                        .frame(width: 24, height: 24)
+                        .background(Color.on, in: .circle)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(PressScaleStyle())
+                .accessibilityLabel("Show all notes")
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 48)
+        .accessibilityElement(children: .contain)
+        // Half under the bar: the bar shows the title small.
+        .onGeometryChange(for: Bool.self) {
+            $0.frame(in: .global).midY < 100
+        } action: { now in
+            withAnimation(.easeOut(duration: 0.2)) { collapsed = now }
+        }
+        .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 10, trailing: 8))
+        .plainRow()
+    }
+
+    @ViewBuilder private var empty: some View {
+        switch graph.listFilter {
+        case nil:
+            EmptyList(
+                kicker: "No notes yet", title: "Your first note starts here.",
+                text: "The first line becomes the title. Everything saves as you type.", action: newNote)
+        case .untagged:
+            EmptyList(kicker: "Untagged", title: "Nothing here yet", text: "Every note has a tag.", action: newNote)
+        case .locked:
+            EmptyList(
+                kicker: "Locked", title: "Nothing here yet", text: "Lock a note from its menu to keep it here.",
+                action: newNote)
+        case .tag(_, let name):
+            EmptyList(
+                kicker: "#" + name, title: "Nothing here yet",
+                text: "Notes you write while #\(name) is open start with the tag.", action: newNote)
+        }
+    }
+
+    /// One note: tap opens, swipe or long-press deletes.
+    private func row(id: String, locked: Bool, @ViewBuilder _ label: () -> some View) -> some View {
+        Button {
+            open(id)
+        } label: {
+            label()
+        }
+        .buttonStyle(RowButtonStyle())
+        .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
+        .plainRow()
+        .swipeActions {
+            Button("Delete", systemImage: "trash", role: .destructive) { delete(id) }
+        }
+        .contextMenu {
+            Button("Open", systemImage: "doc.text") { open(id) }
+            Button("Delete Note", systemImage: "trash", role: .destructive) { delete(id) }
+        }
+        .accessibilityAction(named: "Delete note") { delete(id) }
+    }
+
+    /// The count, and what's wrong with sync when something is; the compose button at the end.
+    private var footer: some View {
+        VStack(spacing: 8) {
+            undoBar
+            HStack {
+                if drawer.isOpen {
+                    // Dimmed under the sidebar, and outside what it hides from VoiceOver: left out.
+                    EmptyView()
+                } else if let problem = syncProblem {
+                    Button {
+                        if graph.syncStatus != .notConnected { syncSheet = true }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: graph.syncStatus == .notConnected ? "iphone" : "icloud.slash")
+                                .font(.system(size: 13, weight: .medium))
+                            Text(countText.isEmpty ? problem : "\(countText) · \(problem)")
+                        }
+                        .font(.notesSmall)
+                        .foregroundStyle(Color.ink2)
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityShowsLargeContentViewer()
+                } else {
+                    Text(countText).font(.notesSmall).foregroundStyle(Color.ink3)
+                        .accessibilityShowsLargeContentViewer()
+                }
+                Spacer()
+                ComposeButton(action: newNote)
+                    .keyboardShortcut("n", modifiers: .command)
+            }
+            .padding(.leading, 24)
+            .padding(.trailing, 16)
+        }
+        .padding(.bottom, 4)
+    }
+
+    private var countText: String {
+        let count = notes.count - pendingDeletes.count
+        if hits != nil || count <= 0 { return "" }
+        return count == 1 ? "1 note" : "\(count) notes"
+    }
+
+    /// Nil while sync is fine: the footer stays quiet.
+    private var syncProblem: String? {
+        switch graph.syncStatus {
+        case .notConnected: "On this iPhone only"
+        case .offline: pendingNotes > 0 ? "Offline · \(pendingNotes) not synced" : "Offline"
+        case .failed: pendingNotes > 0 ? "\(pendingNotes) not synced" : "Sync problem"
+        case .signedOut: nil
+        case .syncing, .synced: nil
         }
     }
 
@@ -109,16 +266,21 @@ struct NotesListView: View {
             HStack {
                 Text(pendingDeletes.count == 1 ? "Note deleted" : "\(pendingDeletes.count) notes deleted")
                     .font(.notesBody)
+                    .foregroundStyle(Color.ink)
                 Spacer()
-                Button("Undo") { undoDeletes() }.font(.notesButton)
+                Button("Undo") { undoDeletes() }.font(.notesButton).foregroundStyle(Color.notesTint)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
             .glassEffect(.regular, in: .capsule)
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+    }
+
+    private func preview(_ note: NoteSummary) -> String {
+        let text = note.preview.split(separator: "\n").joined(separator: " · ")
+        return text.isEmpty ? "No additional text" : text
     }
 
     private func watch() async {
@@ -129,9 +291,15 @@ struct NotesListView: View {
     }
 
     private func reload() async {
-        notes = (try? await graph.store.list(graph.listFilter)) ?? notes
+        let next = (try? await graph.store.list(graph.listFilter)) ?? notes
         pendingNotes = (try? await graph.store.pendingNotes()) ?? 0
-        if !query.isEmpty { hits = try? await graph.store.search(query, filter: graph.listFilter) }
+        if !query.trimmed.isEmpty { hits = try? await graph.store.search(query, filter: graph.listFilter) }
+        if loaded && next != notes {
+            withAnimation(.snappy) { notes = next }
+        } else {
+            notes = next
+        }
+        loaded = true
     }
 
     private func search() async {
@@ -144,28 +312,41 @@ struct NotesListView: View {
         hits = (try? await graph.store.search(query, filter: graph.listFilter)) ?? []
     }
 
+    /// Reads the note first, so its screen slides in with the text already there.
+    private func open(_ id: String) {
+        guard !opening else { return }
+        opening = true
+        searching = false
+        Task {
+            await graph.preload(id)
+            path.append(.note(id: id))
+            opening = false
+        }
+    }
+
     private func newNote() {
         var tag: String?
         if case .tag(_, let name) = graph.listFilter { tag = name }
+        searching = false
         path.append(.note(id: Uuid7.generate(), startTag: tag, isNew: true))
     }
 
     /// The note is only hidden until the undo window ends; deleting at once and
     /// restoring on undo would race sync, which could send the delete first.
-    private func delete(_ note: NoteSummary) {
+    private func delete(_ id: String) {
         let store = graph.store
-        withAnimation {
-            pendingDeletes[note.id] = Task {
+        withAnimation(.snappy) {
+            pendingDeletes[id] = Task {
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }
-                try? await store.delete(note.id)
-                pendingDeletes[note.id] = nil
+                try? await store.delete(id)
+                withAnimation(.snappy) { pendingDeletes[id] = nil }
             }
         }
     }
 
     private func undoDeletes() {
-        withAnimation {
+        withAnimation(.snappy) {
             for task in pendingDeletes.values { task.cancel() }
             pendingDeletes = [:]
         }
@@ -179,48 +360,6 @@ struct NotesListView: View {
         }
         pendingDeletes = [:]
     }
-}
-
-private struct NoteRow: View {
-    let note: NoteSummary
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(note.title.isEmpty ? "Untitled" : note.title)
-                .font(.notesRowTitle)
-                .foregroundStyle(note.title.isEmpty ? Color.ink3 : Color.ink)
-                .lineLimit(1)
-            HStack(spacing: 6) {
-                Text(listTime(note.updatedAt)).foregroundStyle(Color.ink2)
-                if note.locked {
-                    Label("Locked", systemImage: "lock.fill").labelStyle(.iconOnly).foregroundStyle(Color.ink3)
-                } else {
-                    Text(note.preview.split(separator: "\n").first.map(String.init) ?? "No additional text")
-                        .foregroundStyle(Color.ink3)
-                        .lineLimit(1)
-                }
-            }
-            .font(.notesRowMeta)
-        }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct SearchRow: View {
-    let hit: SearchHit
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(hit.title.isEmpty ? "Untitled" : hit.title).font(.notesRowTitle).foregroundStyle(Color.ink).lineLimit(
-                1)
-            if !hit.excerpt.isEmpty {
-                Text(highlighted(hit.excerpt)).font(.notesRowMeta).foregroundStyle(Color.ink2).lineLimit(2)
-            }
-        }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-    }
 
     /// The excerpt with its matches marked, as the web's <mark>.
     private func highlighted(_ excerpt: String) -> AttributedString {
@@ -231,7 +370,7 @@ private struct SearchRow: View {
         {
             var run = AttributedString(String(piece))
             if marked {
-                run.backgroundColor = Color.accent.opacity(0.35)
+                run.backgroundColor = Color.accent.opacity(0.45)
                 run.foregroundColor = Color.ink
             }
             out += run
@@ -241,40 +380,174 @@ private struct SearchRow: View {
     }
 }
 
-private struct EmptyList: View {
-    let filtered: Bool
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Text(filtered ? "No notes here" : "No notes yet").font(.notesTitle).foregroundStyle(Color.ink)
-            Text(filtered ? "Notes with this filter show up here." : "Tap the pencil to write your first note.")
-                .font(.notesBody).foregroundStyle(Color.ink3)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
+extension View {
+    /// A list row with nothing of the list's own: no separator, no background.
+    func plainRow() -> some View {
+        listRowSeparator(.hidden).listRowBackground(Color.clear)
     }
 }
 
-/// What sync is doing, in a word or two.
-struct SyncLabel: View {
-    let status: SyncStatus
-    let pending: Int
+/// "Today", "Previous 7 days": a quiet label over a group of rows.
+private struct GroupLabel: View {
+    let text: String
 
-    var body: some View {
-        // In a bar, where text doesn't grow: long-press shows it large instead.
-        Text(text).font(.notesSmall).foregroundStyle(Color.ink2)
-            .accessibilityShowsLargeContentViewer()
+    init(_ text: String) {
+        self.text = text
     }
 
-    private var text: String {
-        switch status {
-        case .notConnected: "On this iPhone only"
-        case .syncing: "Syncing…"
-        case .synced: pending > 0 ? "\(pending) not synced" : "Synced"
-        case .offline: pending > 0 ? "Offline · \(pending) not synced" : "Offline"
-        case .signedOut: "Signed out"
-        case .failed: "Sync problem"
+    var body: some View {
+        Text(text)
+            .font(.notesKicker)
+            .foregroundStyle(Color.ink3)
+            .accessibilityAddTraits(.isHeader)
+            .listRowInsets(EdgeInsets(top: 18, leading: 24, bottom: 6, trailing: 16))
+            .plainRow()
+            .selectionDisabled()
+    }
+}
+
+/// A note's title, then when it changed and the start of its text ("Locked" for a locked note).
+private struct NoteRow: View {
+    let title: String
+    let time: String
+    let preview: AttributedString
+    let locked: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title.trimmed.isEmpty ? "New note" : title)
+                .font(.notesRowTitle)
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+            HStack(spacing: 8) {
+                Text(time).font(.notesRowMeta.weight(.medium)).foregroundStyle(Color.ink2)
+                    .fixedSize()
+                if locked {
+                    HStack(spacing: 3) {
+                        Image(systemName: "lock").font(.system(size: 11, weight: .semibold))
+                        Text("Locked")
+                    }
+                    .foregroundStyle(Color.ink3)
+                } else {
+                    Text(preview).foregroundStyle(Color.ink3).lineLimit(1)
+                }
+            }
+            .font(.notesRowMeta)
         }
+        .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The search box at the top of the list (web: the list's search field).
+private struct SearchField: View {
+    @Binding var query: String
+    let prompt: String
+    var focused: FocusState<Bool>.Binding
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(Color.ink3)
+            TextField(prompt, text: $query, prompt: Text(prompt).foregroundStyle(Color.ink3))
+                .font(.notesLede)
+                .foregroundStyle(Color.ink)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .focused(focused)
+                .accessibilityLabel("Search notes")
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                    focused.wrappedValue = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.ink2)
+                        .frame(width: 20, height: 20)
+                        .background(Color.on, in: .circle)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+                .transition(.opacity.combined(with: .scale(scale: 0.6)))
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, query.isEmpty ? 14 : 0)
+        .frame(height: 46)
+        .background(Color.field, in: .rect(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hair))
+        .contentShape(.rect)
+        .onTapGesture { focused.wrappedValue = true }
+        .animation(.snappy(duration: 0.2), value: query.isEmpty)
+    }
+}
+
+/// Why notes are stuck on this iPhone, and a way to try again.
+private struct SyncSheet: View {
+    let status: SyncStatus
+    let pending: Int
+    let syncNow: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(pending == 0 ? "Not syncing" : pending == 1 ? "1 note not synced" : "\(pending) notes not synced")
+                .font(.notesTitle)
+                .foregroundStyle(Color.ink)
+            Text(
+                "They’re saved on this iPhone and sync on their own once the server can be reached."
+            )
+            .font(.notesBody)
+            .foregroundStyle(Color.ink2)
+            .fixedSize(horizontal: false, vertical: true)
+            if case .failed(let message) = status {
+                Text("The server said: \(message)").font(.notesSmall).foregroundStyle(Color.ink3)
+            }
+            Button(action: syncNow) {
+                Text("Sync now").font(.notesButton).frame(maxWidth: .infinity, minHeight: 36)
+            }
+            .buttonStyle(.glassProminent)
+            .padding(.top, 6)
+        }
+        .padding(24)
+        .presentationDetents([.height(260)])
+        .presentationBackground(Color.notesBg)
+    }
+}
+
+/// Nothing to list: what this place is for, and a way to start.
+private struct EmptyList: View {
+    let kicker: String
+    let title: String
+    let text: String
+    var action: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(kicker).font(.notesKicker).foregroundStyle(Color.ink3)
+            Text(title).font(.notesHeading).foregroundStyle(Color.ink).accessibilityAddTraits(.isHeader)
+            Text(text).font(.notesLede).foregroundStyle(Color.ink2)
+            if let action {
+                Button(action: action) {
+                    Label("Write a note", systemImage: "square.and.pencil")
+                        .font(.notesButton)
+                        .foregroundStyle(Color(Palette.onSolid))
+                        .padding(.horizontal, 18)
+                        .frame(minHeight: 44)
+                        .background(Color(Palette.solid), in: .capsule)
+                }
+                .buttonStyle(PressScaleStyle(scale: 0.95))
+                .padding(.top, 8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 40)
+        .listRowInsets(EdgeInsets())
+        .plainRow()
     }
 }
 
@@ -309,5 +582,26 @@ private struct SignedOutBanner: View {
             .background(Color.warnBg, in: .rect(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// What sync is doing, in a word or two.
+struct SyncLabel: View {
+    let status: SyncStatus
+    let pending: Int
+
+    var body: some View {
+        Text(text).font(.notesSmall).foregroundStyle(Color.ink2)
+    }
+
+    private var text: String {
+        switch status {
+        case .notConnected: "On this iPhone only"
+        case .syncing: "Syncing…"
+        case .synced: pending > 0 ? "\(pending) not synced" : "Synced"
+        case .offline: pending > 0 ? "Offline · \(pending) not synced" : "Offline"
+        case .signedOut: "Signed out"
+        case .failed: "Sync problem"
+        }
     }
 }

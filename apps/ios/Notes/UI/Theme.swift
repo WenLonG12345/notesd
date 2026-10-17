@@ -20,6 +20,12 @@ nonisolated enum Palette {
     static let hair = pair(0x172D_2823, 0x14FF_FFFF)
     static let hairStrong = pair(0x292D_2823, 0x29FF_FFFF)
     static let hover = pair(0x122D_2823, 0x12FF_FFFF)
+    /// A selected row's fill.
+    static let on = pair(0x1C2D_2823, 0x21FF_FFFF)
+    static let edge = pair(0xD9FF_FFFF, 0x14FF_FFFF)
+    static let dangerBg = pair(0x1AD2_4D45, 0x29D2_4D45)
+    /// The warm glow behind the list and the sidebar, at its full strength.
+    static let blob = pair(0x2EF4_D9A8, 0x3362_4821)
     static let field = pair(0xC7FF_FFFF, 0x0FFF_FFFF)
     static let chip = pair(0x9EFF_FFFF, 0x12FF_FFFF)
     static let good = pair(0xFF0E_492A, 0xFF9E_E0B4)
@@ -56,6 +62,12 @@ extension Color {
     static let notesTint = Color(Palette.tint)
     static let danger = Color(Palette.danger)
     static let hair = Color(Palette.hair)
+    static let hairStrong = Color(Palette.hairStrong)
+    static let hover = Color(Palette.hover)
+    static let on = Color(Palette.on)
+    static let edge = Color(Palette.edge)
+    static let dangerBg = Color(Palette.dangerBg)
+    static let blob = Color(Palette.blob)
     static let field = Color(Palette.field)
     static let chip = Color(Palette.chip)
     static let errBg = Color(Palette.errBg)
@@ -108,6 +120,8 @@ extension Font {
     static let notesLede = Font.custom("InstrumentSans-Regular", size: 16, relativeTo: .body)
     static let notesRowTitle = Font.custom("InstrumentSans-Regular", size: 16, relativeTo: .body).weight(.medium)
     static let notesRowMeta = Font.custom("InstrumentSans-Regular", size: 14, relativeTo: .subheadline)
+    /// A small quiet label above a heading or a group (web: Kicker).
+    static let notesKicker = Font.custom("InstrumentSans-Regular", size: 13, relativeTo: .footnote).weight(.semibold)
     static let notesLabel = Font.custom("InstrumentSans-Regular", size: 13, relativeTo: .footnote).weight(.medium)
     static let notesSmall = Font.custom("InstrumentSans-Regular", size: 13, relativeTo: .footnote)
     static let notesButton = Font.custom("InstrumentSans-Regular", size: 15, relativeTo: .body).weight(.semibold)
@@ -126,5 +140,95 @@ struct SectionHeader: View {
 
     var body: some View {
         Text(title).font(.notesLabel).foregroundStyle(Color.ink2).textCase(nil)
+    }
+}
+
+/// The web's backdrop: a warm amber glow from the top left corner, fading
+/// into the paper. Fixed behind the content; it doesn't scroll.
+struct Backdrop: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        // Drawn into one bitmap: the paper and the glow over it, as the eye (and the contrast audit) sees them.
+        Canvas { context, size in
+            let traits = UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light)
+            let paper = Color(Palette.bg.resolvedColor(with: traits))
+            let glow = Color(Palette.blob.resolvedColor(with: traits))
+            let rect = CGRect(origin: .zero, size: size)
+            context.fill(Path(rect), with: .color(paper))
+            let radius = max(size.width, 1)
+            let center = CGPoint(x: size.width * 0.1, y: -size.height * 0.02)
+            context.fill(
+                Path(rect),
+                with: .radialGradient(
+                    Gradient(stops: [
+                        .init(color: glow, location: 0),
+                        .init(color: glow.opacity(0.55), location: 0.45),
+                        .init(color: glow.opacity(0), location: 1),
+                    ]),
+                    center: center, startRadius: 0, endRadius: radius))
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+    }
+}
+
+/// The app's mark: the yellow notepad.
+struct BrandMark: View {
+    var size: CGFloat = 26
+
+    var body: some View {
+        Image("BrandMark").resizable().interpolation(.high).frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+}
+
+/// A row that fills softly while pressed, as Android's ripple and the web's hover do.
+struct RowButtonStyle: ButtonStyle {
+    var selected = false
+    var radius: CGFloat = 16
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                configuration.isPressed ? Color.on : selected ? Color.on : .clear, in: .rect(cornerRadius: radius)
+            )
+            .contentShape(.rect(cornerRadius: radius))
+            .animation(.easeOut(duration: configuration.isPressed ? 0.05 : 0.25), value: configuration.isPressed)
+    }
+}
+
+/// Shrinks a little while pressed: for the compose button and other solid controls.
+struct PressScaleStyle: ButtonStyle {
+    var scale: CGFloat = 0.92
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
+/// The big amber compose button (web: the mobile footer's pencil).
+struct ComposeButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 21, weight: .semibold))
+                .foregroundStyle(Color.onAccent)
+                .frame(width: 52, height: 52)
+                .background {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.accent)
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(Color.accentDeep).frame(height: 2.5)
+                        }
+                        .clipShape(.rect(cornerRadius: 16, style: .continuous))
+                }
+                .shadow(color: Color.accentDeep.opacity(0.35), radius: 10, y: 4)
+        }
+        .buttonStyle(PressScaleStyle())
+        .accessibilityLabel("New note")
     }
 }

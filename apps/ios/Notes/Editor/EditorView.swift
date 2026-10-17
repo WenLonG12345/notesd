@@ -14,6 +14,26 @@ final class EditorController {
     var pickingImage = false
     /// Pasted picture bytes, for the screen to store and insert.
     var onPasteImage: ((Data) -> Void)?
+    private(set) var canUndo = false
+    private(set) var canRedo = false
+
+    func undo() {
+        view?.undoManager?.undo()
+        updateUndo()
+    }
+
+    func redo() {
+        view?.undoManager?.redo()
+        updateUndo()
+    }
+
+    /// After anything that changes what can be undone.
+    func updateUndo() {
+        let undo = view?.undoManager?.canUndo ?? false
+        let redo = view?.undoManager?.canRedo ?? false
+        if undo != canUndo { canUndo = undo }
+        if redo != canRedo { canRedo = redo }
+    }
 
     func run(_ command: (NoteTextView) -> Void) {
         if let view { command(view) }
@@ -43,8 +63,9 @@ struct EditorView: UIViewRepresentable {
         controller.view = view
         if let doc = model.document { view.setDocument(doc) }
         context.coordinator.seenIncoming = model.incoming?.version ?? 0
-        view.onChange = { [weak model, weak view] in
+        view.onChange = { [weak model, weak view, weak controller] in
             guard let model, let view else { return }
+            controller?.updateUndo()
             model.edited()
             context.coordinator.scheduleSave(model, view)
         }
@@ -59,6 +80,7 @@ struct EditorView: UIViewRepresentable {
         context.coordinator.bar = bar
         view.inputAccessoryView = bar.view
         if autofocus { DispatchQueue.main.async { view.becomeFirstResponder() } }
+        context.coordinator.watchUndo(controller)
         return view
     }
 
@@ -67,6 +89,7 @@ struct EditorView: UIViewRepresentable {
         if let incoming = model.incoming, incoming.version != context.coordinator.seenIncoming {
             context.coordinator.seenIncoming = incoming.version
             view.setDocument(incoming.document, keepSelection: true)
+            controller.updateUndo()
         }
     }
 
@@ -77,6 +100,26 @@ struct EditorView: UIViewRepresentable {
         var seenIncoming = 0
         var bar: UIHostingController<FormattingBar>?
         private var pending: Task<Void, Never>?
+        nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
+
+        deinit {
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        }
+
+        /// Keeps the bar's Undo and Redo in step with the text view's undo stack.
+        func watchUndo(_ controller: EditorController) {
+            let names: [Notification.Name] = [
+                .NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange,
+                .NSUndoManagerWillCloseUndoGroup,
+            ]
+            for name in names {
+                observers.append(
+                    NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
+                        [weak controller] _ in
+                        MainActor.assumeIsolated { controller?.updateUndo() }
+                    })
+            }
+        }
 
         /// Saves 0.7 s after the last change.
         func scheduleSave(_ model: EditorModel, _ view: NoteTextView) {
