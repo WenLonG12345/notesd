@@ -15,7 +15,7 @@ offline and syncs your notes whenever a connection is available.</p>
 
 - **Organize with tags.** Add tags like `#work` and `#reading` anyewhere in your note. The sidebar lists all your tags, so you can browse by topic. Tags can be nested with `/` (`#home/garden`).
 
-- **Locked notes.** You can secure notes with end-to-end encryption (AES-256-GCM). The server only stores ciphertext. Unlock with a password, a passkey (web) or biometric (Android).  
+- **Locked notes.** You can secure notes with end-to-end encryption (AES-256-GCM). The server only stores ciphertext. Unlock with a password, a passkey (web) or biometrics (Android and iOS).  
   <img width="368" height="259" alt="Image" src="https://github.com/user-attachments/assets/607ed533-451f-42ed-90d6-e1cfe162deae" />  
   See [Security](#security) for more details.
 
@@ -76,6 +76,7 @@ The full threat model is in
 | Server | Go, `net/http`, SQLite with WAL and FTS5 |
 | Web | React, TypeScript, Tiptap/ProseMirror, Vite; embedded in the server binary |
 | Android | Kotlin, Jetpack Compose, a native `EditText` editor, bundled SQLite with FTS5, WorkManager |
+| iOS | Swift, SwiftUI, a TextKit 2 `UITextView` editor, SQLite with FTS5, CryptoKit for locked notes, background refresh, Face ID for locked notes (iPhone only) |
 
 A few things that may be interesting if you're reading the code:
 
@@ -83,7 +84,7 @@ A few things that may be interesting if you're reading the code:
   specification: data model, sync protocol, conflict rules, Markdown dialect,
   search ranking and the locked-notes design. Changes to any of those start
   there.
-- **Shared rules.** The three platforms implement the Markdown round trip,
+- **Shared rules.** The platforms implement the Markdown round trip,
   plain-text extraction, tag parsing and the locked-notes crypto separately.
   Fixtures in [`shared/`](shared) pin all four, and every platform's tests run
   against them, so the server, the web app and the phone agree.
@@ -100,6 +101,7 @@ A few things that may be interesting if you're reading the code:
 | --- | --- |
 | [Hosting](docs/hosting.md) | Installing and configuring the server, HTTPS, systemd |
 | [Android](docs/android.md) | Installing the app, connecting, how sync works |
+| [iPhone](docs/ios.md) | Building and installing the iPhone app, connecting |
 | [Operations](docs/operations.md) | Upgrades, maintenance, monitoring |
 | [Development](docs/development.md) | Building from source and working on notesd |
 | [Architecture](docs/architecture.md) | How it works: data model, sync protocol, conflicts |

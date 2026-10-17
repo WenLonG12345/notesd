@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Plain HTTP only to local addresses; ServerAddress refuses public http itself. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>notesd connects to your notes server when it's on your local network.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>notesd uses Face ID to open your locked notes.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).sync</string>
+	</array>
+	<key>UIAppFonts</key>
+	<array>
+		<string>InstrumentSans.ttf</string>
+		<string>InstrumentSans-Italic.ttf</string>
+		<string>InstrumentSerif.ttf</string>
+		<string>InstrumentSerif-Italic.ttf</string>
+		<string>JetBrainsMono.ttf</string>
+	</array>
+</dict>
+</plist>

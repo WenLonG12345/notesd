@@ -1,13 +1,17 @@
 """Generate every app icon from one master PNG.
 
     python3 -m venv /tmp/icons && /tmp/icons/bin/pip install pillow
-    /tmp/icons/bin/python scripts/icons.py "path/to/notesd App Icon.png"
+    /tmp/icons/bin/python scripts/icons.py docs/images/icon.png [web] [android] [ios]
+
+With no targets after the master, it writes them all.
 
 The master is the rounded amber tile on a transparent canvas. Its soft halo is
 cut away, the tile is cropped square, and then placed per target:
   web:     favicon.ico/png, icon-192/512, a maskable 512, apple-touch-icon,
            and the in-app mark (src/ui/mark.png)
   android: adaptive launcher foreground + monochrome, splash icon, brand mark
+  ios:     the 1024px app icon, full bleed (iOS masks it to its own shape and
+           allows no transparency), and the in-app mark
 """
 
 import sys
@@ -18,6 +22,7 @@ from PIL import Image, ImageChops
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "apps/web"
 RES = ROOT / "apps/android/app/src/main/res"
+IOS = ROOT / "apps/ios/Notes/Resources/Assets.xcassets"
 PAPER = (246, 243, 238, 255)  # --paper / @color/paper
 DENSITIES = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
 
@@ -59,8 +64,17 @@ def save(img, path, **kw):
     print(path.relative_to(ROOT))
 
 
-def main(src):
+def main(src, targets):
     tile = load_tile(src)
+    if "web" in targets:
+        web(tile)
+    if "android" in targets:
+        android(tile)
+    if "ios" in targets:
+        ios(tile)
+
+
+def web(tile):
     pub = WEB / "public"
 
     # Web. Favicons use the whole canvas: at 16px every pixel counts.
@@ -74,6 +88,8 @@ def main(src):
     save(place(tile, 180, 0.84, PAPER).convert("RGB"), pub / "apple-touch-icon.png")
     save(place(tile, 96, 1), WEB / "src/ui/mark.png")
 
+
+def android(tile):
     # Android, on the adaptive icon's 108dp canvas. The launcher shows the
     # middle 72dp through its mask; the tile overscans that (80dp) so the mask,
     # not the tile's own corners, gives the shape.
@@ -91,5 +107,19 @@ def main(src):
     save(place(tile, 104, 1), RES / "drawable-nodpi/brand_mark.png")
 
 
+def ios(tile):
+    # The tile overscans the canvas, as on Android, so the system's mask and
+    # not the tile's own corners gives the shape. Underneath, the tile's amber
+    # (sampled inside its top and bottom edges) fills what the overscan leaves.
+    top = tile.getpixel((tile.width // 2, round(tile.height * 0.03)))
+    bottom = tile.getpixel((tile.width * 4 // 5, round(tile.height * 0.97)))
+    assert top[3] == 255 and bottom[3] == 255, "background sampled outside the tile; move the sample points inward"
+    size = 1024
+    bg = Image.linear_gradient("L").resize((size, size))
+    bg = Image.composite(Image.new("RGBA", (size, size), bottom), Image.new("RGBA", (size, size), top), bg)
+    save(Image.alpha_composite(bg, place(tile, size, 1.06)).convert("RGB"), IOS / "AppIcon.appiconset/icon-1024.png")
+    save(place(tile, 312, 1), IOS / "BrandMark.imageset/brand-mark.png")
+
+
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2:] or ["web", "android", "ios"])

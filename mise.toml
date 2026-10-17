@@ -114,6 +114,38 @@ cp "$signed" "../../server/bin/notesd-$version.apk"
 echo "server/bin/notesd-$version.apk (versionCode $code)"
 """
 
+[tasks."test:ios:core"]
+description = "NotesCore on the Mac: fixtures, store, API client, and sync against a real notesd"
+dir = "apps/ios/NotesCore"
+run = """
+set -e
+bin="$(pwd)/.build/notesd"
+(cd ../../../server && go build -o "$bin" ./cmd/notesd)
+NOTESD_SERVER_BIN="$bin" swift test
+"""
+
+[tasks."test:ios"]
+description = "iOS app tests on a simulator: the editor, then the UI flows against a real notesd"
+dir = "apps/ios"
+run = """
+set -e
+bin="$(pwd)/build/notesd"
+(cd ../../server && go build -o "$bin" ./cmd/notesd)
+sim=$(scripts/simulator.sh)
+scripts/with-server.sh "$bin" scripts/xctest.sh build/test.log -project Notes.xcodeproj -scheme Notes \
+  -destination "id=$sim" -derivedDataPath build/DerivedData test
+"""
+
+[tasks."lint:ios"]
+description = "swift-format (apps/ios/.swift-format), warnings fail"
+dir = "apps/ios"
+run = "swift format lint --strict --recursive Notes NotesTests NotesUITests NotesCore"
+
+[tasks."build:ios"]
+description = "Debug build of the iOS app for a simulator"
+dir = "apps/ios"
+run = "xcodebuild -project Notes.xcodeproj -scheme Notes -destination \"id=$(scripts/simulator.sh)\" -derivedDataPath build/DerivedData build"
+
 [tasks."build:web"]
 description = "Build the web app into server/internal/web/dist"
 dir = "apps/web"
