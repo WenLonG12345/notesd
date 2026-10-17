@@ -155,6 +155,22 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(local.firstMatch.exists)
     }
 
+    func testALongNoteScrolls() throws {
+        app.launch()
+        XCTAssertTrue(app.buttons["New note"].waitForExistence(timeout: 10))
+        app.buttons["New note"].tap()
+        app.typeText("Long note\n" + (1...60).map { "Line \($0)" }.joined(separator: "\n"))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["Long note"].waitForExistence(timeout: 5))
+        // Opened again, at the top and with no keyboard: a swipe scrolls the text.
+        app.staticTexts["Long note"].tap()
+        let editor = app.textViews.firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        let top = editor.screenshot().pngRepresentation
+        editor.swipeUp()
+        XCTAssertNotEqual(editor.screenshot().pngRepresentation, top, "the note scrolled")
+    }
+
     /// Launches and signs in to the test server; `audited` checks the sign-in screen on the way.
     private func signIn(audited: Bool = false) throws {
         let server = try XCTUnwrap(env["NOTESD_URL"], "run through scripts/with-server.sh")

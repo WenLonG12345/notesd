@@ -35,7 +35,7 @@ struct TagAtCursor: Equatable {
 ///
 /// Text is never replaced while the user types. `setDocument` is for loading a
 /// note or applying a remote change, and keeps the selection by offset.
-final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDelegate, UIGestureRecognizerDelegate {
+final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDelegate {
     var onChange: (() -> Void)?
     var onFormatState: ((FormatState) -> Void)?
     var onLinkEdit: ((_ text: String, _ href: String?) -> Void)?
@@ -48,6 +48,7 @@ final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDel
     private var pendingEdit: NSRange?
     /// Marks toggled with a collapsed selection, applied to what's typed next.
     private var pending: (location: Int, on: Set<Mark>, off: Set<Mark>)?
+    private lazy var taskTaps = TaskTaps(view: self)
 
     init() {
         super.init(frame: .zero, textContainer: nil)
@@ -69,7 +70,7 @@ final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDel
             view.normalize(restyleAll: true)
         }
         let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
-        tap.delegate = self
+        tap.delegate = taskTaps
         addGestureRecognizer(tap)
         NotificationCenter.default.addObserver(
             self, selector: #selector(imageReady), name: .notesImageReady, object: nil)
@@ -607,14 +608,17 @@ final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDel
 
     // MARK: taps
 
-    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        taskBox(at: touch.location(in: self)) != nil
-    }
+    /// The task box tap's delegate. Not the text view: it's already its own scroll and selection gestures'
+    /// delegate, and answering for the tap there would answer for those too (no scrolling off a task box).
+    private final class TaskTaps: NSObject, UIGestureRecognizerDelegate {
+        weak var view: NoteTextView?
 
-    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer)
-        -> Bool
-    {
-        false
+        init(view: NoteTextView) { self.view = view }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let view else { return false }
+            return view.taskBox(at: touch.location(in: view)) != nil
+        }
     }
 
     @objc private func tapped(_ g: UITapGestureRecognizer) {
@@ -628,7 +632,7 @@ final class NoteTextView: UITextView, UITextViewDelegate, NSTextLayoutManagerDel
     }
 
     /// The start of the task item whose box is under `point`, if any. Targets are at least 44pt.
-    private func taskBox(at point: CGPoint) -> Int? {
+    fileprivate func taskBox(at point: CGPoint) -> Int? {
         guard let manager = textLayoutManager, let content = manager.textContentManager else { return nil }
         let p = CGPoint(x: point.x - textContainerInset.left, y: point.y - textContainerInset.top)
         guard let fragment = manager.textLayoutFragment(for: p),
