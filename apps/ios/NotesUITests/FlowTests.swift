@@ -12,7 +12,7 @@ final class FlowTests: XCTestCase {
     override func setUp() async throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "-onboardingDismissed", "NO"]
+        app.launchArguments = ["--ui-testing"]
     }
 
     private var env: [String: String] { ProcessInfo.processInfo.environment }
@@ -126,11 +126,18 @@ final class FlowTests: XCTestCase {
 
     func testWithoutAServer() throws {
         app.launch()
-        try audit("onboarding")
-        screenshot("onboarding")
-        app.buttons["Use without a server"].tap()
+        // No onboarding on iOS: the app opens on the list, working offline, and offers a server.
         XCTAssertTrue(app.staticTexts["No notes yet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Working offline"].exists)
+        XCTAssertFalse(app.buttons["Write a note"].exists)
         try audit("empty list", glow: true)
+        screenshot("empty list")
+        app.buttons["Connect to a server"].tap()
+        XCTAssertTrue(app.textFields["Server address"].waitForExistence(timeout: 5))
+        screenshot("connect")
+        try audit("connect")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["No notes yet"].waitForExistence(timeout: 5))
         app.buttons["New note"].tap()
         app.typeText("Offline thoughts\nWritten with no server.")
         // Undo and Redo in the bar step through the typing.
@@ -152,6 +159,9 @@ final class FlowTests: XCTestCase {
     private func signIn(audited: Bool = false) throws {
         let server = try XCTUnwrap(env["NOTESD_URL"], "run through scripts/with-server.sh")
         app.launch()
+        let connect = app.buttons["Connect to a server"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 5))
+        connect.tap()
 
         let address = app.textFields["Server address"]
         XCTAssertTrue(address.waitForExistence(timeout: 5))

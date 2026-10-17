@@ -87,8 +87,7 @@ struct SettingsView: View {
             OnboardingView(
                 model: OnboardingModel(
                     accounts: graph.accounts, deviceName: graph.deviceName, lockedServer: graph.account.server,
-                    username: username),
-                presented: true)
+                    username: username))
         }
         .confirmationDialog("Sign out of this server?", isPresented: $confirmSignOut, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { Task { await graph.signOut() } }

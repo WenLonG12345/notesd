@@ -42,7 +42,7 @@ apps/ios/
 │   ├── Notes/    list, tags, note screen and its model, the email sheet
 │   ├── Images/   decoding and caching pictures for the editor
 │   ├── Locks/    unlocking, the lock password, the privacy cover
-│   ├── Account/  onboarding, the account in the Keychain
+│   ├── Account/  connecting to a server, the account in the Keychain
 │   ├── Sync/     when to sync: foreground triggers, background refresh
 │   ├── Settings/ including email (Resend) and locked notes
 │   └── UI/       design tokens and type
@@ -72,6 +72,10 @@ those folders is in its target, with no project edit.
   (one paragraph per block). Raw Markdown runs (code, tables, images) are
   attachments holding their source, so they're atomic and saved byte for
   byte. `BlockLayoutFragment` draws list markers, quote bars and tag pills.
+- **First run**: no onboarding. The app opens on the list, working offline,
+  and the empty list offers **Connect to a server** (App Review requires an
+  app that works without a server). The other platforms ask for the server
+  first.
 - **Undo**: the platform undoes typing; formatting and other editor commands
   register a snapshot, so structure comes back with the text.
 

@@ -24,6 +24,7 @@ struct NotesListView: View {
     /// The large title has scrolled away: the bar shows it small.
     @State private var collapsed = false
     @State private var syncSheet = false
+    @State private var connecting = false
     /// A note is being read before it opens; a second tap waits.
     @State private var opening = false
     @FocusState private var searching: Bool
@@ -115,6 +116,9 @@ struct NotesListView: View {
                 graph.scheduler.request()
             }
         }
+        .sheet(isPresented: $connecting) {
+            OnboardingView(model: OnboardingModel(accounts: graph.accounts, deviceName: graph.deviceName))
+        }
     }
 
     private var title: String { scope ?? "Notes" }
@@ -170,9 +174,7 @@ struct NotesListView: View {
     @ViewBuilder private var empty: some View {
         switch graph.listFilter {
         case nil:
-            EmptyList(
-                kicker: "No notes yet", title: "Your first note starts here.",
-                text: "The first line becomes the title. Everything saves as you type.", action: newNote)
+            NoNotes(offline: graph.account == .none) { connecting = true }
         case .untagged:
             EmptyList(kicker: "Untagged", title: "Nothing here yet", text: "Every note has a tag.", action: newNote)
         case .locked:
@@ -216,7 +218,7 @@ struct NotesListView: View {
                     EmptyView()
                 } else if let problem = syncProblem {
                     Button {
-                        if graph.syncStatus != .notConnected { syncSheet = true }
+                        if graph.syncStatus == .notConnected { connecting = true } else { syncSheet = true }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: graph.syncStatus == .notConnected ? "iphone" : "icloud.slash")
@@ -541,6 +543,45 @@ private struct EmptyList: View {
                 }
                 .buttonStyle(PressScaleStyle(scale: 0.95))
                 .padding(.top, 8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 40)
+        .listRowInsets(EdgeInsets())
+        .plainRow()
+    }
+}
+
+/// The list with no notes at all. Working offline (never connected), it says
+/// what a server adds and connects to one: on iOS that's offered here rather
+/// than in a first-run onboarding, so the app works from the start without one.
+private struct NoNotes: View {
+    let offline: Bool
+    let connect: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("No notes yet").font(.notesHeading).foregroundStyle(Color.ink).accessibilityAddTraits(.isHeader)
+            if offline {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Working offline").font(.notesKicker).foregroundStyle(Color.ink3)
+                    Text(
+                        "Your notes are saved on this iPhone. Connect to your notesd server to sync them across your devices; notes you’ve already written upload when you connect."
+                    )
+                    .font(.notesLede).foregroundStyle(Color.ink2)
+                    Button(action: connect) {
+                        Label("Connect to a server", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.notesButton)
+                            .foregroundStyle(Color(Palette.onSolid))
+                            .padding(.horizontal, 18)
+                            .frame(minHeight: 44)
+                            .background(Color(Palette.solid), in: .capsule)
+                    }
+                    .buttonStyle(PressScaleStyle(scale: 0.95))
+                    .padding(.top, 8)
+                }
+                .padding(.top, 28)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

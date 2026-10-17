@@ -30,11 +30,6 @@ final class AppGraph {
         didSet { Self.defaults.set(try? JSONEncoder().encode(listFilter), forKey: "listFilter") }
     }
 
-    /// "Use without a server" was chosen: start at the list instead of onboarding.
-    var onboardingDismissed: Bool {
-        didSet { Self.defaults.set(onboardingDismissed, forKey: "onboardingDismissed") }
-    }
-
     var appearance: Appearance {
         didSet { Self.defaults.set(appearance.rawValue, forKey: "appearance") }
     }
@@ -68,7 +63,7 @@ final class AppGraph {
         if Self.uiTesting {
             accounts.clear()
             for key in [
-                "listFilter", "onboardingDismissed", "appearance", "openTags", BiometricUnlock.bound,
+                "listFilter", "appearance", "openTags", BiometricUnlock.bound,
                 BiometricUnlock.declined,
             ] {
                 Self.defaults.removeObject(forKey: key)
@@ -97,7 +92,6 @@ final class AppGraph {
         mailer = NoteMailer(store: store, engine: engine, api: { [accounts] in accounts.client() })
         email = EmailSetup(api: { [accounts] in accounts.client() })
         account = accounts.account.value
-        onboardingDismissed = Self.defaults.bool(forKey: "onboardingDismissed")
         appearance = Appearance(rawValue: Self.defaults.string(forKey: "appearance") ?? "") ?? .system
         listFilter =
             Self.defaults.data(forKey: "listFilter").flatMap { try? JSONDecoder().decode(NoteFilter?.self, from: $0) }
@@ -165,7 +159,7 @@ final class AppGraph {
         biometrics.disable()
     }
 
-    /// Back to a fresh install: no notes, no account, onboarding on next launch.
+    /// Back to a fresh install: no notes, no account, working offline.
     func removeAllData() async {
         if case .signedIn = account, let client = accounts.client() {
             _ = await withTimeout(seconds: 5) { await client.logout() }
@@ -183,7 +177,6 @@ final class AppGraph {
         await locks.forget()
         biometrics.disable()
         listFilter = nil
-        onboardingDismissed = false
     }
 
     private static func describe(_ event: SyncEvent) -> String {

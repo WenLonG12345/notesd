@@ -32,7 +32,10 @@ the phone, so sync before you do.
 
 ## Connect to your server
 
-On first launch, the app asks for your server:
+The app opens straight into your notes and works offline: notes stay on the
+phone until you connect. To connect, tap **Connect to a server** on the empty
+list, the **On this iPhone only** line at the bottom of the list, or **Connect
+to a server** in Settings (the sidebar's gear):
 
 1. Enter the **server address**, for example `notes.example.com` or
    `http://192.168.1.20:8080`.
@@ -48,9 +51,7 @@ your own network (`192.168.x`, `10.x`, `172.16–31.x`, `localhost`,
 server on your network, iOS asks once whether notesd may find devices on
 your local network. Allow it, or the app can't reach the server.
 
-**Use without a server** skips this step: notes stay on the phone, and you
-can connect later in Settings (the sidebar's gear). Notes you wrote before
-connecting upload when you connect.
+Notes you wrote before connecting upload when you connect.
 
 The app stays signed in as long as you use it at least every six months. If
 the session ends (for example after you sign out that device from the web

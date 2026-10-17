@@ -1,17 +1,13 @@
 import SwiftUI
 
 /// Connecting to a server: its address, then a setup token and a new account
-/// (a fresh server) or a sign-in. "Use without a server" skips it all.
+/// (a fresh server) or a sign-in. A sheet: the app works without a server until then.
 struct OnboardingView: View {
-    @Environment(AppGraph.self) private var graph
     @Environment(\.dismiss) private var dismiss
     @State private var model: OnboardingModel
-    /// Shown from Settings: Cancel instead of "Use without a server".
-    let presented: Bool
 
-    init(model: OnboardingModel, presented: Bool = false) {
+    init(model: OnboardingModel) {
         _model = State(initialValue: model)
-        self.presented = presented
     }
 
     var body: some View {
@@ -39,17 +35,6 @@ struct OnboardingView: View {
                     }
                     .buttonStyle(PressScaleStyle(scale: 0.97))
                     .disabled(model.busy)
-                    if model.step == .server && !presented {
-                        Button {
-                            graph.onboardingDismissed = true
-                        } label: {
-                            Text("Use without a server")
-                                .font(.notesButton)
-                                .foregroundStyle(Color.ink2)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .contentShape(.rect)
-                        }
-                    }
                 }
                 .padding(24)
             }
@@ -61,13 +46,13 @@ struct OnboardingView: View {
                         Button("Back", systemImage: "chevron.left") { _ = model.back() }.disabled(model.busy)
                     }
                 }
-                if presented {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() } }
             }
             .onChange(of: model.done) { _, done in if done { dismiss() } }
             .onDisappear { model.cancel() }
         }
+        // The accent is too light for text; link brown passes contrast, in the bar too.
+        .tint(Color(Palette.link))
     }
 
     @ViewBuilder private var header: some View {
