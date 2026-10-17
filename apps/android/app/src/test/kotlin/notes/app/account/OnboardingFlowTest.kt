@@ -74,7 +74,7 @@ class OnboardingFlowTest {
         launch()
         compose.waitUntilExactlyOneExists(hasText("Use without a server"))
         compose.onNodeWithText("Use without a server").performScrollTo().performClick()
-        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
+        compose.waitUntilExactlyOneExists(hasText("No notes yet"))
         assertEquals(true, graph.onboardingDismissed.value)
     }
 
@@ -92,7 +92,7 @@ class OnboardingFlowTest {
         button("Sign in").performClick()
         compose.waitUntilExactlyOneExists(hasText("Wrong username or password."))
         button("Sign in").performClick()
-        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
+        compose.waitUntilExactlyOneExists(hasText("No notes yet"))
         assertEquals(Account.SignedIn(server.url("/").toString(), "me"), graph.accounts.account.value)
     }
 
@@ -117,7 +117,7 @@ class OnboardingFlowTest {
         compose.onNodeWithText("Confirm password").performTextInput("long enough")
         compose.onNodeWithText("Password").performTextInput("long enough")
         button("Create account").performClick()
-        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
+        compose.waitUntilExactlyOneExists(hasText("No notes yet"))
         assertEquals(Account.SignedIn(server.url("/").toString(), "me"), graph.accounts.account.value)
     }
 
