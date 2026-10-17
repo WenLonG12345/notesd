@@ -283,8 +283,6 @@ fun NotesListScreen(
                         !searching && state.notes.isEmpty() -> item(key = "empty") {
                             Empty(
                                 kicker = "No notes yet",
-                                title = "Your first note starts here.",
-                                text = "The first line becomes the title. Everything saves as you type.",
                                 action = "Write a note",
                                 onAction = onNew
                             )
@@ -629,15 +627,22 @@ private fun NoteRow(
 }
 
 @Composable
-private fun Empty(kicker: String, title: String, text: String, action: String? = null, onAction: (() -> Unit)? = null) {
+private fun Empty(
+    kicker: String,
+    title: String? = null,
+    text: String? = null,
+    action: String? = null,
+    onAction: (() -> Unit)? = null
+) {
     val t = LocalTokens.current
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 48.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Kicker(kicker)
-        Text(title, style = Type.heading, color = t.ink, modifier = Modifier.semantics { heading() })
-        Text(text, style = Type.lede, color = t.ink2)
+        // Without a title the kicker is the only thing naming the state for screen readers.
+        Kicker(kicker, if (title == null) Modifier.semantics { heading() } else Modifier)
+        if (title != null) Text(title, style = Type.heading, color = t.ink, modifier = Modifier.semantics { heading() })
+        if (text != null) Text(text, style = Type.lede, color = t.ink2)
         if (action != null && onAction != null) {
             Spacer(Modifier.height(8.dp))
             NotesButton(action, onAction, kind = ButtonKind.Solid, icon = Icons.Compose)

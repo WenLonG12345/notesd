@@ -19,18 +19,16 @@
   animation: sheet-in 0.5s var(--ease-out);
 }
 
-.text h2 {
+.kicker {
+  margin: 0;
+  font: inherit;
+}
+
+.title {
   margin: 0;
   font: 400 34px/1.05 var(--font-serif);
   letter-spacing: -0.02em;
   text-wrap: balance;
-}
-
-.text p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--ink-2);
 }
 
 .write {

@@ -125,7 +125,7 @@ class AccessibilityTest {
     fun emptyList() {
         graph.setOnboardingDismissed(true)
         launch()
-        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
+        compose.waitUntilExactlyOneExists(hasText("No notes yet"))
         audit("empty list")
     }
 

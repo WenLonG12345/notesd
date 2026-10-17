@@ -9,10 +9,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import notes.app.ui.ButtonKind
@@ -33,17 +34,13 @@ fun NothingOpen(hasNotes: Boolean, onNew: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Kicker(if (hasNotes) "Nothing selected" else "No notes yet")
-            Heading(
-                if (hasNotes) "Pick a note, or start one." else "Your first note starts here.",
-                Modifier,
-                Type.heading.copy(textAlign = TextAlign.Center)
-            )
-            Text(
-                "The first line becomes the title. Everything saves as you type.",
-                style = Type.lede.copy(textAlign = TextAlign.Center),
-                color = t.ink2
-            )
+            if (hasNotes) {
+                Kicker("Nothing selected")
+                Heading("Pick a note, or start one.", Modifier, Type.heading.copy(textAlign = TextAlign.Center))
+            } else {
+                // Lone kicker names the pane for screen readers.
+                Kicker("No notes yet", Modifier.semantics { heading() })
+            }
             Spacer(Modifier.height(6.dp))
             NotesButton("Write a note", onNew, kind = ButtonKind.Solid, icon = Icons.Compose)
         }

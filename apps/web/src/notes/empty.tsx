@@ -12,9 +12,10 @@ export function EmptyPane({ hasNotes, onNew }: { hasNotes: boolean; onNew: () =>
   return (
     <section className={styles.pane} aria-labelledby="empty-title">
       <div className={styles.text}>
-        <Kicker>{kicker}</Kicker>
-        <h2 id="empty-title">Your first note starts here.</h2>
-        <p>The first line becomes the title. Everything saves as you type.</p>
+        <h2 id="empty-title" className={styles.kicker}>
+          <Kicker>{kicker}</Kicker>
+        </h2>
+        {hasNotes && <p className={styles.title}>Pick a note, or start one.</p>}
         <Button variant="solid" size="md" className={styles.write} onClick={onNew}>
           Write a note
         </Button>

@@ -53,11 +53,11 @@ class MainActivityTest {
 
     @Test
     fun `a new note left blank leaves nothing behind`() {
-        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
+        compose.waitUntilExactlyOneExists(hasText("No notes yet"))
         compose.onNodeWithContentDescription("New note").performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription("Back"))
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.waitUntilExactlyOneExists(hasText("Your first note starts here."))
+        compose.waitUntilExactlyOneExists(hasText("No notes yet"))
     }
 
     @Test
