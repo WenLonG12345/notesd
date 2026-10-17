@@ -149,7 +149,7 @@ struct Backdrop: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        // Drawn into one bitmap: the paper and the glow over it, as the eye (and the contrast audit) sees them.
+        // Drawn into one bitmap: the paper and the glow over it, as the eye sees them.
         Canvas { context, size in
             let traits = UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light)
             let paper = Color(Palette.bg.resolvedColor(with: traits))

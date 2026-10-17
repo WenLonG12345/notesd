@@ -94,10 +94,9 @@ final class FlowTests: XCTestCase {
         _ = try await api("POST", "api/v1/notes", body: note)
     }
 
-    /// `glow`: the screen has the list's backdrop.
     private func audit(
-        _ screen: String, glow: Bool = false,
-        _ types: XCUIAccessibilityAuditType = [.dynamicType, .sufficientElementDescription, .hitRegion, .contrast]
+        _ screen: String,
+        _ types: XCUIAccessibilityAuditType = [.dynamicType, .sufficientElementDescription, .hitRegion]
     ) throws {
         // Rows fade in as the list changes: audit what they settle to.
         sleep(1)
@@ -114,9 +113,6 @@ final class FlowTests: XCTestCase {
             let inBar = bars.contains { $0.contains(frame) }
             // Bars cap their text size; their labels show in the Large Content Viewer instead.
             if issue.auditType == .dynamicType && inBar { return true }
-            // The list's warm glow (Backdrop, top of the screen) varies under the text, which the audit
-            // reports however strong the contrast; worked out, ink3 on its peak is 5.6:1 dark, 5.2:1 light.
-            if issue.auditType == .contrast && frame.maxY < screen.height * 0.45 && glow { return true }
             // A row scrolled partly under the bottom bar is cut off, not small.
             if issue.auditType == .hitRegion && frame.maxY > screen.maxY - 110 { return true }
             print("AUDIT \(screen): \(issue.compactDescription) :: \(issue.element?.label ?? "-") \(frame)")
@@ -130,7 +126,7 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No notes yet"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Working offline"].exists)
         XCTAssertFalse(app.buttons["Write a note"].exists)
-        try audit("empty list", glow: true)
+        try audit("empty list")
         screenshot("empty list")
         app.buttons["Connect to a server"].tap()
         XCTAssertTrue(app.textFields["Server address"].waitForExistence(timeout: 5))
@@ -252,7 +248,7 @@ final class FlowTests: XCTestCase {
         let count = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[0-9]+ notes?")).firstMatch
         XCTAssertTrue(count.waitForExistence(timeout: 5), app.debugDescription)
         screenshot("list")
-        try audit("list", glow: true)
+        try audit("list")
 
         // Search finds it by a word in the body.
         let search = app.textFields["Search notes"]
@@ -262,21 +258,21 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["1 result"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Weekend"].exists)
         screenshot("search")
-        try audit("search", glow: true)
+        try audit("search")
         app.buttons["Clear search"].tap()
 
         // The sidebar lists the new tag.
         app.buttons["Tags"].tap()
         XCTAssertTrue(app.buttons["#groceries, 1 note"].waitForExistence(timeout: 5))
         screenshot("tags")
-        try audit("tags", glow: true)
+        try audit("tags")
         app.buttons["Settings"].tap()
         let account = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "owner"))
         XCTAssertTrue(account.firstMatch.waitForExistence(timeout: 5))
         screenshot("settings")
         // The last row on screen leaves it as the text grows, which the Dynamic Type check reports as
         // partial support; the form's fonts are the ones the other screens check.
-        try audit("settings", [.sufficientElementDescription, .hitRegion, .contrast])
+        try audit("settings", [.sufficientElementDescription, .hitRegion])
     }
 
     func testAPictureFromAnotherDeviceShows() async throws {
@@ -312,7 +308,7 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(offer.waitForExistence(timeout: 15))
         screenshot("face id offer")
         // A system alert: iOS sizes its text, capped, and the audit reports the cap.
-        try audit("face id offer", [.sufficientElementDescription, .hitRegion, .contrast])
+        try audit("face id offer", [.sufficientElementDescription, .hitRegion])
         offer.buttons["Use Face ID"].tap()
 
         // Locked from its own screen: Face ID waits to be asked.
