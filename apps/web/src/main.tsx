@@ -5,6 +5,7 @@ import { applyTheme, readTheme } from './theme'
 import './styles/fonts.css'
 import './styles/tokens.css'
 import './styles/base.css'
+import './styles/boot.css'
 
 // Before the first render so a picked theme doesn't flash the OS one.
 applyTheme(readTheme())
