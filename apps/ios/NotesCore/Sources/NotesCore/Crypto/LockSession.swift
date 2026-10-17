@@ -57,6 +57,9 @@ public final class LockSession: Sendable {
     /// The key while unlocked. Callers must not keep it.
     public func key() -> Data? { inner.withLock { $0.key } }
 
+    /// The lock password entry the key in memory goes with; nil while locked.
+    public func keyEntry() -> String? { inner.withLock { $0.keyEntry } }
+
     /// Runs before the key is dropped, e.g. to save an open locked note while it
     /// can still be encrypted. False when that failed: the key is kept.
     /// Returns the call that removes the hook.
@@ -85,6 +88,16 @@ public final class LockSession: Sendable {
                 return false
             }
             self.adopt(key, entry: Self.passwordEntry(stored))
+            return true
+        }
+    }
+
+    /// Unlocks with a key kept on the device (behind Face ID), if the keyring
+    /// still has the password entry it was kept against.
+    public func unlockWithKey(_ key: Data, boundTo: String) async -> Bool {
+        await mutex.withLock {
+            guard key.count == LockedNotes.keyBytes, (try? await self.passwordEntry()) == boundTo else { return false }
+            self.adopt(key, entry: boundTo)
             return true
         }
     }
@@ -202,8 +215,10 @@ public final class LockSession: Sendable {
         }
     }
 
-    /// The lock password entry as synced; nil when there's none.
-    private func passwordEntry() async throws -> String? { Self.passwordEntry(try await keys.keys()) }
+    /// The lock password entry as synced; nil when there's none. A key kept
+    /// elsewhere on the device (behind Face ID) is only good while this is
+    /// unchanged: a reset replaces the key, so a stale copy must never encrypt new notes.
+    public func passwordEntry() async throws -> String? { Self.passwordEntry(try await keys.keys()) }
 
     private static func passwordEntry(_ keys: [LockKey]) -> String? {
         keys.first { $0.kind == WrapKind.password.rawValue }?.wrapped
