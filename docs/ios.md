@@ -50,7 +50,7 @@ server on your network, iOS asks once whether notesd may find devices on
 your local network. Allow it, or the app can't reach the server.
 
 **Use without a server** skips this step: notes stay on the phone, and you
-can connect later in Settings (‹ Tags → Settings). Notes you wrote before
+can connect later in Settings (the sidebar's gear). Notes you wrote before
 connecting upload when you connect.
 
 The app stays signed in as long as you use it at least every six months. If
@@ -60,25 +60,29 @@ app), your notes stay on the phone and the list offers to sign in again.
 ## Notes, tags and search
 
 - The first line of a note is its title. Format text with the bar above the
-  keyboard: bold, italic, strikethrough, links, headings, bullet, numbered
-  and check lists, quotes, and indentation. With a hardware keyboard, ⌘B,
+  keyboard: headings, bullet, numbered and check lists, quotes, pictures and
+  indentation; select text for bold, italic, strikethrough and links. Undo
+  and Redo sit at the top of the note. With a hardware keyboard, ⌘B,
   ⌘I, ⇧⌘X, Tab and ⇧Tab work too, and ⇧Return starts a new line within a
   paragraph.
 - Write `#tag` anywhere in a note to tag it. Use `#multi word tag#` for
-  names with spaces and `#parent/child` to nest them. "Tags" (top left of
-  the list) filters by tag. While you type a tag, the bar suggests ones you
-  already use.
+  names with spaces and `#parent/child` to nest them. The sidebar (the
+  button at the top left of the list, or swipe in from the left edge)
+  filters by tag, and holds Settings. While you type a tag, the bar
+  suggests ones you already use.
 - Search covers titles and text, works offline, and finds words as you type
   them.
-- Swipe a note left to delete it. Undo appears for a few seconds.
+- Swipe a note left, or touch and hold it, to delete it. Undo appears for a
+  few seconds.
 
 ## Sync
 
 The app syncs when it opens, a few seconds after you stop typing, when the
 network comes back, and when you pull down on the list. iOS also lets it
-sync now and then in the background, but on its own schedule. The list's
-bottom bar says what's happening: Synced, Offline, or how many notes are
-waiting to upload.
+sync now and then in the background, but on its own schedule. While sync
+is fine, the list's footer just counts the notes; when it isn't, it says so
+(Offline, or how many notes are waiting to upload), and tapping it offers
+Sync now.
 
 If the same note was changed on two devices before they synced, nothing is
 lost. When both changed different parts (one the title, the other the
