@@ -1,148 +1,130 @@
 # Hosting notesd
 
-notesd is one program and one data directory. This guide installs it on a
-Linux machine, runs it with systemd, puts HTTPS in front of it, and creates
-your account.
+notesd is a single binary - This guide covers installation on Linux with systemd and optional HTTPS setup.
 
-## What you need
+You'll need a 64-bit Linux machine (x86-64 or ARM64) (or a Mac on Apple silicon) and either a domain name for HTTPS access or a private LAN/VPN.
 
-- A Linux or Mac machine that stays on: a VPS, a home server or a Raspberry Pi
-  with a 64-bit OS. One process with no other services, so a small machine
-  is enough.
-- One of the following:
-  - **A domain name**, for access from anywhere. You'll need HTTPS in
-    front of notesd (step 4): either the domain points at the machine and a
-    reverse proxy handles TLS, or a tunnel does it for you.
-  - **A private network only:** your home LAN, or a VPN such as Tailscale or
-    WireGuard. HTTPS is optional there (see [Without a domain](#without-a-domain)).
+## 1. Install
 
-## 1. Install the binary
+Download the binary from the [latest release](https://github.com/cassiozen/notesd/releases/latest):
 
-Download the binary for your machine from the
-[latest release](https://github.com/cassiozen/notesd/releases/latest):
-
-| Machine | File |
+| Platform | Binary |
 | --- | --- |
-| Most VPSes and PCs | `notesd-linux-amd64` |
-| Raspberry Pi 4/5, ARM servers | `notesd-linux-arm64` |
-| Mac with Apple silicon | `notesd-darwin-arm64` |
+| Linux x86-64 | `notesd-linux-amd64` |
+| Linux ARM64 (including Raspberry Pi 4/5) | `notesd-linux-arm64` |
+| macOS Apple silicon | `notesd-darwin-arm64` |
+
+For example, on Linux x86-64:
 
 ```bash
-VERSION=v0.1.0   # the release you're installing
-curl -LO https://github.com/cassiozen/notesd/releases/download/$VERSION/notesd-linux-amd64
-curl -LO https://github.com/cassiozen/notesd/releases/download/$VERSION/SHA256SUMS
+VERSION=v0.1.0
+curl -fLO https://github.com/cassiozen/notesd/releases/download/$VERSION/notesd-linux-amd64
+curl -fLO https://github.com/cassiozen/notesd/releases/download/$VERSION/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo install -m 755 notesd-linux-amd64 /usr/local/bin/notesd
 notesd version
 ```
 
-The web app is inside the binary; there's nothing else to install. To build
-it yourself instead, see [development.md](development.md).
+The binary includes the web app. No additional dependencies are required.
 
-## 2. Run it with systemd
+To build from source, see [development.md](development.md).
 
-Create a user for the service and the unit file
-`/etc/systemd/system/notesd.service`:
+## 2. Set up systemd
 
-```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin notesd
-```
+You can run notesd directly with `notesd serve`, but for a permanent installation, you'll probably want to run it as a systemd service. This starts notesd on boot and automatically restarts it if it crashes.
+
+Create `/etc/systemd/system/notesd.service`:
 
 ```ini
 [Unit]
 Description=notesd
-After=network.target
 
 [Service]
-Type=simple
-User=notesd
-Group=notesd
-ExecStart=/usr/local/bin/notesd --data-dir /var/lib/notesd --listen 127.0.0.1:8080
+ExecStart=/usr/local/bin/notesd serve --data-dir /var/lib/notesd
 Environment=NOTESD_PUBLIC_URL=https://notes.example.com
-Restart=on-failure
-RestartSec=5
+DynamicUser=yes
 StateDirectory=notesd
 StateDirectoryMode=0700
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Set `NOTESD_PUBLIC_URL` to the address you'll open notesd at (see
-[Configuration](#configuration)). `StateDirectory` makes systemd create
-`/var/lib/notesd` owned by the `notesd` user. Then:
+Set `NOTESD_PUBLIC_URL` to the address you'll open notesd at (see [Configuration](#configuration)).
+
+**Notes**:
+
+- `StateDirectory` creates `/var/lib/notesd` with the appropriate permissions and preserves its contents across restarts.
+- `DynamicUser` runs notesd as an unprivileged user without requiring a separate system account. 
+
+Enable and start the service:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now notesd
-journalctl -u notesd -f
 ```
 
-notesd shuts down cleanly on `systemctl stop`: requests in progress finish
-first. Database changes are atomic, so even a power cut leaves the
-database consistent.
+To check its status or follow the logs:
+
+```bash
+sudo systemctl status notesd
+sudo journalctl -u notesd -f
+```
+
+The default listen address is `127.0.0.1:8080`.
+
+For other options, see [Configuration](#configuration).
 
 ## 3. Create your account
 
-On its first start, notesd logs a **setup link**:
+On first start, notesd logs a setup URL:
 
 ```text
-WARN no owner account yet: open setup_url to create it, ... setup_url=https://notes.example.com/setup#k3J9… setup_token=k3J9…
+WARN no owner account yet: ... setup_url=https://notes.example.com/setup#k3J9…
 ```
 
-Open the link (after step 4, if you're setting up HTTPS) and choose a
-username and password. Until an account exists, nobody can create one
-without this token, so a stranger can't claim a fresh server.
+Open the URL to create your account. If you're configuring HTTPS, complete the next section first.
 
-- The token changes every time the server restarts. To keep it fixed, set
-  `--setup-token` / `NOTESD_SETUP_TOKEN`; this is useful when you can't
-  read the log easily.
-- You can also paste the token into the Android app's "New server" screen
-  instead of using the web app.
-- Or create the account from the shell, which only needs access to the
-  data directory:
+The setup token prevents unauthorized account creation and is regenerated on each restart until an owner account exists.
+
+Alternatively, you can:
+
+- Set `NOTESD_SETUP_TOKEN` to use a fixed token.
+- Enter the token in the Android app's **New server** screen.
+- Create the account directly from the server:
 
   ```bash
-  sudo -u notesd sh -c "NOTESD_PASSWORD='…' notesd create-owner --username me --data-dir /var/lib/notesd"
+  sudo -u notesd env NOTESD_PASSWORD='…' /usr/local/bin/notesd create-owner --username me --data-dir /var/lib/notesd
   ```
 
-notesd has one account. Sign in with it from as many browsers and phones as
-you like.
+notesd supports a single account, accessible from multiple devices.
 
 ## 4. HTTPS
 
-notesd speaks plain HTTP and expects something else to handle TLS. 
-Two ways to get there:
-
-- **Reverse proxy.** A web server on the same machine terminates TLS and
-  forwards to notesd. The machine must be reachable from the internet on
-  port 443 and your domain must point at it. Certificates come from Let's
-  Encrypt. You run everything; nobody else sees your traffic.
-- **Tunnel.** A small agent on the machine opens an outbound connection to a
-  provider, which terminates TLS at its edge and relays requests to notesd.
-  No open ports, no port forwarding, works behind home routers and CGNAT.
-  The provider sees your traffic in plaintext.
+notesd serves HTTP. For public access, put it behind a reverse proxy or tunnel and configure `NOTESD_PUBLIC_URL` with the external HTTPS address.
 
 ### Option A: Reverse proxy
 
-**Caddy** gets and renews a certificate automatically. `/etc/caddy/Caddyfile`:
+**Caddy** handles certificates automatically. Add to `/etc/caddy/Caddyfile`:
 
-```text
+```caddyfile
 notes.example.com {
     reverse_proxy 127.0.0.1:8080
 }
 ```
 
-**nginx** with a certificate from certbot:
+Or use **nginx** with a certificate provisioned through certbot:
 
 ```nginx
 server {
     listen 443 ssl;
     server_name notes.example.com;
+
     ssl_certificate     /etc/letsencrypt/live/notes.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/notes.example.com/privkey.pem;
 
-    client_max_body_size 5m;   # notesd accepts request bodies up to 4 MiB
+    client_max_body_size 5m;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
@@ -151,91 +133,79 @@ server {
 }
 ```
 
+The host must be reachable on port 443, with DNS pointing to it. notesd accepts request bodies up to 4 MiB.
+
 ### Option B: Tunnel
 
-[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/),
-[ngrok](https://ngrok.com) and [Tailscale Funnel](https://tailscale.com/kb/1223/funnel)
-all work the same way: install their agent, point it at
-`http://127.0.0.1:8080`, and they hand you an HTTPS address. This guide
-covers Cloudflare Tunnel, which is free and lets you use your own domain;
-the domain's DNS must be hosted on Cloudflare.
+Tunnels avoid inbound ports and work behind CGNAT. Options include [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), [ngrok](https://ngrok.com), and [Tailscale Funnel](https://tailscale.com/kb/1223/funnel).
 
-1. Install `cloudflared` from
-   [Cloudflare's packages](https://pkg.cloudflare.com/) (there's an `apt`
-   repo and a `.deb` for Raspberry Pi).
-2. In the [Zero Trust dashboard](https://one.dash.cloudflare.com), go to
-   **Networks → Tunnels → Create a tunnel**, choose **Cloudflared**, and
-   name it `notesd`. Copy the token it shows.
-3. Register the agent as a service on the machine:
+For Cloudflare Tunnel:
+
+1. Install `cloudflared` from [Cloudflare's packages](https://pkg.cloudflare.com/).
+2. In the [Zero Trust dashboard](https://one.dash.cloudflare.com), create a Cloudflared tunnel under **Networks → Tunnels**.
+3. Install the tunnel service using the provided token:
 
    ```bash
    sudo cloudflared service install <token>
    ```
 
-4. Back in the dashboard, add a **public hostname**: subdomain `notes`,
-   your domain, service type **HTTP**, URL `127.0.0.1:8080`. Cloudflare
-   creates the DNS record for you.
+4. Add a public hostname pointing to `http://127.0.0.1:8080`.
 
-Open `https://notes.example.com`; the tunnel shows as **Healthy** in the
-dashboard. Cloudflare keeps the `Host` header, so notesd needs no extra
-flags beyond `--public-url`.
+Your domain's DNS must be managed by Cloudflare. Set `NOTESD_PUBLIC_URL` to the resulting HTTPS address.
 
-### Either way
+Unlike a locally terminated reverse proxy, a provider-terminated tunnel allows the provider to inspect decrypted traffic.
 
-- **Set `--public-url`** to the `https://` address. That makes the session
-  cookie `Secure`, and it makes the setup link point at the right place.
-- **Serve notesd at the root of a host name** (`https://notes.example.com/`),
-  not under a path like `/notes`.
-- **Keep the `Host` header**, or set `--public-url`. notesd rejects changes
-  from a page whose `Origin` doesn't match the `Host` header or the public
-  URL, so a misconfigured proxy shows up as every save failing with 403.
-- **Login rate limiting:** failed logins are limited to 10 per 15 minutes
-  per client address. Behind a proxy or a tunnel, every client shares the
-  same address, so the limit is shared too: someone guessing passwords can
-  lock you out of signing in for up to 15 minutes. Your existing sessions
-  aren't affected.
+### Proxy considerations
+
+- **Public URL:** Set `NOTESD_PUBLIC_URL` to the external HTTPS URL. This enables `Secure` cookies and generates the correct setup link.
+- **Root path:** Use a dedicated hostname (`notes.example.com`), not a subpath (`example.com/notes`).
+- **Origin validation:** Preserve the `Host` header or configure `NOTESD_PUBLIC_URL`. Otherwise, writes may fail with HTTP 403.
+- **Rate limiting:** Authentication is limited to 10 failed attempts per 15 minutes per client IP. Behind a proxy or tunnel, clients may share the same limit, potentially blocking new logins temporarily. Existing sessions are unaffected.
 
 ## Without a domain
 
-On a home network or a VPN you can skip the proxy and listen on the
-network directly:
+For LAN or VPN access, you can serve HTTP directly. Change the listen address in your systemd unit to:
 
-```bash
-notesd --data-dir /var/lib/notesd --listen 0.0.0.0:8080
+```text
+--listen 0.0.0.0:8080
 ```
 
-Then open `http://<server address>:8080`. Over plain HTTP, sign-in cookies
-aren't marked `Secure`, and your password crosses the network unencrypted.
-That's acceptable on a network you trust. The Android app only allows HTTP
-to private addresses (`192.168.x`, `10.x`, `172.16–31.x`, `localhost`,
-`*.local`); every other address needs HTTPS.
+Set `NOTESD_PUBLIC_URL` to `http://<server-ip>:8080` and access notesd at that address.
 
-**Tailscale** gives each machine an HTTPS name with `tailscale serve`:
+Plain HTTP sends credentials without transport encryption and uses cookies without the `Secure` flag. Use it only on networks you trust.
+
+The Android app permits HTTP connections to private IPv4 ranges (`192.168.x`, `10.x`, `172.16–31.x`), `localhost`, and `*.local`. Other addresses require HTTPS.
+
+### Tailscale
+
+If you use Tailscale, you can expose notesd over HTTPS within your tailnet without a separate reverse proxy:
 
 ```bash
 tailscale serve --bg 8080
 ```
 
-Then use `--public-url https://<machine>.<tailnet>.ts.net`.
+Set `NOTESD_PUBLIC_URL` to `https://<machine>.<tailnet>.ts.net`.
 
 ## Configuration
 
-Every option is a flag or an environment variable; there's no config file.
+Configuration is available through CLI flags or environment variables. No configuration file is required.
 
-| Flag | Environment | Default | |
+| Flag | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `--data-dir` | `NOTESD_DATA_DIR` | `./data` | Where `notes.db` lives |
-| `--listen` | `NOTESD_LISTEN` | `127.0.0.1:8080` | Address and port to listen on |
-| `--public-url` | `NOTESD_PUBLIC_URL` | unset | The address users open; `https://` makes cookies `Secure` |
+| `--data-dir` | `NOTESD_DATA_DIR` | `./data` | Database directory |
+| `--listen` | `NOTESD_LISTEN` | `127.0.0.1:8080` | Listen address |
+| `--public-url` | `NOTESD_PUBLIC_URL` | Unset | External URL; HTTPS enables `Secure` cookies |
 | `--log-level` | `NOTESD_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `--log-format` | `NOTESD_LOG_FORMAT` | `text` | `json` for log collectors |
-| `--setup-token` | `NOTESD_SETUP_TOKEN` | generated | Fixed setup token while no account exists |
+| `--log-format` | `NOTESD_LOG_FORMAT` | `text` | `text` or `json` |
+| `--setup-token` | `NOTESD_SETUP_TOKEN` | Generated | Fixed initial setup token |
 
-On machines with little memory, set `GOMEMLIMIT` (for example
-`Environment=GOMEMLIMIT=64MiB` in the unit) so Go frees memory sooner.
+For memory-constrained hosts, `GOMEMLIMIT` can reduce Go's memory usage by triggering garbage collection earlier:
 
+```ini
+Environment=GOMEMLIMIT=64MiB
+```
 
-## Next
+## Next steps
 
 - [Install the Android app](android.md)
 - [Upgrades and maintenance](operations.md)

@@ -11,8 +11,7 @@ offline and syncs your notes whenever a connection is available.</p>
 
 ## Features
 
-- **Full-text Search** across titles and bodies. On Android it queries the local
-database, so it works offline.
+- **Full-text Search** across titles and bodies.
 
 - **Organize with tags.** Add tags like `#work` and `#reading` anyewhere in your note. The sidebar lists all your tags, so you can browse by topic. Tags can be nested with `/` (`#home/garden`).
 
@@ -20,28 +19,25 @@ database, so it works offline.
   <img width="368" height="259" alt="Image" src="https://github.com/user-attachments/assets/607ed533-451f-42ed-90d6-e1cfe162deae" />  
   See [Security](#security) for more details.
 
-- **Markdown under the hood.** Notes are stored as Markdown, and you can take them out at any
-time.  
+- **Markdown under the hood.** Notes are stored as Markdown, and you can take them out at any time.  
   See [Your data](#your-data) for more details.
 
 ## Get started
 
-1. **Host the server.** Download the binary for your machine, run it, and put
-   HTTPS in front of it. See [docs/hosting.md](docs/hosting.md).
+1. **Host the server.** Download the single binary for your machine. See [docs/hosting.md](docs/hosting.md).
 2. **Create your account.** Open the setup link the server prints on first
-   start and choose a username and password.
+   start and setup your user.
 3. **Install the Android app.** Download the APK from
    [Releases](https://github.com/cassiozen/notesd/releases) and connect it to
    your server. See [docs/android.md](docs/android.md).
 
 ## Your data
 
-Everything the server knows lives in one SQLite file, using **WAL mode** and **FTS5**.  
-SQLite runs inside the server process (a query is a function call instead of a network round trip). On an NVMe
-drive a commit takes a fraction of a millisecond.
+All data is stored in SQLite, with WAL mode and FTS5. Everything runs in-process, with no database server to manage.
 
+Notes are stored as Markdown, but using a database instead of individual files gives us fast queries, indexed full-text search, and reliable transactions.
 
-Notes are stored as Markdown, and you can export them with:
+You can export notes as individual markdown files with:
 
 ```bash
 notesd export --out ~/notes-export
@@ -53,9 +49,9 @@ database, so it's safe to run while the server is up.
 
 ## Security
 
-Regular notes are stored unencrypted on your server. Use disk encryption if that
+Regular notes are stored unencrypted. Use disk encryption if that
 matters to you, and HTTPS for anything reachable from the internet.
-The Android app won't send your password over plain HTTP outside your local network.
+(The Android app won't send your password over plain HTTP outside your local network.)
 
 **Locked notes** have their body and images encrypted. Be aware that:
 
