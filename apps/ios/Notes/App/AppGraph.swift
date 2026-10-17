@@ -170,11 +170,15 @@ final class AppGraph {
         if case .signedIn = account, let client = accounts.client() {
             _ = await withTimeout(seconds: 5) { await client.logout() }
         }
-        try? await store.wipe()
-        try? await images.wipe()
+        // Signed out first, so a cycle that starts after the wipe finds no session; the wipe itself waits
+        // for any running cycle, which would otherwise write pulled notes back into the emptied database.
         accounts.clear()
-        // Through the key store, which moves its generation on: a keyring fetch still in flight can't put it back.
-        try? await engine.lockKeys.replace([])
+        try? await engine.exclusive { [store, images, engine] in
+            try await store.wipe()
+            try await images.wipe()
+            // Through the key store, which moves its generation on: a keyring fetch still in flight can't put it back.
+            try await engine.lockKeys.replace([])
+        }
         email.forget()
         await locks.forget()
         biometrics.disable()

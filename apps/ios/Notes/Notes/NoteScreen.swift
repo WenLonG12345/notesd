@@ -67,21 +67,11 @@ struct NoteScreen: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
             }
+            if let problem = model.saveProblem {
+                problemBanner(problem) { model.saveProblem = nil }
+            }
             if let problem = model.imageProblem {
-                Button {
-                    model.imageProblem = nil
-                } label: {
-                    HStack(alignment: .top) {
-                        Text(problem).font(.notesSmall).frame(maxWidth: .infinity, alignment: .leading)
-                        Image(systemName: "xmark").accessibilityLabel("Dismiss")
-                    }
-                    .foregroundStyle(Color.errInk)
-                    .padding(12)
-                    .background(Color.errBg, in: .rect(cornerRadius: 12))
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+                problemBanner(problem) { model.imageProblem = nil }
             }
             if model.needsUnlock || model.unreadable {
                 LockedNoteView(
@@ -158,6 +148,7 @@ struct NoteScreen: View {
                 return await graph.mailer.send(id, to: to)
             }
         }
+        .task { await model.run() }
         .task { await graph.email.refresh() }
         .sheet(item: $lockSheet) {
             if typedPassword { graph.biometrics.offer() }
@@ -192,6 +183,21 @@ struct NoteScreen: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { saveNow() }
         }
+    }
+
+    private func problemBanner(_ problem: String, onDismiss: @escaping () -> Void) -> some View {
+        Button(action: onDismiss) {
+            HStack(alignment: .top) {
+                Text(problem).font(.notesSmall).frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "xmark").accessibilityLabel("Dismiss")
+            }
+            .foregroundStyle(Color.errInk)
+            .padding(12)
+            .background(Color.errBg, in: .rect(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 
     /// The server sends email, so it needs a connection and settings, and it refuses locked notes.

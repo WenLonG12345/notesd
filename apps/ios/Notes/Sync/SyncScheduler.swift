@@ -3,9 +3,9 @@ import Network
 import NotesCore
 import UIKit
 
-/// When to sync (§5.5). In the foreground: on start and return, 5 s after the
-/// last local edit, when the network comes back, and right after signing in,
-/// retrying failures with backoff (2 s doubling to 5 min, with jitter). In the
+/// When to sync (§5.5). In the foreground: on start and return, every 2 min
+/// to pick up remote edits, 5 s after the last local edit, when the network
+/// comes back, and right after signing in, retrying failures with backoff (2 s doubling to 5 min, with jitter). In the
 /// background: an app refresh task when iOS allows one, and one sync to finish
 /// unsent changes when the app leaves the screen. Correctness never depends on
 /// any of these running.
@@ -24,6 +24,7 @@ final class SyncScheduler {
     private static let afterEditDelay: Duration = .seconds(5)
     private static let firstRetry: Double = 2
     private static let maxRetry: Double = 300
+    private static let refreshInterval: Double = 120
 
     init(graph: AppGraph) {
         self.graph = graph
@@ -106,10 +107,25 @@ final class SyncScheduler {
         let engine = graph.engine
         let store = graph.store
         Task {
+            // Begun before anything awaits, so iOS can't suspend the app in between.
+            let task = BackgroundTask()
+            task.id = UIApplication.shared.beginBackgroundTask(withName: "sync") { task.end() }
+            defer { task.end() }
+            guard task.id != .invalid else { return }
             guard (try? await store.pendingNotes()) ?? 0 > 0 else { return }
-            let id = UIApplication.shared.beginBackgroundTask(withName: "sync")
             _ = await engine.sync()
+        }
+    }
+
+    /// Ends once, whether the work finishes or iOS's grant runs out first.
+    @MainActor
+    private final class BackgroundTask {
+        var id = UIBackgroundTaskIdentifier.invalid
+
+        func end() {
+            guard id != .invalid else { return }
             UIApplication.shared.endBackgroundTask(id)
+            id = .invalid
         }
     }
 
@@ -125,7 +141,8 @@ final class SyncScheduler {
     private func next(orAfter seconds: Double) async {
         let timer = Task {
             try? await Task.sleep(for: .seconds(seconds))
-            if !Task.isCancelled { request() }
+            // A suspended app shouldn't wake itself; returning to the foreground requests anyway.
+            if !Task.isCancelled && foreground { request() }
         }
         await next()
         timer.cancel()
@@ -134,7 +151,7 @@ final class SyncScheduler {
     private func loop() async {
         var backoff = Self.firstRetry
         while true {
-            await next()
+            if foreground { await next(orAfter: Self.refreshInterval) } else { await next() }
             while true {
                 let outcome = await graph.engine.sync().outcome
                 if outcome != .offline && outcome != .failed {

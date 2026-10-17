@@ -390,6 +390,7 @@ public final class SyncStore: Sendable {
     /// Matches the server's tombstone: no text, out of the index, nothing pending.
     private func markTombstone(_ sql: Sql, _ id: String, deletedAt: Int64, updatedAt: Int64) throws {
         try sql.unindex(id)
+        try sql.forgetImages(id)
         try sql.exec(
             """
             UPDATE notes SET title = '', content = '', deleted_at = ?, updated_at = ?, dirty = 0,

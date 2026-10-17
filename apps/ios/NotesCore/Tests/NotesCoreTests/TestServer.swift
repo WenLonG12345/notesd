@@ -44,6 +44,8 @@ final class TestServer: Sendable {
         process.executableURL = URL(fileURLWithPath: try Self.binary())
         process.arguments =
             ["--data-dir", dataDir.path, "--listen", state.withLock { $0.listen }]
+            // Pinned: the listen and setup_token lines are parsed, so inherited NOTESD_LOG_* mustn't reshape them.
+            + ["--log-level", "info", "--log-format", "text"]
             + (resendURL.map { ["--resend-url", $0] } ?? [])
         let pipe = Pipe()
         process.standardOutput = pipe

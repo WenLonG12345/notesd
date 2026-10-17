@@ -186,6 +186,62 @@ struct ApiClientTests {
         #expect(stub.requests.filter { $0.path == "/api/v1/auth/refresh" }.count == 1)
     }
 
+    @Test func aSignInWithoutUsableTokensIsRejected() async throws {
+        let session = #""session":{"id":"s","kind":"device","name":"P","createdAt":1,"lastUsedAt":1}"#
+        for answer in [
+            #"{\#(session),"username":"me"}"#,
+            #"{\#(session),"accessToken":"","accessExpiresAt":5,"refreshToken":"r"}"#,
+            #"{\#(session),"accessToken":"a","accessExpiresAt":5,"refreshToken":""}"#,
+            #"{\#(session),"accessToken":"a","accessExpiresAt":0,"refreshToken":"r"}"#,
+        ] {
+            let stub = StubTransport(queue: [(200, answer, jsonHeaders)])
+            guard
+                case .rejected(let status, let error, _, _) = await api(stub).login(
+                    username: "me", password: "x", deviceName: "P")
+            else {
+                Issue.record(Comment(rawValue: "expected a rejection for \(answer)"))
+                continue
+            }
+            #expect(status == 200)
+            #expect(error == ApiClient.unexpectedResponse)
+        }
+    }
+
+    @Test func aRefreshWithoutAnAccessTokenKeepsTheSession() async throws {
+        let stub = StubTransport(queue: [unauthenticated, (200, #"{"accessExpiresAt":5}"#, jsonHeaders)])
+        guard case .rejected(_, let error, _, _) = await api(stub).logout() else {
+            Issue.record(Comment(rawValue: "expected a rejection"))
+            return
+        }
+        #expect(error == ApiClient.unexpectedResponse)
+        #expect(creds.current?.access == "a1")
+        #expect(stub.requests.count == 2)
+    }
+
+    @Test func aSignInDuringARefreshIsNotOverwritten() async throws {
+        let newSession = Tokens(access: "b1", accessExpiresAt: now + 3_600_000, refresh: "rb")
+        let creds = creds
+        let now = now
+        let stub = StubTransport { request in
+            guard request.path == "/api/v1/auth/refresh" else { return unauthenticated }
+            creds.current = newSession
+            return refreshed("a2", now)
+        }
+        _ = await api(stub).logout()
+        #expect(creds.current == newSession)
+    }
+
+    @Test func aSignInDuringARefusedRefreshIsNotSignedOut() async throws {
+        let newSession = Tokens(access: "b1", accessExpiresAt: now + 3_600_000, refresh: "rb")
+        let creds = creds
+        let stub = StubTransport { request in
+            if request.path == "/api/v1/auth/refresh" { creds.current = newSession }
+            return unauthenticated
+        }
+        _ = await api(stub).logout()
+        #expect(creds.current == newSession)
+    }
+
     @Test func noSessionNoRequest() async throws {
         let stub = StubTransport()
         guard case .unauthenticated = await ApiClient(baseURL: URL(string: "http://x/")!, transport: stub).logout()

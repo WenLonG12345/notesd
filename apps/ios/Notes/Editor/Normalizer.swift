@@ -72,7 +72,7 @@ nonisolated struct Normalizer {
             }
             if i > 0 && s.character(at: i - 1) != 10 {
                 text.insert(NSAttributedString(string: "\n", attributes: attrs), at: i)
-                if selection.location >= i { selection.location += 1 }
+                if selection.location > i { selection.location += 1 }
             }
         }
     }

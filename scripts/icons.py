@@ -112,7 +112,8 @@ def ios(tile):
     # not the tile's own corners gives the shape. Underneath, the tile's amber
     # (sampled inside its top and bottom edges) fills what the overscan leaves.
     top = tile.getpixel((tile.width // 2, round(tile.height * 0.03)))
-    bottom = tile.getpixel((tile.width * 9 // 10, round(tile.height * 0.97)))
+    bottom = tile.getpixel((tile.width * 4 // 5, round(tile.height * 0.97)))
+    assert top[3] == 255 and bottom[3] == 255, "background sampled outside the tile; move the sample points inward"
     size = 1024
     bg = Image.linear_gradient("L").resize((size, size))
     bg = Image.composite(Image.new("RGBA", (size, size), bottom), Image.new("RGBA", (size, size), top), bg)

@@ -185,6 +185,15 @@ struct EditorTests {
         #expect(markdown == md.replacingOccurrences(of: "Before", with: "Before more"))
     }
 
+    @Test func typingBeforeARawBlockStartsAParagraphAboveIt() {
+        let md = "```js\nlet x = 1\n```\n"
+        load(md)
+        cursor(before: "\u{FFFC}")
+        view.insertText("a")
+        view.insertText("b")
+        #expect(markdown == "ab\n\n" + md)
+    }
+
     @Test func tagsAreMarked() {
         load("Buy #groceries and #summer trip# now\n")
         var names: [String] = []
@@ -207,6 +216,7 @@ struct EditorTests {
     @Test func undoRestoresAFormattingChange() {
         load("plain\n")
         select("plain")
+        #expect(view.undoManager != nil)
         view.toggleBold()
         #expect(markdown == "**plain**\n")
         view.undoManager?.undo()

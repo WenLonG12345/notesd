@@ -108,7 +108,13 @@ public final class ApiClient: Sendable {
             var username, password, client, deviceName: String
         }
         let body = Body(username: username, password: password, client: "device", deviceName: deviceName)
-        return await send(request("POST", "api/v1/auth/login", body: body), decode: json(SignIn.self))
+        return await send(request("POST", "api/v1/auth/login", body: body)) { reply in
+            let signIn = try JSONDecoder().decode(SignIn.self, from: reply.data)
+            guard !signIn.accessToken.isEmpty, !signIn.refreshToken.isEmpty, signIn.accessExpiresAt > 0 else {
+                throw URLError(.cannotParseResponse)
+            }
+            return signIn
+        }
     }
 
     /// Ends this device's session on the server.
@@ -259,18 +265,21 @@ public final class ApiClient: Sendable {
             }
             if current.access != stale.access { return .ok(current) }
             let body = ["refreshToken": current.refresh]
-            let result = await self.send(
-                self.request("POST", "api/v1/auth/refresh", body: body), decode: json(SignIn.self))
+            let result = await self.send(self.request("POST", "api/v1/auth/refresh", body: body)) { reply in
+                let signIn = try JSONDecoder().decode(SignIn.self, from: reply.data)
+                guard !signIn.accessToken.isEmpty else { throw URLError(.cannotParseResponse) }
+                return signIn
+            }
             switch result {
             case .ok(let signIn):
                 // Refresh tokens aren't rotated; keep ours if the answer leaves it out.
                 let next = Tokens(
                     access: signIn.accessToken, accessExpiresAt: signIn.accessExpiresAt,
                     refresh: signIn.refreshToken.isEmpty ? current.refresh : signIn.refreshToken)
-                await credentials.refreshed(next)
+                await credentials.refreshed(next, replacing: current)
                 return .ok(next)
             case .unauthenticated:
-                await credentials.revoked()
+                await credentials.revoked(current)
                 return .unauthenticated
             case let failed:
                 return failed.failure()

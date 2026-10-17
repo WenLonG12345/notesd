@@ -228,6 +228,8 @@ extension Sql {
     /// The images in a locked body this device synced; nil for a plain body or an unknown one.
     func lockedImageIds(_ content: String) throws -> [String]? {
         guard LockedNotes.isLocked(content) else { return nil }
+        // Any note's row will do: a conflicted or recovered copy carries the original's body and images.
+        // Envelopes use a random nonce, so the same envelope always means the same plaintext and images.
         return try one(
             "SELECT image_ids FROM locked_images WHERE content_sha = ? ORDER BY rowid DESC LIMIT 1",
             sha256Hex(Data(content.utf8))

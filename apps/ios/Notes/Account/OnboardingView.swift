@@ -19,7 +19,7 @@ struct OnboardingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
-                    fields
+                    fields.disabled(model.busy)
                     if let error = model.error {
                         Text(error).font(.notesSmall).foregroundStyle(Color.errInk)
                             .padding(12)
@@ -58,7 +58,7 @@ struct OnboardingView: View {
             .toolbar {
                 if model.step != .server && (model.lockedServer == nil || model.step != .signIn) {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button("Back", systemImage: "chevron.left") { _ = model.back() }
+                        Button("Back", systemImage: "chevron.left") { _ = model.back() }.disabled(model.busy)
                     }
                 }
                 if presented {
@@ -66,6 +66,7 @@ struct OnboardingView: View {
                 }
             }
             .onChange(of: model.done) { _, done in if done { dismiss() } }
+            .onDisappear { model.cancel() }
         }
     }
 

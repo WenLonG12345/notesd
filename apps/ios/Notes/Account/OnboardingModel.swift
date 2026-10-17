@@ -27,6 +27,7 @@ final class OnboardingModel {
     private let accounts: AccountStore
     private let deviceName: String
     private var url: URL?
+    private var work: Task<Void, Never>?
 
     init(accounts: AccountStore, deviceName: String, lockedServer: String? = nil, username: String = "") {
         self.accounts = accounts
@@ -101,8 +102,10 @@ final class OnboardingModel {
             if !errors.isEmpty { return self.fail(errors) }
             guard let url = self.url else { return }
             let api = ApiClient(baseURL: url)
+            // The fields stay bound while setup runs; login must use what setup did.
             let username = self.username.trimmed
-            switch await api.setup(setupToken: self.token.trimmed, username: username, password: self.password) {
+            let password = self.password
+            switch await api.setup(setupToken: self.token.trimmed, username: username, password: password) {
             case .ok: break
             case .rejected(_, "invalid_setup_token", _, _):
                 self.step = .token
@@ -118,7 +121,7 @@ final class OnboardingModel {
             case let other:
                 return self.fail(message: Self.message(other))
             }
-            switch await api.login(username: username, password: self.password, deviceName: self.deviceName) {
+            switch await api.login(username: username, password: password, deviceName: self.deviceName) {
             case .ok(let signIn): self.finish(signIn)
             case let other:
                 // The account exists now; plain sign-in takes it from here.
@@ -146,8 +149,15 @@ final class OnboardingModel {
         }
     }
 
+    /// Leaving the flow: a request still in flight must not sign in afterwards.
+    func cancel() {
+        work?.cancel()
+        work = nil
+        busy = false
+    }
+
     private func finish(_ signIn: SignIn) {
-        guard let url else { return }
+        guard !Task.isCancelled, let url else { return }
         accounts.signedIn(server: url.absoluteString, signIn)
         password = ""
         confirm = ""
@@ -158,9 +168,11 @@ final class OnboardingModel {
         if busy { return }
         busy = true
         clearErrors()
-        Task {
+        work = Task {
             await block()
+            guard !Task.isCancelled else { return }
             busy = false
+            work = nil
         }
     }
 

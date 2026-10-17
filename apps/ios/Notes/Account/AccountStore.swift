@@ -86,9 +86,9 @@ nonisolated final class AccountStore: Credentials, Sendable {
         }
     }
 
-    func refreshed(_ tokens: Tokens) async {
+    func refreshed(_ tokens: Tokens, replacing old: Tokens) async {
         write { saved in
-            guard var saved else { return nil }
+            guard var saved, saved.refresh == old.refresh else { return saved }
             saved.access = tokens.access
             saved.accessExpiresAt = tokens.accessExpiresAt
             saved.refresh = tokens.refresh
@@ -96,7 +96,12 @@ nonisolated final class AccountStore: Credentials, Sendable {
         }
     }
 
-    func revoked() async { signOut() }
+    func revoked(_ old: Tokens) async {
+        write { saved in
+            guard let saved, saved.refresh == old.refresh else { return saved }
+            return Saved(server: saved.server, username: saved.username)
+        }
+    }
 
     private func write(_ change: (Saved?) -> Saved?) {
         let next = state.withLock { state -> Saved? in

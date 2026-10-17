@@ -76,8 +76,9 @@ app), your notes stay on the phone and the list offers to sign in again.
 
 ## Sync
 
-The app syncs when it opens, a few seconds after you stop typing, when the
-network comes back, and when you pull down on the list. iOS also lets it
+The app syncs when it opens, every couple of minutes while it's open, a few
+seconds after you stop typing, when the network comes back, and when you
+pull down on the list. iOS also lets it
 sync now and then in the background, but on its own schedule. While sync
 is fine, the list's footer just counts the notes; when it isn't, it says so
 (Offline, or how many notes are waiting to upload), and tapping it offers

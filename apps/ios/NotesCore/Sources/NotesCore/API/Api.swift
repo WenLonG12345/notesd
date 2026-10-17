@@ -47,10 +47,11 @@ public struct Tokens: Hashable, Sendable, Codable {
 /// Where the client keeps the session's tokens; implemented by the app with the Keychain.
 public protocol Credentials: Sendable {
     func tokens() async -> Tokens?
-    /// A refresh succeeded.
-    func refreshed(_ tokens: Tokens) async
-    /// The server refused the refresh token: the session is over. Local notes are not this protocol's business.
-    func revoked() async
+    /// A refresh of `old` succeeded. Ignore it if the session no longer holds `old`: a sign-out or new
+    /// sign-in landed while the refresh was out, and must not be undone.
+    func refreshed(_ tokens: Tokens, replacing old: Tokens) async
+    /// The server refused `old`'s refresh token: that session is over. Local notes are not this protocol's business.
+    func revoked(_ old: Tokens) async
 }
 
 public struct AuthStatus: Decodable, Sendable {
@@ -141,8 +142,9 @@ public struct RemoteNote: Codable, Sendable, Hashable {
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
-        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
-        content = try c.decodeIfPresent(String.self, forKey: .content) ?? ""
+        // Required: a missing body would otherwise be stored as an empty note and synced back.
+        title = try c.decode(String.self, forKey: .title)
+        content = try c.decode(String.self, forKey: .content)
         revision = try c.decode(Int64.self, forKey: .revision)
         changeSeq = try c.decodeIfPresent(Int64.self, forKey: .changeSeq) ?? 0
         createdAt = try c.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0

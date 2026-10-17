@@ -1,5 +1,6 @@
 import Foundation
 import SQLite3
+import Synchronization
 
 /// The local SQLite database: one writer connection (transactions are
 /// `BEGIN IMMEDIATE`, one at a time) and one read-only connection, so reads
@@ -10,6 +11,7 @@ public final class Database: Sendable {
     private let writer: ConnectionActor
     private let reader: ConnectionActor
     private let changeFeed = Broadcast<Void>()
+    private let writerOpened = Mutex(false)
 
     public init(path: String) {
         writer = ConnectionActor(label: "notesd.db.write") {
@@ -48,8 +50,12 @@ public final class Database: Sendable {
     }
 
     public func read<T: Sendable>(_ body: @Sendable (Sql) throws -> T) async throws -> T {
-        // The writer creates the file and the schema; a read-only connection can't.
-        try await writer.run { _ in }
+        // The writer creates the file and the schema; a read-only connection can't. Only the first read
+        // waits for it: afterwards a read queued behind a long write would defeat the separate reader.
+        if !writerOpened.withLock({ $0 }) {
+            try await writer.run { _ in }
+            writerOpened.withLock { $0 = true }
+        }
         return try await reader.run { conn in
             // One snapshot for the whole block, even if it runs several queries.
             try conn.exec("BEGIN")
@@ -60,6 +66,7 @@ public final class Database: Sendable {
 
     /// Closes both connections; the next call opens them again.
     public func close() async {
+        writerOpened.withLock { $0 = false }
         await reader.close()
         await writer.close()
     }

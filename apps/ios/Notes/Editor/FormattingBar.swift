@@ -1,6 +1,26 @@
 import NotesCore
 import SwiftUI
 
+/// Existing tags for what's typed after #: whole-name prefix first, then any level's prefix, then anywhere.
+func suggestTags(_ tags: [TagCount], query: String) -> [TagCount] {
+    let q = query.lowercased()
+    if q.isEmpty { return [] }
+    func rank(_ t: TagCount) -> Int {
+        if t.key.hasPrefix(q) { return 0 }
+        if t.key.split(separator: "/", omittingEmptySubsequences: false).contains(where: { $0.hasPrefix(q) }) {
+            return 1
+        }
+        return t.key.contains(q) ? 2 : 3
+    }
+    let ranked = tags.map { ($0, rank($0)) }.filter { $0.1 < 3 && $0.0.key != q }
+    let sorted = ranked.sorted { a, b in
+        if a.1 != b.1 { return a.1 < b.1 }
+        if a.0.count != b.0.count { return a.0.count > b.0.count }
+        return a.0.key < b.0.key
+    }
+    return sorted.prefix(8).map(\.0)
+}
+
 /// The bar above the keyboard, as on Android: headings, lists, quote, picture
 /// and indentation while writing; marks and link once text is selected; or
 /// the tags that complete the one being typed. In the title, nothing applies.
@@ -119,8 +139,7 @@ struct FormattingBar: View {
     }
 
     private func suggestions(_ tag: TagAtCursor) -> [TagCount] {
-        guard let query = tag.query?.lowercased() else { return [] }
-        return tags.filter { $0.key.hasPrefix(query) && $0.key != query }.prefix(12).map { $0 }
+        tag.query.map { suggestTags(tags, query: $0) } ?? []
     }
 
     private func tagStrip(_ tag: TagAtCursor) -> some View {

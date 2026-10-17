@@ -54,6 +54,8 @@ final class EditorModel {
     private(set) var isNew = false
     /// A picture couldn't be added, or a lock change couldn't move the pictures: shown until dismissed.
     var imageProblem: String?
+    /// The last save failed; the typing is kept and saved again with the next save. Cleared once one lands.
+    var saveProblem: String?
     /// The editor's text as it is now, for saving before locked notes lock.
     @ObservationIgnored var currentDocument: (() -> Document?)?
 
@@ -77,8 +79,8 @@ final class EditorModel {
     private var stranded: Document?
     /// What a new note starts with; unchanged, it isn't stored.
     private let blankContent: String
-    @ObservationIgnored private var watcher: Task<Void, Never>?
-    @ObservationIgnored private var lockWatcher: Task<Void, Never>?
+    /// Deleted from this screen: nothing more is stored, or a late save would bring the note back.
+    private var deleted = false
     @ObservationIgnored private var unhook: (@Sendable () -> Void)?
 
     /// `initial`: the note as already read, so the screen opens with its text;
@@ -98,42 +100,40 @@ final class EditorModel {
         } else if fresh {
             apply(nil)
         }
-        watcher = Task { [weak self] in await self?.load() }
         // What's typed is saved (encrypted) before the key goes; a save that fails keeps the key.
         unhook = locks?.onBeforeLock { [weak self] in await self?.saveBeforeLock() ?? true }
     }
 
     deinit {
         MainActor.assumeIsolated {
-            watcher?.cancel()
-            lockWatcher?.cancel()
             unhook?()
         }
     }
 
-    private func load() async {
+    /// Reads the note, then follows store and lock changes until the calling
+    /// task is cancelled (the screen goes). Again on reappearing: catches up first.
+    func run() async {
         // Subscribed before the first read, so a change landing in between isn't missed.
         let changes = store.changes()
         if ready {
-            // Opened with the note already read: catch up with anything since.
+            // Opened with the note already read, or shown again: catch up with anything since.
             await refresh()
         } else {
             apply(try? await store.get(id))
         }
         tags = (try? await store.tags()) ?? []
-        if let locks {
-            let states = locks.state.stream()
-            // Cancelled with the model: otherwise it waits on the stream for good.
-            lockWatcher = Task { [weak self] in
-                for await state in states {
-                    guard let self else { return }
-                    self.lockChanged(state)
+        await withTaskGroup(of: Void.self) { group in
+            if let locks {
+                let states = locks.state.stream()
+                group.addTask { [weak self] in
+                    for await state in states { await self?.lockChanged(state) }
                 }
             }
-        }
-        for await _ in changes {
-            await refresh()
-            tags = (try? await store.tags()) ?? tags
+            for await _ in changes {
+                await refresh()
+                tags = (try? await store.tags()) ?? tags
+            }
+            group.cancelAll()
         }
     }
 
@@ -193,7 +193,7 @@ final class EditorModel {
 
     /// Stores `doc` if anything changed since the last save. Call with the editor's current document.
     func save(_ doc: Document) {
-        if edits == saved { return }
+        if deleted || edits == saved { return }
         let edit = edits
         saved = edit
         saving += 1
@@ -218,6 +218,7 @@ final class EditorModel {
     }
 
     private func store(_ doc: Document, _ edit: Int) async {
+        if deleted { return }
         let title = doc.title ?? ""
         let plain = Markdown.serialize(doc)
         let basedOn = known
@@ -242,18 +243,28 @@ final class EditorModel {
         do {
             note = try await store.save(id, title: title, content: content, basedOn: basedOn, imageIds: imageIds)
         } catch {
+            failed(edit, "Your latest changes couldn’t be saved on this iPhone. They’ll be tried again.")
             return
         }
         guard let note else {
             if let basedOn, !(basedOn.title == title && basedOn.content == content) {
                 // Deleted elsewhere while typed into here: keep the typing.
-                _ = try? await store.recover(title: title, content: content, imageIds: imageIds)
+                do {
+                    try await store.recover(title: title, content: content, imageIds: imageIds)
+                } catch {
+                    failed(
+                        edit,
+                        "This note was deleted elsewhere, and your changes couldn’t be kept. They’ll be tried again.")
+                    return
+                }
                 gone = true
             } else if edit == edits {
                 status = .blank
             }
+            saveProblem = nil
             return
         }
+        saveProblem = nil
         self.title = note.title
         if locked && note.content == content { sealed = (plain, content) }
         if !superseded.isEmpty && LockedNotes.isLocked(note.content) == locked {
@@ -277,8 +288,14 @@ final class EditorModel {
         if edit == edits { show(note) }
     }
 
+    /// Only the latest started save needs redoing: a later one already carries newer text.
+    private func failed(_ edit: Int, _ problem: String) {
+        if saved == edit { saved -= 1 }
+        saveProblem = problem
+    }
+
     private func refresh() async {
-        if edits != saved || saving > 0 { return }
+        if deleted || edits != saved || saving > 0 { return }
         guard let note = try? await store.get(id) else { return }
         if note.deletedAt != nil {
             gone = true
@@ -386,6 +403,7 @@ final class EditorModel {
     }
 
     func delete() async {
+        deleted = true
         await flushed()
         try? await store.delete(id)
     }

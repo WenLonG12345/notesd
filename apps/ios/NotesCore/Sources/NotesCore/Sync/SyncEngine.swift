@@ -57,13 +57,15 @@ public final class SyncEngine: Sendable {
             }
             self.status.set(.syncing)
             var events: [SyncEvent] = []
+            var rejection: String?
             var stop: Stop?
             do {
-                stop = try await self.cycle(client, &events)
+                stop = try await self.cycle(client, &events, &rejection)
             } catch {
                 stop = Stop(outcome: .failed, message: "This device's notes couldn't be updated (\(error)).")
             }
-            try? await self.store.finished(error: stop?.message)
+            // A dropped operation isn't retried, so the cycle still counts as done, but the user must hear why.
+            try? await self.store.finished(error: stop?.message ?? rejection)
             let outcome = stop?.outcome ?? .done
             switch outcome {
             case .done: self.status.set(.synced(at: (try? await self.store.state().lastSyncAt) ?? 0))
@@ -76,16 +78,22 @@ public final class SyncEngine: Sendable {
         }
     }
 
+    /// Runs `body` with no sync cycle in flight, and none starting until it's done.
+    public func exclusive<T: Sendable>(_ body: @Sendable () async throws -> T) async rethrows -> T {
+        try await lock.withLock(body)
+    }
+
     private struct Stop {
         var outcome: SyncOutcome
         var message: String?
     }
 
-    private func cycle(_ api: ApiClient, _ events: inout [SyncEvent]) async throws -> Stop? {
-        if let stop = try await push(api, &events) { return stop }
+    private func cycle(_ api: ApiClient, _ events: inout [SyncEvent], _ rejection: inout String?) async throws -> Stop?
+    {
+        if let stop = try await push(api, &events, &rejection) { return stop }
         if let stop = try await pull(api, &events) { return stop }
         if let stop = try await keyring(api) { return stop }
-        return try await store.nextOperation() != nil ? try await push(api, &events) : nil
+        return try await store.nextOperation() != nil ? try await push(api, &events, &rejection) : nil
     }
 
     /// The keyring is tiny and has no change feed: fetched whole every cycle.
@@ -113,7 +121,9 @@ public final class SyncEngine: Sendable {
         }
     }
 
-    private func push(_ api: ApiClient, _ events: inout [SyncEvent]) async throws -> Stop? {
+    private func push(_ api: ApiClient, _ events: inout [SyncEvent], _ rejection: inout String?) async throws
+        -> Stop?
+    {
         // Every waiting image goes, whether or not a note operation follows.
         if let stop = try await uploadImages(api) { return stop }
         while true {
@@ -127,14 +137,21 @@ public final class SyncEngine: Sendable {
             case .ok(let result):
                 try await store.sent(op, result)
             case .conflict(_, let message, let current):
-                if let current, let note = try? JSONDecoder().decode(RemoteNote.self, from: current) {
+                if let current {
+                    // Unreadable: keep the operation for a later cycle rather than drop the user's change.
+                    guard let note = try? JSONDecoder().decode(RemoteNote.self, from: current) else {
+                        return Stop(outcome: .failed, message: "The server's answer wasn't understood.")
+                    }
                     emit(try await store.conflict(op, current: note), into: &events)
                 } else {
                     try await store.rejected(op, message: message)
+                    rejection = message
                 }
             case .rejected(let status, let error, let message, _):
                 if status >= 500 { return Stop(outcome: .failed, message: "The server had a problem (\(status)).") }
-                try await store.rejected(op, message: message.isEmpty ? error : message)
+                let reason = message.isEmpty ? error : message
+                try await store.rejected(op, message: reason)
+                rejection = reason
             case let other:
                 return stop(other)
             }

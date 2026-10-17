@@ -80,9 +80,13 @@ final class MemoryCredentials: Credentials {
 
     func tokens() async -> Tokens? { current }
 
-    func refreshed(_ tokens: Tokens) async { current = tokens }
+    func refreshed(_ tokens: Tokens, replacing old: Tokens) async {
+        stored.withLock { if $0?.refresh == old.refresh { $0 = tokens } }
+    }
 
-    func revoked() async { current = nil }
+    func revoked(_ old: Tokens) async {
+        stored.withLock { if $0?.refresh == old.refresh { $0 = nil } }
+    }
 }
 
 /// One device: its own database, session and sync engine against `server`,

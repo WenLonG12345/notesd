@@ -9,7 +9,9 @@ shift
 data=$(mktemp -d)
 log="$data/log"
 # Email goes nowhere: port 9 on loopback refuses, so a test can't reach the real Resend.
-"$bin" --data-dir "$data" --listen 127.0.0.1:0 --resend-url http://127.0.0.1:9 >"$log" 2>&1 &
+# Log flags pinned: the lines below are parsed, so inherited NOTESD_LOG_* mustn't reshape them.
+"$bin" --data-dir "$data" --listen 127.0.0.1:0 --resend-url http://127.0.0.1:9 \
+  --log-level info --log-format text >"$log" 2>&1 &
 pid=$!
 trap 'kill $pid 2>/dev/null; rm -rf "$data"' EXIT
 for _ in $(seq 50); do
