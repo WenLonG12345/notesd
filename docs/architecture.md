@@ -426,7 +426,7 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/v1/auth/status` | Whether first-run setup is still required |
-| `POST` | `/api/v1/auth/setup` | Create the owner account with the setup token |
+| `POST` | `/api/v1/auth/setup` | Create the owner account, while none exists |
 | `POST` | `/api/v1/auth/login` | Authenticate (`client: "web"` or `"device"`) |
 | `POST` | `/api/v1/auth/refresh` | New device access token from a refresh token |
 | `POST` | `/api/v1/auth/logout` | End a session |
@@ -467,7 +467,7 @@ A versioned JSON API under `/api/v1` with standard HTTP status codes, authentica
 V1 is a single-user installation: one owner account, signed in from multiple devices, with no sharing, authorization rules or multi-tenant isolation.
 
 - **Credentials:** username and password, hashed with Argon2id (parameters encoded in the hash so they can be raised later); never stored in plaintext. Password changes are supported and sign out every other session. Failed logins are rate-limited (10 per 15 minutes per client address).
-- **First run:** while no owner exists, the server logs a one-time setup token at startup, and a setup link (`<public URL or listen address>/setup#<token>`) that opens the web onboarding with the token filled in; the fragment keeps the token out of request and proxy logs. Creating the account through onboarding requires the token; it changes on every start unless `NOTESD_SETUP_TOKEN` fixes it. The alternative, `notesd create-owner`, needs shell access to the data directory. Either way an unauthenticated stranger cannot claim a fresh instance.
+- **First run:** while no owner exists, `POST /auth/setup` creates one for whoever calls it first, with no token, and every client's onboarding goes straight to creating the account. After that the endpoint returns `already_set_up`. The server logs a warning with its address until the owner exists. The cost: a server reachable from the network before its owner exists can be claimed by a stranger. The default listen address is loopback, so a fresh install isn't reachable, and the hosting guide says to create the account before exposing it. To skip the open window entirely, `NOTESD_OWNER_USERNAME` and `NOTESD_OWNER_PASSWORD` create the owner at startup (ignored once one exists), or `notesd create-owner` creates it from the shell. A claimed server holds no one else's data, and deleting the data directory starts over. That's why tokenless setup is acceptable here (the same trade-off Coolify and Jellyfin make).
 - **Web sessions:** an HttpOnly, SameSite=Lax cookie (`Secure` and `__Host-` prefixed when `--public-url` is https) with a 30-day sliding expiry, plus a CSRF token the web app keeps only in memory and sends as `X-CSRF-Token` on every mutation; cross-origin `Origin` headers are rejected.
 - **Mobile sessions:** a one-hour access token and a 180-day sliding refresh token, sent as bearer tokens and kept in the iOS Keychain or Android Keystore-backed storage. Refresh tokens are not rotated, so a refresh whose response is lost can be retried; revocation deletes the session. Only token hashes are stored server-side. Session expiry affects sync only, never access to local notes.
 - **Transport:** HTTPS for any remote access; TLS may terminate at any common reverse proxy. Private-network and VPN-only installations are supported.
@@ -529,7 +529,7 @@ data/
 ./notesd --data-dir /var/lib/notesd --listen 127.0.0.1:8080
 ```
 
-Configuration is flags and environment variables (`NOTESD_DATA_DIR`, `NOTESD_LISTEN`, `NOTESD_PUBLIC_URL`, `NOTESD_LOG_LEVEL`, `NOTESD_LOG_FORMAT`, `NOTESD_SETUP_TOKEN`, and `NOTESD_RESEND_URL` for tests); a config file is not planned unless the option count grows. Subcommands: `create-owner`, `reset-password`, `reindex` (rebuild the search index), `check` (integrity check), `gc-images` (delete images no note has shown for 30 days), `export`, `version`; `backup` is still to be built (§11.4). Targets: Linux x86-64 and ARM64 (including Raspberry Pi 5), small VPS installs and home servers. Docker images are optional.
+Configuration is flags and environment variables (`NOTESD_DATA_DIR`, `NOTESD_LISTEN`, `NOTESD_PUBLIC_URL`, `NOTESD_LOG_LEVEL`, `NOTESD_LOG_FORMAT`, `NOTESD_OWNER_USERNAME` and `NOTESD_OWNER_PASSWORD` for first-run owner creation, and `NOTESD_RESEND_URL` for tests); a config file is not planned unless the option count grows. Subcommands: `create-owner`, `reset-password`, `reindex` (rebuild the search index), `check` (integrity check), `gc-images` (delete images no note has shown for 30 days), `export`, `version`; `backup` is still to be built (§11.4). Targets: Linux x86-64 and ARM64 (including Raspberry Pi 5), small VPS installs and home servers. Docker images are optional.
 
 WAL mode is enabled with a busy timeout for brief write contention. The development toolchain and build tasks are defined in the root `mise.toml` (`mise run build` produces the binary with the web app embedded). Installation, HTTPS and systemd are covered for users in `docs/hosting.md`; releases (server binaries and the signed APK) in `docs/releasing.md`.
 

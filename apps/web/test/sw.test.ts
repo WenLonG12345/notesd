@@ -90,7 +90,7 @@ beforeEach(async () => {
 
 describe('service worker', () => {
   it('opens every app route from the cached index.html', async () => {
-    for (const path of ['/', '/notes', '/notes/abc123', '/settings', '/setup']) {
+    for (const path of ['/', '/notes', '/notes/abc123', '/settings']) {
       expect(await request(path, { mode: 'navigate' })).toBe(`cached ${ORIGIN}/index.html`)
     }
     expect(fetched).toEqual([])

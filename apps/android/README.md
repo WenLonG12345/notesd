@@ -31,12 +31,12 @@ The app talks to notesd over HTTPS, or plain HTTP to an address only reachable o
 - **Phone on your Wi-Fi:** `NOTESD_LISTEN=0.0.0.0:8080 mise run dev:server`, then connect to `http://<your computer's LAN address>:8080`.
 - **Emulator:** `mise run dev:server` and connect to `http://10.0.2.2:8080`, the emulator's alias for the host machine.
 
-On first run, onboarding asks for the server, then either the setup token from the server's log (a new server) or a username and password. "Use without a server" skips it; you can connect later in Settings.
+On first run, onboarding asks for the server, then either creates the account (a new server) or signs in with a username and password. "Use without a server" skips it; you can connect later in Settings.
 
 ## How the tests run
 
 - `:core` tests are plain JVM: the Markdown codec against `shared/markdown-fixtures`, the store, the API client against a mock server, and sync.
-- Sync tests use the real server. Gradle builds `server/` with Go once (`buildNotesd`); each test starts it on a free port with a temporary data directory, reads the address and setup token from its log, and drives two or more clients through every scenario in the architecture doc's §12.1. `RandomSyncTest` replays random edit, delete, offline and retry sequences; run more seeds with `./gradlew :core:test -Pnotes.seeds=1,2,3`.
+- Sync tests use the real server. Gradle builds `server/` with Go once (`buildNotesd`); each test starts it on a free port with a temporary data directory, reads the address from its log, creates the owner account, and drives two or more clients through every scenario in the architecture doc's §12.1. `RandomSyncTest` replays random edit, delete, offline and retry sequences; run more seeds with `./gradlew :core:test -Pnotes.seeds=1,2,3`.
 - `:app` tests run on Robolectric: the editor's spans and behaviours, the screens (onboarding, list, editor, sync changes arriving in an open note), and an accessibility audit that checks every control on every screen has a label and a 48dp target.
 
 ## Layout

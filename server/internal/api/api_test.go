@@ -25,7 +25,6 @@ import (
 const (
 	owner    = "owner"
 	password = "correct horse battery"
-	setupTok = "test-setup-token"
 )
 
 type env struct {
@@ -49,9 +48,6 @@ func newEnvWith(t *testing.T, cfg api.Config) *env {
 	}
 	t.Cleanup(func() { db.Close() })
 	a := auth.NewService(db)
-	if _, err := a.PrepareSetup(ctx, setupTok); err != nil {
-		t.Fatal(err)
-	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := httptest.NewServer(api.New(db, notes.NewStore(db), a, log, cfg).Handler())
 	t.Cleanup(srv.Close)
@@ -111,7 +107,7 @@ func (c *client) do(method, path string, body any, hdr ...string) resp {
 func (e *env) setupOwner() {
 	e.t.Helper()
 	if r := e.client().do("POST", "/api/v1/auth/setup", map[string]string{
-		"setupToken": setupTok, "username": owner, "password": password,
+		"username": owner, "password": password,
 	}); r.status != 201 {
 		e.t.Fatalf("setup: %d %s", r.status, r.raw)
 	}
@@ -156,12 +152,7 @@ func TestFirstRunSetup(t *testing.T) {
 		t.Fatalf("status before setup: %s", r.raw)
 	}
 	if r := c.do("POST", "/api/v1/auth/setup", map[string]string{
-		"setupToken": "wrong", "username": owner, "password": password,
-	}); r.status != 403 {
-		t.Fatalf("setup with wrong token: %d", r.status)
-	}
-	if r := c.do("POST", "/api/v1/auth/setup", map[string]string{
-		"setupToken": setupTok, "username": owner, "password": "short",
+		"username": owner, "password": "short",
 	}); r.status != 400 {
 		t.Fatalf("setup with short password: %d", r.status)
 	}
@@ -170,8 +161,8 @@ func TestFirstRunSetup(t *testing.T) {
 		t.Fatalf("status after setup: %s", r.raw)
 	}
 	if r := c.do("POST", "/api/v1/auth/setup", map[string]string{
-		"setupToken": setupTok, "username": "intruder", "password": password,
-	}); r.status != 409 && r.status != 403 {
+		"username": "intruder", "password": password,
+	}); r.status != 409 {
 		t.Fatalf("second setup: %d", r.status)
 	}
 }

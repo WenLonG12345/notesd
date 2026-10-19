@@ -31,9 +31,8 @@ On first launch, the app asks for your server:
    `http://192.168.1.20:8080`.
 2. Then either:
    - **Sign in** with your username and password, or
-   - on a **new server** that has no account yet, paste the **setup token**
-     from the server log and create the account from the phone (see
-     [hosting.md](hosting.md#3-create-your-account)).
+   - on a **new server** that has no account yet, create the account
+     from the phone (see [hosting.md](hosting.md#3-create-your-account)).
 
 The app only connects over **HTTPS**, or over plain HTTP to an address on
 your own network (`192.168.x`, `10.x`, `172.16–31.x`, `localhost`,

@@ -22,14 +22,13 @@ class TestServer(private val resendUrl: String? = null) : AutoCloseable {
         private set
 
     init {
-        val token = start() ?: error("no setup token in the server log")
+        start()
         runBlocking {
-            check(ApiClient(url).setup(token, USERNAME, PASSWORD) is ApiResult.Ok) { "owner setup failed" }
+            check(ApiClient(url).setup(USERNAME, PASSWORD) is ApiResult.Ok) { "owner setup failed" }
         }
     }
 
-    /** Starts the server; returns the setup token if it printed one. */
-    private fun start(): String? {
+    private fun start() {
         val bin = System.getProperty("notes.serverBin") ?: error("notes.serverBin not set: run through Gradle")
         val args = listOf(bin, "--data-dir", dataDir.path, "--listen", listen) +
             (resendUrl?.let { listOf("--resend-url", it) } ?: emptyList())
@@ -38,12 +37,10 @@ class TestServer(private val resendUrl: String? = null) : AutoCloseable {
             .start()
         process = p
         val reader = p.inputStream.bufferedReader()
-        var token: String? = null
         val log = StringBuilder()
         while (true) {
             val line = reader.readLine() ?: error("notesd exited:\n$log")
             log.appendLine(line)
-            Regex("setup_token=(\\S+)").find(line)?.let { token = it.groupValues[1] }
             val addr = Regex("listen=(\\S+)").find(line)?.groupValues?.get(1) ?: continue
             listen = addr
             url = "http://$addr/".toHttpUrl()
@@ -51,7 +48,6 @@ class TestServer(private val resendUrl: String? = null) : AutoCloseable {
         }
         // Keep draining the log so the server never blocks on a full pipe.
         Thread { reader.useLines { lines -> lines.forEach { } } }.apply { isDaemon = true }.start()
-        return token
     }
 
     fun stop() {

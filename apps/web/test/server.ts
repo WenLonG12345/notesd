@@ -8,7 +8,6 @@ import { inject, onTestFinished } from 'vitest'
 
 export type TestServer = {
   url: string
-  setupToken: string
   /** Browser requests fail as if the network were down. */
   setOffline: (offline: boolean) => void
   /** Browser requests claim this Origin, e.g. a misconfigured proxy's. */
@@ -38,7 +37,7 @@ export async function startServer({ resendUrl }: { resendUrl?: string } = {}): P
   const dataDir = mkdtempSync(join(tmpdir(), 'notes-data-'))
   const args = ['--data-dir', dataDir, '--listen', '127.0.0.1:0', ...(resendUrl ? ['--resend-url', resendUrl] : [])]
   const proc = spawn(inject('serverBin'), args)
-  const { url, setupToken } = await readStartup(proc)
+  const url = await readStartup(proc)
 
   const browser = cookieFetch(url)
   globalThis.fetch = browser
@@ -46,7 +45,6 @@ export async function startServer({ resendUrl }: { resendUrl?: string } = {}): P
   const other = cookieFetch(url)
   const server: TestServer = {
     url,
-    setupToken,
     setOffline: (offline) => {
       browser.offline = offline
     },
@@ -129,23 +127,21 @@ export async function startFakeResend(): Promise<FakeResend> {
 
 /** Creates the owner account through the API, as another device would. */
 export async function createOwner(server: TestServer, username = 'me', password = 'correct horse') {
-  const res = await server.api('POST', '/auth/setup', { setupToken: server.setupToken, username, password })
+  const res = await server.api('POST', '/auth/setup', { username, password })
   if (res.status !== 201) throw new Error(`setup failed: ${res.status}`)
   return { username, password }
 }
 
-function readStartup(proc: ChildProcess): Promise<{ url: string; setupToken: string }> {
+function readStartup(proc: ChildProcess): Promise<string> {
   return new Promise((resolve, reject) => {
     let log = ''
-    let setupToken = ''
     const onData = (chunk: Buffer) => {
       log += chunk.toString()
-      setupToken ||= /setup_token=(\S+)/.exec(log)?.[1] ?? ''
       const listen = /listen=(\S+)/.exec(log)?.[1]
-      if (listen && setupToken) {
+      if (listen) {
         proc.stdout?.off('data', onData)
         proc.stderr?.off('data', onData)
-        resolve({ url: `http://${listen}`, setupToken })
+        resolve(`http://${listen}`)
       }
     }
     proc.stdout?.on('data', onData)

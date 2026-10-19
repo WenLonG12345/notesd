@@ -78,27 +78,37 @@ For other options, see [Configuration](#configuration).
 
 ## 3. Create your account
 
-On first start, notesd logs a setup URL:
+Open notesd in a browser. A server with no account asks you to create one,
+and that becomes the owner account: the only account on the server. You can
+also create it from the Android or iPhone app, on the screen that comes after
+you enter the server address.
 
-```text
-WARN no owner account yet: ... setup_url=https://notes.example.com/setup#k3J9…
-```
+Until the owner account exists, **anyone who can reach the server can create
+it**. After that, nobody else can create one. A fresh install listens on
+`127.0.0.1:8080`, so nothing outside the machine can reach it yet. Create the
+account before you put notesd on the network, in one of these ways:
 
-Open the URL to create your account. If you're configuring HTTPS, complete the next section first.
+- **Through an SSH tunnel**, before setting up HTTPS: run
+  `ssh -L 8080:127.0.0.1:8080 you@your-server` from your computer, then open
+  `http://localhost:8080`.
+- **From the systemd unit.** Add these two lines to the unit file:
 
-The setup token prevents unauthorized account creation and is regenerated on each restart until an owner account exists.
+  ```ini
+  Environment=NOTESD_OWNER_USERNAME=me
+  Environment=NOTESD_OWNER_PASSWORD=…
+  ```
 
-Alternatively, you can:
-
-- Set `NOTESD_SETUP_TOKEN` to use a fixed token.
-- Enter the token in the Android app's **New server** screen.
-- Create the account directly from the server:
+  notesd creates the account the first time it starts. After that it ignores
+  both lines, so you can delete them. Changing the password there later does
+  nothing; use `notesd reset-password` instead.
+- **From the command line:**
 
   ```bash
   sudo -u notesd env NOTESD_PASSWORD='…' /usr/local/bin/notesd create-owner --username me --data-dir /var/lib/notesd
   ```
 
-notesd supports a single account, accessible from multiple devices.
+If someone else creates the account first, you'll find it already exists. Stop
+notesd, delete `/var/lib/notesd`, and start again.
 
 ## 4. HTTPS
 
@@ -157,7 +167,7 @@ Unlike a locally terminated reverse proxy, a provider-terminated tunnel allows t
 
 ### Proxy considerations
 
-- **Public URL:** Set `NOTESD_PUBLIC_URL` to the external HTTPS URL. This enables `Secure` cookies and generates the correct setup link.
+- **Public URL:** Set `NOTESD_PUBLIC_URL` to the external HTTPS URL. This enables `Secure` cookies and makes the address in the first-run log line correct.
 - **Root path:** Use a dedicated hostname (`notes.example.com`), not a subpath (`example.com/notes`).
 - **Origin validation:** Preserve the `Host` header or configure `NOTESD_PUBLIC_URL`. Otherwise, writes may fail with HTTP 403.
 - **Rate limiting:** Authentication is limited to 10 failed attempts per 15 minutes per client IP. Behind a proxy or tunnel, clients may share the same limit, potentially blocking new logins temporarily. Existing sessions are unaffected.
@@ -197,7 +207,7 @@ Configuration is available through CLI flags or environment variables. No config
 | `--public-url` | `NOTESD_PUBLIC_URL` | Unset | External URL; HTTPS enables `Secure` cookies |
 | `--log-level` | `NOTESD_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `--log-format` | `NOTESD_LOG_FORMAT` | `text` | `text` or `json` |
-| `--setup-token` | `NOTESD_SETUP_TOKEN` | Generated | Fixed initial setup token |
+| | `NOTESD_OWNER_USERNAME`, `NOTESD_OWNER_PASSWORD` | Unset | Create the owner account at startup if there is none ([details](#3-create-your-account)) |
 
 For memory-constrained hosts, `GOMEMLIMIT` can reduce Go's memory usage by triggering garbage collection earlier:
 

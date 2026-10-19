@@ -43,10 +43,12 @@ working on them:
   of stdin.
 - `--resend-url` / `NOTESD_RESEND_URL` (default `https://api.resend.com`)
   exists so tests can point email at a fake.
-- The setup link (`setup_url` in the log) carries the token in its
-  fragment, so it never reaches proxy logs. It uses `--public-url` when set,
-  otherwise the listen address. The web app's onboarding and
-  `POST /api/v1/auth/setup` both accept the token.
+- First-run setup has no token: `POST /api/v1/auth/setup` creates the owner
+  for whoever calls it first, then answers `already_set_up` (architecture
+  §10). While there's no owner, `serve` logs a warning with the app's `url`
+  (`--public-url` when set, otherwise the listen address).
+  `NOTESD_OWNER_USERNAME` and `NOTESD_OWNER_PASSWORD` create the owner at
+  startup instead. They're env-only, so the password stays out of `ps`.
 
 ## API
 
@@ -64,7 +66,7 @@ Failed logins are limited to 10 per 15 minutes per client address.
 | Method | Path | Notes |
 | --- | --- | --- |
 | GET | `/auth/status` | `{"setupRequired": bool}` |
-| POST | `/auth/setup` | `{setupToken, username, password}` |
+| POST | `/auth/setup` | `{username, password}`; only while no owner exists |
 | POST | `/auth/login` | `{username, password, client, deviceName}` |
 | POST | `/auth/refresh` | `{refreshToken}` → new `accessToken` |
 | POST | `/auth/logout` | |
@@ -152,7 +154,7 @@ internal/search    Markdown → plain text and tags, FTS5 query building, search
 internal/locks     locked-note envelopes, keyring
 internal/images    image blobs: validation, storage, references, collection, integrity check
 internal/mail      email settings, note Markdown → HTML email, Resend client
-internal/auth      Argon2id, sessions, setup token, login rate limiting
+internal/auth      Argon2id, owner account, sessions, login rate limiting
 internal/api       routing, auth/CSRF middleware, handlers, gzip, logging
 internal/web       embedded web app (apps/web builds into internal/web/dist)
 migrations         numbered SQL files, tracked with PRAGMA user_version

@@ -1,24 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import styles from './code.module.css'
-
-/** Dark terminal-style block, e.g. sample server log output. */
-export function Terminal({ children, label }: { children: ReactNode; label?: string }) {
-  return (
-    <pre className={styles.terminal} aria-label={label}>
-      {children}
-    </pre>
-  )
-}
-
-/** Dim prefix inside a Terminal line. */
-export function Dim({ children }: { children: ReactNode }) {
-  return <span className={styles.dim}>{children}</span>
-}
-
-/** Highlighted value inside a Terminal line. */
-export function Hi({ children }: { children: ReactNode }) {
-  return <span className={styles.hi}>{children}</span>
-}
 
 /** A shell command to run on the server, with a copy button where the browser allows it. */
 export function Command({ command, tone = 'light' }: { command: string; tone?: 'light' | 'dark' }) {

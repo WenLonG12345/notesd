@@ -1,24 +1,9 @@
-.terminal {
-  margin: 0;
-  background: var(--code);
-  border-radius: 14px;
-  padding: 14px 16px;
-  font: 400 12px/1.75 var(--font-mono);
-  color: var(--code-ink);
-  overflow-x: auto;
-  white-space: pre;
-}
-
 .dim {
   color: var(--code-dim);
 }
 
 .light .dim {
   color: var(--ink-3);
-}
-
-.hi {
-  color: var(--code-hi);
 }
 
 .command {

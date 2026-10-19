@@ -31,30 +31,21 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"setupRequired": !has})
 }
 
-// POST /api/v1/auth/setup — first-run owner creation, guarded by the setup
-// token printed in the server log.
+// POST /api/v1/auth/setup — first-run owner creation. Open to whoever
+// arrives first while no owner exists, then closed for good (§10).
 func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
-	key := "setup:" + clientKey(r)
-	if !s.allow(w, key) {
-		return
-	}
 	var req struct {
-		SetupToken string `json:"setupToken"`
-		Username   string `json:"username"`
-		Password   string `json:"password"`
+		Username string `json:"username"`
+		Password string `json:"password"`
 	}
 	if err := decode(w, r, &req); err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
-	if err := s.auth.Setup(r.Context(), req.SetupToken, req.Username, req.Password); err != nil {
-		if errors.Is(err, auth.ErrBadSetupToken) {
-			s.limiter.Fail(key)
-		}
+	if err := s.auth.CreateOwner(r.Context(), req.Username, req.Password); err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
-	s.limiter.Reset(key)
 	s.log.Info("owner account created", "username", req.Username)
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "created"})
 }

@@ -120,8 +120,6 @@ func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication required")
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid username or password")
-	case errors.Is(err, auth.ErrBadSetupToken):
-		writeError(w, http.StatusForbidden, "invalid_setup_token", "invalid setup token")
 	case errors.Is(err, auth.ErrOwnerExists):
 		writeError(w, http.StatusConflict, "already_set_up", "the owner account already exists")
 	case errors.Is(err, auth.ErrNotFound):

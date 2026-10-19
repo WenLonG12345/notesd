@@ -13,12 +13,11 @@ import notes.core.api.SignIn
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
-enum class Step { Server, Token, Account, SignIn }
+enum class Step { Server, Account, SignIn }
 
 data class OnboardingState(
     val step: Step,
     val server: String = "",
-    val token: String = "",
     val username: String = "",
     val password: String = "",
     val confirm: String = "",
@@ -31,11 +30,10 @@ data class OnboardingState(
     val done: Boolean = false
 )
 
-enum class Field { Server, Token, Username, Password, Confirm }
+enum class Field { Server, Username, Password, Confirm }
 
 /**
- * Server address → (setup token → new account, when the server has none) or
- * sign in. With [lockedServer] it's "sign in again": straight to sign-in on
+ * Server address → new account (when the server has none yet) or sign in. With [lockedServer] it's "sign in again": straight to sign-in on
  * the server these notes belong to.
  */
 class OnboardingViewModel(
@@ -65,8 +63,7 @@ class OnboardingViewModel(
     fun back(): Boolean {
         val previous = when (state.step) {
             Step.Server -> null
-            Step.Token -> Step.Server
-            Step.Account -> Step.Token
+            Step.Account -> Step.Server
             Step.SignIn -> if (lockedServer == null) Step.Server else null
         } ?: return false
         state = state.copy(step = previous, error = null, fieldErrors = emptyMap(), password = "", confirm = "")
@@ -91,16 +88,11 @@ class OnboardingViewModel(
         when (val status = api.status()) {
             is ApiResult.Ok -> {
                 url = address.url
-                state = state.copy(step = if (status.value.setupRequired) Step.Token else Step.SignIn)
+                state = state.copy(step = if (status.value.setupRequired) Step.Account else Step.SignIn)
             }
 
             else -> fail(message = messageFor(status))
         }
-    }
-
-    fun submitToken() {
-        if (state.token.isBlank()) return fail(Field.Token to "Paste the setup token from the server log.")
-        state = state.copy(step = Step.Account)
     }
 
     fun submitAccount() = run {
@@ -115,13 +107,8 @@ class OnboardingViewModel(
         }
         if (errors.isNotEmpty()) return@run fail(*errors.toList().toTypedArray())
         val api = clientFor(url!!)
-        when (val r = api.setup(s.token.trim(), s.username.trim(), s.password)) {
+        when (val r = api.setup(s.username.trim(), s.password)) {
             is ApiResult.Ok -> Unit
-
-            is ApiResult.Rejected if r.error == "invalid_setup_token" -> {
-                state = state.copy(step = Step.Token)
-                return@run fail(Field.Token to "That token didn't match. Copy it from the server log again.")
-            }
 
             is ApiResult.Rejected if r.error == "invalid_request" && r.field != null -> {
                 val field = if (r.field == "username") Field.Username else Field.Password

@@ -94,12 +94,12 @@ public final class ApiClient: Sendable {
         await send(request("GET", "api/v1/auth/status"), decode: json(AuthStatus.self))
     }
 
-    /// Creates the owner account with the token from the server log.
-    public func setup(setupToken: String, username: String, password: String) async -> ApiResult<Void> {
+    /// Creates the owner account on a server that has none yet.
+    public func setup(username: String, password: String) async -> ApiResult<Void> {
         struct Body: Encodable {
-            var setupToken, username, password: String
+            var username, password: String
         }
-        let body = Body(setupToken: setupToken, username: username, password: password)
+        let body = Body(username: username, password: password)
         return await send(request("POST", "api/v1/auth/setup", body: body)) { _ in () }
     }
 

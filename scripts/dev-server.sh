@@ -4,7 +4,7 @@ set -e
 data="${NOTESD_DATA_DIR:-data}"
 go build -o bin/notesd-dev ./cmd/notesd
 
-# Fresh data dir: create a known owner so dev skips the setup-token onboarding.
+# Fresh data dir: create a known owner so dev skips onboarding.
 if [ ! -f "$data/notes.db" ]; then
   NOTESD_PASSWORD=devpassword bin/notesd-dev create-owner --username dev --data-dir "$data"
   echo "dev owner: dev / devpassword"
