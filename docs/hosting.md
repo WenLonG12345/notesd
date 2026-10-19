@@ -85,39 +85,27 @@ The default listen address is `127.0.0.1:8080`. For other options, see [Configur
 
 ### With Docker
 
-The image is `ghcr.io/cassiozen/notesd`, for x86-64 and ARM64 (including Raspberry Pi 4/5). Create a `compose.yaml`:
-
-```yaml
-services:
-  notesd:
-    image: ghcr.io/cassiozen/notesd:latest
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8080:8080"
-    volumes:
-      - notesd-data:/data
-    environment:
-      NOTESD_PUBLIC_URL: https://notes.example.com
-
-volumes:
-  notesd-data:
-    name: notesd-data
-```
-
-Set `NOTESD_PUBLIC_URL` to the address you'll open notesd at (see [Configuration](#configuration)), then start it:
+The image is `ghcr.io/cassiozen/notesd`, for x86-64 and ARM64 (including Raspberry Pi 4/5). Pull it and start a container, with `NOTESD_PUBLIC_URL` set to the address you'll open notesd at (see [Configuration](#configuration)):
 
 ```bash
-docker compose up -d
-docker compose logs notesd
+docker pull ghcr.io/cassiozen/notesd:latest
+docker run -d --name notesd --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 \
+  -v notesd-data:/data \
+  -e NOTESD_PUBLIC_URL=https://notes.example.com \
+  ghcr.io/cassiozen/notesd:latest
+docker logs notesd
 ```
 
-Your notes are kept in the `notesd-data` volume.
+Your notes are kept in the `notesd-data` volume, which Docker creates on first run.
+
+Keep the `docker run` command around: it's how you'll [upgrade](operations.md#docker) or change a setting. The container's flags can't be edited in place, so to change one, remove the container and run it again (`docker rm -f notesd`, then the command with the new flags). The volume, and your notes, are unaffected.
 
 **Notes**:
 
-- The port is published on `127.0.0.1` only, for the [reverse proxy or tunnel](#3-https) on the same machine. To reach notesd directly on a LAN or VPN, publish it as `"8080:8080"` once your account exists (see [Without a domain](#without-a-domain)).
-- Other settings from [Configuration](#configuration) go under `environment:`. Inside the container, `NOTESD_LISTEN` and `NOTESD_DATA_DIR` are already set; leave them alone.
-- notesd runs as an unprivileged user (uid 65532). If you'd rather keep the data in a folder (`./data:/data`) than a volume, create it with that owner first: `mkdir -p data && sudo chown 65532:65532 data`. Otherwise Docker creates it owned by root and notesd can't write to it.
+- The port is published on `127.0.0.1` only, for the [reverse proxy or tunnel](#3-https) on the same machine. To reach notesd directly on a LAN or VPN, publish it as `-p 8080:8080` once your account exists (see [Without a domain](#without-a-domain)).
+- Other settings from [Configuration](#configuration) are passed as `-e NAME=value`. Inside the container, `NOTESD_LISTEN` and `NOTESD_DATA_DIR` are already set; leave them alone.
+- notesd runs as an unprivileged user (uid 65532). If you'd rather keep the data in a folder (`-v "$PWD/data:/data"`) than a volume, create it with that owner first: `mkdir -p data && sudo chown 65532:65532 data`. Otherwise Docker creates it owned by root and notesd can't write to it.
 
 
 ## 2. Create your account
@@ -130,12 +118,12 @@ Open notesd in a browser, or point the Android/iPhone app to the new server and 
 > it**.
 > Create the account now
 
-You can also use environment variables to create the account as the server starts the first time:
+You can also use environment variables to create the account as the server starts the first time (with Docker, as `-e` flags on `docker run`):
 
-  ```yaml
-      NOTESD_OWNER_USERNAME: me
-      NOTESD_OWNER_PASSWORD: …
-  ```
+```text
+NOTESD_OWNER_USERNAME=me
+NOTESD_OWNER_PASSWORD=…
+```
 
 
 ## 3. HTTPS
@@ -208,9 +196,9 @@ For LAN or VPN access, you can serve HTTP directly. With the binary, change the 
 --listen 0.0.0.0:8080
 ```
 
-With Docker, publish the port on every address instead: `"8080:8080"` in `compose.yaml`, or `-p 8080:8080`.
+With Docker, publish the port on every address instead: `-p 8080:8080` (remove and re-run the container, see [With Docker](#with-docker)).
 
-Docker's published ports bypass host firewalls such as UFW and firewalld, so on a machine with a public IP this exposes notesd to the internet. There, publish on the LAN or VPN address only (`"192.168.1.10:8080:8080"`, or `-p 192.168.1.10:8080:8080`), or block the port at your provider's firewall.
+Docker's published ports bypass host firewalls such as UFW and firewalld, so on a machine with a public IP this exposes notesd to the internet. There, publish on the LAN or VPN address only (`-p 192.168.1.10:8080:8080`), or block the port at your provider's firewall.
 
 Set `NOTESD_PUBLIC_URL` to `http://<server-ip>:8080` and access notesd at that address.
 
@@ -247,7 +235,7 @@ For memory-constrained hosts, `GOMEMLIMIT` can reduce Go's memory usage by trigg
 Environment=GOMEMLIMIT=64MiB
 ```
 
-With Docker, add `GOMEMLIMIT: 64MiB` under `environment:`.
+With Docker, add `-e GOMEMLIMIT=64MiB` to `docker run`.
 
 ## Next steps
 

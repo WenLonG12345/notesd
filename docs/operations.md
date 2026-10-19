@@ -53,22 +53,28 @@ With the [Docker setup](hosting.md#with-docker), the data directory is the
 `notesd-data` volume, and the commands above run inside the container:
 
 ```bash
-docker compose exec notesd notesd check
-docker compose logs -f notesd
+docker exec notesd notesd check
+docker logs -f notesd
 ```
 
 To export your notes to a folder on the host:
 
 ```bash
-docker compose exec notesd notesd export --out /tmp/export
-docker compose cp notesd:/tmp/export ./notes-export
+docker exec notesd notesd export --out /tmp/export
+docker cp notesd:/tmp/export ./notes-export
 ```
 
-To upgrade to the latest release:
+To upgrade to the latest release, pull the image, then replace the container
+with the same `docker run` command you started it with:
 
 ```bash
-docker compose pull
-docker compose up -d
+docker pull ghcr.io/cassiozen/notesd:latest
+docker rm -f notesd
+docker run -d --name notesd --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 \
+  -v notesd-data:/data \
+  -e NOTESD_PUBLIC_URL=https://notes.example.com \
+  ghcr.io/cassiozen/notesd:latest
 ```
 
 To stay on one release line, use its tag instead of `latest`, e.g.
@@ -77,7 +83,7 @@ To stay on one release line, use its tag instead of `latest`, e.g.
 To back up, stop the server and copy the volume to a file:
 
 ```bash
-docker compose stop notesd
+docker stop notesd
 docker run --rm -v notesd-data:/data -v "$PWD":/backup busybox tar czf /backup/notesd-backup.tgz -C /data .
-docker compose start notesd
+docker start notesd
 ```
