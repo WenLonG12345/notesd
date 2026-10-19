@@ -27,7 +27,7 @@ offline and syncs your notes whenever a connection is available.</p>
 1. **Host the server.** Run it with Docker (`ghcr.io/cassiozen/notesd`) or download the single binary for your machine. See [docs/hosting.md](docs/hosting.md).
 2. **Create your account.** Open the server in a browser and create your
    account. Do this before exposing it to the internet; see
-   [docs/hosting.md](docs/hosting.md#3-create-your-account).
+   [docs/hosting.md](docs/hosting.md#2-create-your-account).
 3. **Install the Android app.** Download the APK from
    [Releases](https://github.com/cassiozen/notesd/releases) and connect it to
    your server. See [docs/android.md](docs/android.md).
