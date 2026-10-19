@@ -86,12 +86,7 @@ fun OnboardingScreen(vm: OnboardingViewModel, onDone: () -> Unit, onSkip: (() ->
     LaunchedEffect(s.error, s.fieldErrors) { if (s.error != null || s.fieldErrors.isNotEmpty()) shakes++ }
     BackHandler(enabled = s.step != Step.Server && !(vm.lockedServer != null && s.step == Step.SignIn)) { vm.back() }
 
-    val setup = s.step == Step.Token || s.step == Step.Account
-    val stepIndex = when (s.step) {
-        Step.Server -> 0
-        Step.Token, Step.SignIn -> 1
-        Step.Account -> 2
-    }
+    val stepIndex = if (s.step == Step.Server) 0 else 1
 
     CompositionLocalProvider(LocalHaze provides haze) {
         Box(Modifier.fillMaxSize().background(t.bg)) {
@@ -112,7 +107,7 @@ fun OnboardingScreen(vm: OnboardingViewModel, onDone: () -> Unit, onSkip: (() ->
                     ) {
                         Brand(large = true)
                         Spacer(Modifier.weight(1f))
-                        if (vm.lockedServer == null) Steps(if (setup) 3 else 2, stepIndex)
+                        if (vm.lockedServer == null) Steps(2, stepIndex)
                     }
                     Spacer(Modifier.height(20.dp))
                     val shape = RoundedCornerShape(28.dp)
@@ -208,32 +203,10 @@ private fun StepContent(step: Step, vm: OnboardingViewModel, onSkip: (() -> Unit
             if (onSkip == null && onExit != null) Secondary("Not now", onExit)
         }
 
-        Step.Token -> {
-            Kicker("New server")
-            Heading("Paste your setup token", style = Type.display.copy(fontSize = 32.sp, lineHeight = 34.sp))
-            Lede(
-                "When the server starts without an account, it prints a one-time token to its log. " +
-                    "It proves you're the person who installed it."
-            )
-            Input(
-                vm,
-                Field.Token,
-                "Setup token",
-                s.token,
-                { copy(token = it) },
-                mono = true,
-                keyboard = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Done),
-                onDone = vm::submitToken
-            )
-            Error(s.error)
-            Primary("Continue", false, vm::submitToken)
-            Secondary("Back") { vm.back() }
-        }
-
         Step.Account -> {
-            Kicker("Almost there")
+            Kicker("New server")
             Heading("Create your account", style = Type.display.copy(fontSize = 32.sp, lineHeight = 34.sp))
-            Lede("This is the only account on this server.")
+            Lede("This server has no account yet. Yours will be the only one on it.")
             Input(vm, Field.Username, "Username", s.username, { copy(username = it) }, type = ContentType.NewUsername)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Input(

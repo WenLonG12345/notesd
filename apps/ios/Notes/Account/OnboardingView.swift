@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Connecting to a server: its address, then a setup token and a new account
-/// (a fresh server) or a sign-in. A sheet: the app works without a server until then.
+/// Connecting to a server: its address, then a new account (a fresh server)
+/// or a sign-in. A sheet: the app works without a server until then.
 struct OnboardingView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: OnboardingModel
@@ -72,7 +72,6 @@ struct OnboardingView: View {
     private var heading: String {
         switch model.step {
         case .server: "Connect to your server"
-        case .token: "Set up your server"
         case .account: "Create your account"
         case .signIn: model.lockedServer == nil ? "Sign in" : "Sign in again"
         }
@@ -81,8 +80,7 @@ struct OnboardingView: View {
     private var lede: String {
         switch model.step {
         case .server: "Your notes live on this iPhone and sync with your notesd server whenever it can reach it."
-        case .token: "This server has no account yet. Paste the setup token from the server’s log."
-        case .account: "The owner account for \(model.server)."
+        case .account: "\(model.server) has no account yet. Yours will be the only one on it."
         case .signIn: "To \(model.server)."
         }
     }
@@ -90,7 +88,6 @@ struct OnboardingView: View {
     private var buttonTitle: String {
         switch model.step {
         case .server: "Continue"
-        case .token: "Continue"
         case .account: "Create account"
         case .signIn: "Sign in"
         }
@@ -105,10 +102,6 @@ struct OnboardingView: View {
                     .textContentType(.URL)
                     .font(.notesMono)
                     .onSubmit(submit)
-            }
-        case .token:
-            LabeledField(label: "Setup token", error: model.fieldErrors[.token]) {
-                TextField("From the server log", text: $model.token).font(.notesMono).onSubmit(submit)
             }
         case .account:
             LabeledField(label: "Username", error: model.fieldErrors[.username]) {
@@ -133,7 +126,6 @@ struct OnboardingView: View {
     private func submit() {
         switch model.step {
         case .server: model.submitServer()
-        case .token: model.submitToken()
         case .account: model.submitAccount()
         case .signIn: model.submitSignIn()
         }

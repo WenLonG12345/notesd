@@ -50,8 +50,8 @@ creates the owner `dev` / `devpassword`, so there's no onboarding;
 run a second copy next to the first.
 
 To try the real first-run onboarding, run the server by hand on an empty
-data dir (`go run ./cmd/notesd --data-dir /tmp/empty` in `server/`); it logs
-a setup link.
+data dir (`go run ./cmd/notesd --data-dir /tmp/empty` in `server/`) and open
+the address it logs.
 
 ## Android
 

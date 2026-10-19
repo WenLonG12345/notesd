@@ -28,9 +28,8 @@ final class TestServer: Sendable {
 
     static func start(resendURL: String? = nil) async throws -> TestServer {
         let server = TestServer(resendURL: resendURL)
-        let token = try #require(try await server.launch(), "no setup token in the server log")
-        let setup = await ApiClient(baseURL: server.url).setup(
-            setupToken: token, username: username, password: password)
+        try await server.launch()
+        let setup = await ApiClient(baseURL: server.url).setup(username: username, password: password)
         guard case .ok = setup else {
             Issue.record("owner setup failed: \(setup)")
             throw CancellationError()
@@ -38,22 +37,22 @@ final class TestServer: Sendable {
         return server
     }
 
-    /// Starts the process; returns the setup token if it printed one.
-    private func launch() async throws -> String? {
+    private func launch() async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: try Self.binary())
         process.arguments =
             ["--data-dir", dataDir.path, "--listen", state.withLock { $0.listen }]
-            // Pinned: the listen and setup_token lines are parsed, so inherited NOTESD_LOG_* mustn't reshape them.
+            // Pinned: the listen line is parsed, so inherited NOTESD_LOG_* mustn't reshape them.
             + ["--log-level", "info", "--log-format", "text"]
             + (resendURL.map { ["--resend-url", $0] } ?? [])
+        // An exported NOTESD_OWNER_* would create the owner at startup, before start() can.
+        process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("NOTESD_OWNER_") }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
         try process.run()
         state.withLock { $0.process = process }
 
-        var token: String?
         var log = ""
         var lines = pipe.fileHandleForReading.bytes.lines.makeAsyncIterator()
         while true {
@@ -62,7 +61,6 @@ final class TestServer: Sendable {
                 throw CancellationError()
             }
             log += line + "\n"
-            if let m = line.firstMatch(of: /setup_token=(\S+)/) { token = String(m.1) }
             if let m = line.firstMatch(of: /listen=(\S+)/) {
                 state.withLock { $0.listen = String(m.1) }
                 break
@@ -74,7 +72,6 @@ final class TestServer: Sendable {
             var rest = rest
             while (try? await rest.next()) != nil {}
         }
-        return token
     }
 
     func stop() {

@@ -40,12 +40,11 @@ class ApiClient(
 
     suspend fun status(): ApiResult<AuthStatus> = send(get("api/v1/auth/status")) { json.decodeFromString(it) }
 
-    /** Creates the owner account with the token from the server log. */
-    suspend fun setup(setupToken: String, username: String, password: String): ApiResult<Unit> = send(
+    /** Creates the owner account on a server that has none yet. */
+    suspend fun setup(username: String, password: String): ApiResult<Unit> = send(
         post(
             "api/v1/auth/setup",
             buildJsonObject {
-                put("setupToken", setupToken)
                 put("username", username)
                 put("password", password)
             }

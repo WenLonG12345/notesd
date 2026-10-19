@@ -2,18 +2,16 @@ import Foundation
 import NotesCore
 import Observation
 
-/// Server address → (setup token → new account, when the server has none) or
-/// sign in. With `lockedServer` it's "sign in again": straight to sign-in on
-/// the server these notes belong to. A port of Android's OnboardingViewModel.
+/// Server address → new account (when the server has none yet) or sign in. With `lockedServer` it's
+/// "sign in again": straight to sign-in on the server these notes belong to. A port of Android's OnboardingViewModel.
 @MainActor
 @Observable
 final class OnboardingModel {
-    enum Step { case server, token, account, signIn }
-    enum Field { case server, token, username, password, confirm }
+    enum Step { case server, account, signIn }
+    enum Field { case server, username, password, confirm }
 
     private(set) var step: Step
     var server: String
-    var token = ""
     var username: String
     var password = ""
     var confirm = ""
@@ -49,8 +47,7 @@ final class OnboardingModel {
         let previous: Step? =
             switch step {
             case .server: nil
-            case .token: .server
-            case .account: .token
+            case .account: .server
             case .signIn: lockedServer == nil ? .server : nil
             }
         guard let previous else { return false }
@@ -79,15 +76,10 @@ final class OnboardingModel {
             switch await api.status() {
             case .ok(let status):
                 self.url = url
-                self.step = status.setupRequired ? .token : .signIn
+                self.step = status.setupRequired ? .account : .signIn
             case let other: self.fail(message: Self.message(other))
             }
         }
-    }
-
-    func submitToken() {
-        if token.trimmed.isEmpty { return fail([.token: "Paste the setup token from the server log."]) }
-        step = .account
     }
 
     func submitAccount() {
@@ -105,11 +97,8 @@ final class OnboardingModel {
             // The fields stay bound while setup runs; login must use what setup did.
             let username = self.username.trimmed
             let password = self.password
-            switch await api.setup(setupToken: self.token.trimmed, username: username, password: password) {
+            switch await api.setup(username: username, password: password) {
             case .ok: break
-            case .rejected(_, "invalid_setup_token", _, _):
-                self.step = .token
-                return self.fail([.token: "That token didn’t match. Copy it from the server log again."])
             case .rejected(_, "invalid_request", let message, let field?):
                 let message = message.prefix(1).uppercased() + message.dropFirst() + "."
                 return self.fail([field == "username" ? .username : .password: message])

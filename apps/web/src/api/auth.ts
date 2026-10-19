@@ -4,8 +4,8 @@ import { browserName } from './user-agent'
 
 export const auth = {
   status: () => request<{ setupRequired: boolean }>('GET', '/auth/status'),
-  setup: (setupToken: string, username: string, password: string) =>
-    request<{ status: 'created' }>('POST', '/auth/setup', { setupToken, username, password }),
+  setup: (username: string, password: string) =>
+    request<{ status: 'created' }>('POST', '/auth/setup', { username, password }),
   login: (username: string, password: string) =>
     request<SessionInfo>('POST', '/auth/login', { username, password, client: 'web', deviceName: browserName() }),
   logout: () => request<undefined>('POST', '/auth/logout'),

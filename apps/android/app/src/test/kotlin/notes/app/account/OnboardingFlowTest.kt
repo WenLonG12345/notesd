@@ -97,25 +97,17 @@ class OnboardingFlowTest {
     }
 
     @Test
-    fun `a new server gets its account from the setup token`() {
+    fun `a new server goes straight to creating the account`() {
         server.enqueue(MockResponse.Builder().code(200).body("ok").build())
         server.enqueue(json(200, """{"setupRequired":true}"""))
-        server.enqueue(json(403, """{"error":"invalid_setup_token","message":"invalid setup token"}"""))
         server.enqueue(json(201, """{"status":"created"}"""))
         server.enqueue(loggedIn)
         launch()
         enterServer()
-        compose.waitUntilExactlyOneExists(hasText("Paste your setup token"))
-        compose.onNodeWithText("Setup token").performTextInput("bad")
-        button("Continue").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Create your account"))
         compose.onNodeWithText("Username").performTextInput("me")
         compose.onNodeWithText("Password").performTextInput("long enough")
         compose.onNodeWithText("Confirm password").performTextInput("long enough")
-        button("Create account").performClick()
-        compose.waitUntilExactlyOneExists(hasText("That token didn't match", substring = true))
-        button("Continue").performClick()
-        compose.onNodeWithText("Confirm password").performTextInput("long enough")
-        compose.onNodeWithText("Password").performTextInput("long enough")
         button("Create account").performClick()
         compose.waitUntilExactlyOneExists(hasText("No notes yet"))
         assertEquals(Account.SignedIn(server.url("/").toString(), "me"), graph.accounts.account.value)

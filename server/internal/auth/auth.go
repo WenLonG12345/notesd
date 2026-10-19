@@ -13,7 +13,6 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -37,7 +36,6 @@ var (
 	ErrUnauthenticated    = errors.New("not authenticated")
 	ErrOwnerExists        = errors.New("an owner account already exists")
 	ErrNoOwner            = errors.New("no owner account exists yet")
-	ErrBadSetupToken      = errors.New("invalid setup token")
 	ErrNotFound           = errors.New("session not found")
 )
 
@@ -75,9 +73,6 @@ type Credentials struct {
 type Service struct {
 	db  *database.DB
 	now func() time.Time
-
-	mu         sync.Mutex
-	setupToken string
 }
 
 // NewService returns an auth service using the system clock.
@@ -95,51 +90,18 @@ func (s *Service) HasOwner(ctx context.Context) (bool, error) {
 	return n > 0, err
 }
 
-// PrepareSetup arranges first-run setup through the API. If no owner exists
-// it installs token (or generates one when token is empty) and returns it;
-// the operator reads it from the server log, which is what stops a stranger
-// from claiming a fresh instance. It returns "" once an owner exists.
-func (s *Service) PrepareSetup(ctx context.Context, token string) (string, error) {
-	has, err := s.HasOwner(ctx)
-	if err != nil || has {
-		return "", err
-	}
-	if token == "" {
-		token = NewToken()
-	}
-	s.mu.Lock()
-	s.setupToken = token
-	s.mu.Unlock()
-	return token, nil
-}
-
-// Setup creates the owner account using the setup token.
-func (s *Service) Setup(ctx context.Context, setupToken, username, password string) error {
-	s.mu.Lock()
-	want := s.setupToken
-	s.mu.Unlock()
-	if want == "" {
-		if has, _ := s.HasOwner(ctx); has {
-			return ErrOwnerExists
+// CreateOwner creates the owner account, once. First-run setup through the
+// API, `notesd create-owner` and NOTESD_OWNER_* at startup all use it; the
+// first to arrive wins (§10).
+func (s *Service) CreateOwner(ctx context.Context, username, password string) error {
+	// Setup is unauthenticated, so refuse before validating and hashing once an
+	// owner exists; the transaction below still settles a race.
+	if has, err := s.HasOwner(ctx); err != nil || has {
+		if err == nil {
+			err = ErrOwnerExists
 		}
-		return ErrBadSetupToken
-	}
-	if !ConstantTimeEqual(setupToken, want) {
-		return ErrBadSetupToken
-	}
-	if err := s.CreateOwner(ctx, username, password); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	s.setupToken = ""
-	s.mu.Unlock()
-	return nil
-}
-
-// CreateOwner creates the owner account. It is used by Setup and by the
-// command line, which is trusted because it needs access to the data
-// directory.
-func (s *Service) CreateOwner(ctx context.Context, username, password string) error {
 	username = strings.TrimSpace(username)
 	if err := validateUsername(username); err != nil {
 		return err

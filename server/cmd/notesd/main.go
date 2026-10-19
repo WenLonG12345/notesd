@@ -16,7 +16,9 @@
 //
 // Flags may also be set through environment variables: NOTESD_DATA_DIR,
 // NOTESD_LISTEN, NOTESD_PUBLIC_URL, NOTESD_LOG_LEVEL, NOTESD_LOG_FORMAT,
-// NOTESD_SETUP_TOKEN, NOTESD_RESEND_URL. Commands that take a password read it from
+// NOTESD_RESEND_URL. serve creates the owner account from NOTESD_OWNER_USERNAME and
+// NOTESD_OWNER_PASSWORD when there is none yet; otherwise the first person to
+// open the web app creates it. Commands that take a password read it from
 // NOTESD_PASSWORD or, failing that, from the first line of standard input.
 // export --include-locked asks for the lock password at the terminal, every time.
 package main
@@ -59,17 +61,16 @@ func main() {
 }
 
 type options struct {
-	dataDir    string
-	listen     string
-	publicURL  string
-	logLevel   string
-	logFormat  string
-	setupToken string
-	resendURL  string
-	username   string
-	out        string
-	locked     bool
-	dryRun     bool
+	dataDir   string
+	listen    string
+	publicURL string
+	logLevel  string
+	logFormat string
+	resendURL string
+	username  string
+	out       string
+	locked    bool
+	dryRun    bool
 }
 
 func run(args []string) error {
@@ -87,7 +88,6 @@ func run(args []string) error {
 		fs.StringVar(&o.publicURL, "public-url", env("NOTESD_PUBLIC_URL", ""), "externally visible URL, e.g. https://notes.example.com (enables Secure cookies when https)")
 		fs.StringVar(&o.logLevel, "log-level", env("NOTESD_LOG_LEVEL", "info"), "debug, info, warn or error")
 		fs.StringVar(&o.logFormat, "log-format", env("NOTESD_LOG_FORMAT", "text"), "text or json")
-		fs.StringVar(&o.setupToken, "setup-token", env("NOTESD_SETUP_TOKEN", ""), "first-run setup token (generated and logged if empty)")
 		fs.StringVar(&o.resendURL, "resend-url", env("NOTESD_RESEND_URL", ""), "Resend API base URL for emailing notes (default https://api.resend.com)")
 	case "create-owner":
 		fs.StringVar(&o.username, "username", "", "owner username")
@@ -274,7 +274,7 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 	}
 
 	authSvc := auth.NewService(db)
-	token, err := authSvc.PrepareSetup(ctx, o.setupToken)
+	hasOwner, err := ownerFromEnv(ctx, authSvc, log)
 	if err != nil {
 		return err
 	}
@@ -292,10 +292,10 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 		return err
 	}
 	// Before "started": test harnesses (and people) read the log up to the listen address.
-	if token != "" {
-		log.Warn("no owner account yet: open setup_url to create it, "+
-			"or run `notesd create-owner --username NAME`",
-			"setup_url", setupURL(public, ln.Addr(), token), "setup_token", token)
+	if !hasOwner {
+		log.Warn("no owner account yet: open url and create it before anyone else does, "+
+			"or set NOTESD_OWNER_USERNAME and NOTESD_OWNER_PASSWORD",
+			"url", appURL(public, ln.Addr()))
 	}
 	log.Info("notesd started", "version", version, "listen", ln.Addr().String(),
 		"database", db.Path, "schema_version", database.LatestVersion())
@@ -320,17 +320,38 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 	return nil
 }
 
-// setupURL is the web app's setup link. The token rides in the fragment,
-// which browsers never send, so it stays out of proxy and access logs.
-func setupURL(public *url.URL, addr net.Addr, token string) string {
-	base := url.URL{Scheme: "http", Host: addr.String()}
+// ownerFromEnv creates the owner from NOTESD_OWNER_USERNAME and
+// NOTESD_OWNER_PASSWORD when there is none yet. Setting both keeps first-run
+// setup from ever being open to the network; with neither, serve starts with
+// setup open. Once an owner exists they are ignored: changing them later
+// changes nothing (reset-password does). It reports whether an owner exists.
+func ownerFromEnv(ctx context.Context, a *auth.Service, log *slog.Logger) (bool, error) {
+	has, err := a.HasOwner(ctx)
+	if err != nil || has {
+		return has, err
+	}
+	username, password := os.Getenv("NOTESD_OWNER_USERNAME"), os.Getenv("NOTESD_OWNER_PASSWORD")
+	switch {
+	case username == "" && password == "":
+		return false, nil
+	case username == "" || password == "":
+		return false, errors.New("set both NOTESD_OWNER_USERNAME and NOTESD_OWNER_PASSWORD, or neither")
+	}
+	if err := a.CreateOwner(ctx, username, password); err != nil {
+		return false, fmt.Errorf("create owner from NOTESD_OWNER_USERNAME: %w", err)
+	}
+	log.Info("owner account created from NOTESD_OWNER_USERNAME", "username", username)
+	return true, nil
+}
+
+// appURL is where the web app is reached, for the first-run log line.
+func appURL(public *url.URL, addr net.Addr) string {
+	base := url.URL{Scheme: "http", Host: addr.String(), Path: "/"}
 	if public != nil {
-		base = url.URL{Scheme: public.Scheme, Host: public.Host, Path: strings.TrimSuffix(public.Path, "/")}
+		base = url.URL{Scheme: public.Scheme, Host: public.Host, Path: strings.TrimSuffix(public.Path, "/") + "/"}
 	} else if tcp, ok := addr.(*net.TCPAddr); ok && tcp.IP.IsUnspecified() {
 		base.Host = net.JoinHostPort("localhost", fmt.Sprint(tcp.Port))
 	}
-	base.Path += "/setup"
-	base.Fragment = token
 	return base.String()
 }
 

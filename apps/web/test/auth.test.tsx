@@ -17,29 +17,6 @@ describe('first run', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByText(/^Step 1 of 3/)).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Get started' }))
-
-    expect(screen.getByText(/^Step 2 of 3/)).toBeTruthy()
-    await user.type(screen.getByLabelText('Setup token'), `${server.setupToken}{Enter}`)
-
-    expect(screen.getByText(/^Step 3 of 3/)).toBeTruthy()
-    await user.type(screen.getByLabelText('Username'), 'cassio')
-    await user.type(screen.getByLabelText('Password'), 'correct horse')
-    await user.type(screen.getByLabelText('Confirm password'), 'correct horse{Enter}')
-
-    await signedInAs('cassio')
-    expect(await screen.findByText('You’re all set, cassio')).toBeTruthy()
-    expect((await server.api('GET', '/auth/status')).body).toEqual({ setupRequired: false })
-  })
-
-  it('skips the token step when opened from the setup link, and clears it from the address bar', async () => {
-    const server = await startServer()
-    const user = userEvent.setup()
-    window.history.replaceState(null, '', `/setup#${server.setupToken}`)
-    render(<App />)
-
-    expect(window.location.pathname + window.location.hash).toBe('/')
     expect(await screen.findByText(/^Step 1 of 2/)).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Get started' }))
 
@@ -47,37 +24,19 @@ describe('first run', () => {
     await user.type(screen.getByLabelText('Username'), 'cassio')
     await user.type(screen.getByLabelText('Password'), 'correct horse')
     await user.type(screen.getByLabelText('Confirm password'), 'correct horse{Enter}')
+
     await signedInAs('cassio')
-  })
-
-  it('falls back to pasting the token when the setup link is stale', async () => {
-    const server = await startServer()
-    const user = userEvent.setup()
-    window.history.replaceState(null, '', '/setup#from-an-earlier-start')
-    render(<App />)
-
-    await user.click(await screen.findByRole('button', { name: 'Get started' }))
-    await user.type(screen.getByLabelText('Username'), 'cassio')
-    await user.type(screen.getByLabelText('Password'), 'correct horse')
-    await user.type(screen.getByLabelText('Confirm password'), 'correct horse{Enter}')
-
-    expect(await screen.findByText(/^That setup link is out of date/)).toBeTruthy()
-    expect(screen.getByText(/^Step 2 of 3/)).toBeTruthy()
-    await user.type(screen.getByLabelText('Setup token'), `${server.setupToken}{Enter}`)
-    await user.click(screen.getByRole('button', { name: 'Create account' }))
-    await signedInAs('cassio')
+    expect(await screen.findByText('You’re all set, cassio')).toBeTruthy()
+    expect((await server.api('GET', '/auth/status')).body).toEqual({ setupRequired: false })
+    expect(server.sent('POST', '/auth/setup')).toEqual([{ username: 'cassio', password: 'correct horse' }])
   })
 
   it('checks the form before calling the server', async () => {
-    await startServer()
+    const server = await startServer()
     const user = userEvent.setup()
     render(<App />)
 
     await user.click(await screen.findByRole('button', { name: 'Get started' }))
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(screen.getByText('Paste the setup token from the server log.')).toBeTruthy()
-
-    await user.type(screen.getByLabelText('Setup token'), 'anything{Enter}')
     await user.type(screen.getByLabelText('Password'), 'short{Enter}')
     expect(screen.getByText('Choose a username.')).toBeTruthy()
     expect(screen.getByText('Use at least 8 characters.')).toBeTruthy()
@@ -86,35 +45,15 @@ describe('first run', () => {
     await user.type(screen.getByLabelText('Password'), 'long enough')
     await user.type(screen.getByLabelText('Confirm password'), 'different!{Enter}')
     expect(screen.getByText("The passwords don't match.")).toBeTruthy()
-  })
-
-  it('sends a wrong token back to the token step, keeping what was typed', async () => {
-    const server = await startServer()
-    const user = userEvent.setup()
-    render(<App />)
-
-    await user.click(await screen.findByRole('button', { name: 'Get started' }))
-    await user.type(screen.getByLabelText('Setup token'), 'not-the-token{Enter}')
-    await user.type(screen.getByLabelText('Username'), 'cassio')
-    await user.type(screen.getByLabelText('Password'), 'correct horse')
-    await user.type(screen.getByLabelText('Confirm password'), 'correct horse{Enter}')
-
-    expect(await screen.findByText("That token didn't match. Copy it from the server log again.")).toBeTruthy()
-    const token = screen.getByLabelText('Setup token')
-    await user.clear(token)
-    await user.type(token, `${server.setupToken}{Enter}`)
-    expect(screen.getByLabelText<HTMLInputElement>('Username').value).toBe('cassio')
-    await user.click(screen.getByRole('button', { name: 'Create account' }))
-    await signedInAs('cassio')
+    expect(server.sent('POST', '/auth/setup')).toEqual([])
   })
 
   it("shows the server's field errors inline", async () => {
-    const server = await startServer()
+    await startServer()
     const user = userEvent.setup()
     render(<App />)
 
     await user.click(await screen.findByRole('button', { name: 'Get started' }))
-    await user.type(screen.getByLabelText('Setup token'), `${server.setupToken}{Enter}`)
     await user.type(screen.getByLabelText('Username'), 'cassio')
     const tooLong = 'x'.repeat(1025)
     await user.click(screen.getByLabelText('Password'))
@@ -134,7 +73,6 @@ describe('first run', () => {
     render(<App />)
 
     await user.click(await screen.findByRole('button', { name: 'Get started' }))
-    await user.type(screen.getByLabelText('Setup token'), `${server.setupToken}{Enter}`)
     await createOwner(server)
     await user.type(screen.getByLabelText('Username'), 'cassio')
     await user.type(screen.getByLabelText('Password'), 'correct horse')
@@ -143,18 +81,19 @@ describe('first run', () => {
     expect(await screen.findByRole('heading', { name: 'Welcome back.' })).toBeTruthy()
   })
 
-  it('goes back through the steps', async () => {
+  it('goes back to the welcome step, keeping what was typed', async () => {
     await startServer()
     const user = userEvent.setup()
     render(<App />)
 
     await user.click(await screen.findByRole('button', { name: 'Get started' }))
-    await user.type(screen.getByLabelText('Setup token'), 'tok{Enter}')
+    await user.type(screen.getByLabelText('Username'), 'cassio')
     await user.click(screen.getByRole('button', { name: 'Back' }))
-    expect(screen.getByLabelText<HTMLInputElement>('Setup token').value).toBe('tok')
-    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Paste your setup token' }))
-    await user.click(screen.getByRole('button', { name: 'Back' }))
-    expect(screen.getByRole('heading', { name: 'A quiet place for everything you write.' })).toBeTruthy()
+    expect(document.activeElement).toBe(
+      screen.getByRole('heading', { name: 'A quiet place for everything you write.' }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Get started' }))
+    expect(screen.getByLabelText<HTMLInputElement>('Username').value).toBe('cassio')
   })
 })
 
