@@ -1,13 +1,18 @@
 # Hosting notesd
 
-notesd is a single binary. You can run it in two ways:
+Setting up notesd takes three steps:
 
-- **[With Docker](#docker)**: the quickest, if the machine already runs Docker.
-- **[As a binary with systemd](#1-install-the-binary)**: no Docker needed.
+1. **[Run the server](#1-run-the-server)**, either [with Docker](#with-docker) or [as a binary with systemd](#with-the-binary-and-systemd).
+2. **[Set up HTTPS](#2-https)** with a reverse proxy or tunnel, or [skip it on a private network](#without-a-domain).
+3. **[Create your account](#3-create-your-account)**.
 
-Either way, you'll need a 64-bit Linux machine (x86-64 or ARM64) (or a Mac on Apple silicon), and either a domain name for HTTPS access or a private LAN/VPN.
+You'll need a 64-bit Linux machine (x86-64 or ARM64) (or a Mac on Apple silicon), and either a domain name for HTTPS access or a private LAN/VPN.
 
-## Docker
+## 1. Run the server
+
+Both ways end the same: notesd listening on `127.0.0.1:8080`, ready for the [reverse proxy or tunnel](#2-https) in the next step.
+
+### With Docker
 
 The image is `ghcr.io/cassiozen/notesd`, for x86-64 and ARM64 (including Raspberry Pi 4/5). Create a `compose.yaml`:
 
@@ -35,7 +40,7 @@ docker compose up -d
 docker compose logs notesd
 ```
 
-The logs show the setup link for [creating your account](#3-create-your-account). Your notes are kept in the `notesd-data` volume.
+The logs show the setup link you'll use to [create your account](#3-create-your-account). Your notes are kept in the `notesd-data` volume.
 
 Or, without Compose:
 
@@ -48,14 +53,16 @@ docker run -d --name notesd --restart unless-stopped \
 
 **Notes**:
 
-- The port is published on `127.0.0.1` only, for the [reverse proxy or tunnel](#4-https) on the same machine. To reach notesd directly on a LAN or VPN, publish it as `"8080:8080"` instead (see [Without a domain](#without-a-domain)).
+- The port is published on `127.0.0.1` only, for the [reverse proxy or tunnel](#2-https) on the same machine. To reach notesd directly on a LAN or VPN, publish it as `"8080:8080"` instead (see [Without a domain](#without-a-domain)).
 - Other settings from [Configuration](#configuration) go under `environment:`. Inside the container, `NOTESD_LISTEN` and `NOTESD_DATA_DIR` are already set; leave them alone.
 - notesd runs as an unprivileged user (uid 65532). If you'd rather keep the data in a folder (`./data:/data`) than a volume, give it that owner first: `sudo chown 65532:65532 ./data`.
 - To upgrade, back up, or run maintenance commands, see [operations.md](operations.md#docker).
 
-Then continue with [Create your account](#3-create-your-account) and [HTTPS](#4-https).
+Next, [set up HTTPS](#2-https).
 
-## 1. Install the binary
+### With the binary and systemd
+
+#### Install the binary
 
 Download the binary from the [latest release](https://github.com/cassiozen/notesd/releases/latest):
 
@@ -80,7 +87,7 @@ The binary includes the web app. No additional dependencies are required.
 
 To build from source, see [development.md](development.md).
 
-## 2. Set up systemd
+#### Set up systemd
 
 You can run notesd directly with `notesd serve`, but for a permanent installation, you'll probably want to run it as a systemd service. This starts notesd on boot and automatically restarts it if it crashes.
 
@@ -123,62 +130,13 @@ sudo systemctl status notesd
 sudo journalctl -u notesd -f
 ```
 
-The default listen address is `127.0.0.1:8080`.
+The default listen address is `127.0.0.1:8080`. For other options, see [Configuration](#configuration).
 
-For other options, see [Configuration](#configuration).
+Next, [set up HTTPS](#2-https).
 
-## 3. Create your account
+## 2. HTTPS
 
-Open notesd in a browser. A server with no account asks you to create one,
-and that becomes the owner account: the only account on the server. You can
-also create it from the Android or iPhone app, on the screen that comes after
-you enter the server address.
-
-Until the owner account exists, **anyone who can reach the server can create
-it**. After that, nobody else can create one. A fresh install listens on
-`127.0.0.1:8080`, so nothing outside the machine can reach it yet. Create the
-account before you put notesd on the network, in one of these ways:
-
-- **Through an SSH tunnel**, before setting up HTTPS: run
-  `ssh -L 8080:127.0.0.1:8080 you@your-server` from your computer, then open
-  `http://localhost:8080`.
-- **From the systemd unit.** Add these two lines to the unit file:
-
-  ```ini
-  Environment=NOTESD_OWNER_USERNAME=me
-  Environment=NOTESD_OWNER_PASSWORD=…
-  ```
-
-  Then reload systemd and restart notesd, which creates the account as it
-  starts:
-
-  ```bash
-  sudo systemctl daemon-reload
-  sudo systemctl restart notesd
-  ```
-
-  After that notesd ignores both lines, so you can delete them. Changing the password there later does
-  nothing; use `notesd reset-password` instead.
-- **From the command line:**
-
-  ```bash
-  sudo -u notesd env NOTESD_PASSWORD='…' /usr/local/bin/notesd create-owner --username me --data-dir /var/lib/notesd
-  ```
-
-  With Docker:
-
-  ```bash
-  docker compose exec -e NOTESD_PASSWORD='…' notesd notesd create-owner --username me
-  ```
-
-If someone else creates the account first, you'll find it already exists. Stop
-notesd and delete `/var/lib/notesd`. Then create your account with
-`notesd create-owner` (above) *before* starting notesd again; otherwise the
-fresh install is open to whoever reaches it first, again.
-
-## 4. HTTPS
-
-notesd serves HTTP. For public access, put it behind a reverse proxy or tunnel and configure `NOTESD_PUBLIC_URL` with the external HTTPS address.
+notesd serves plain HTTP, whether it runs in Docker or as a binary. For public access, put it behind a reverse proxy or tunnel and configure `NOTESD_PUBLIC_URL` with the external HTTPS address.
 
 ### Option A: Reverse proxy
 
@@ -238,9 +196,9 @@ Unlike a locally terminated reverse proxy, a provider-terminated tunnel allows t
 - **Origin validation:** Preserve the `Host` header or configure `NOTESD_PUBLIC_URL`. Otherwise, writes may fail with HTTP 403.
 - **Rate limiting:** Authentication is limited to 10 failed attempts per 15 minutes per client IP. Behind a proxy or tunnel, clients may share the same limit, potentially blocking new logins temporarily. Existing sessions are unaffected.
 
-## Without a domain
+### Without a domain
 
-For LAN or VPN access, you can serve HTTP directly. Change the listen address in your systemd unit to:
+For LAN or VPN access, you can serve HTTP directly. With the binary, change the listen address in your systemd unit to:
 
 ```text
 --listen 0.0.0.0:8080
@@ -254,7 +212,7 @@ Plain HTTP sends credentials without transport encryption and uses cookies witho
 
 The Android app permits HTTP connections to private IPv4 ranges (`192.168.x`, `10.x`, `172.16–31.x`), `localhost`, and `*.local`. Other addresses require HTTPS.
 
-### Tailscale
+#### Tailscale
 
 If you use Tailscale, you can expose notesd over HTTPS within your tailnet without a separate reverse proxy:
 
@@ -263,6 +221,55 @@ tailscale serve --bg 8080
 ```
 
 Set `NOTESD_PUBLIC_URL` to `https://<machine>.<tailnet>.ts.net`.
+
+## 3. Create your account
+
+Open notesd in a browser. A server with no account asks you to create one,
+and that becomes the owner account: the only account on the server. You can
+also create it from the Android or iPhone app, on the screen that comes after
+you enter the server address.
+
+Until the owner account exists, **anyone who can reach the server can create
+it**. After that, nobody else can create one. A fresh install listens on
+`127.0.0.1:8080`, so nothing outside the machine can reach it yet. Create the
+account before you put notesd on the network, in one of these ways:
+
+- **Through an SSH tunnel**, before setting up HTTPS: run
+  `ssh -L 8080:127.0.0.1:8080 you@your-server` from your computer, then open
+  `http://localhost:8080`.
+- **From the systemd unit.** Add these two lines to the unit file:
+
+  ```ini
+  Environment=NOTESD_OWNER_USERNAME=me
+  Environment=NOTESD_OWNER_PASSWORD=…
+  ```
+
+  Then reload systemd and restart notesd, which creates the account as it
+  starts:
+
+  ```bash
+  sudo systemctl daemon-reload
+  sudo systemctl restart notesd
+  ```
+
+  After that notesd ignores both lines, so you can delete them. Changing the password there later does
+  nothing; use `notesd reset-password` instead.
+- **From the command line:**
+
+  ```bash
+  sudo -u notesd env NOTESD_PASSWORD='…' /usr/local/bin/notesd create-owner --username me --data-dir /var/lib/notesd
+  ```
+
+  With Docker:
+
+  ```bash
+  docker compose exec -e NOTESD_PASSWORD='…' notesd notesd create-owner --username me
+  ```
+
+If someone else creates the account first, you'll find it already exists. Stop
+notesd and delete `/var/lib/notesd`. Then create your account with
+`notesd create-owner` (above) *before* starting notesd again; otherwise the
+fresh install is open to whoever reaches it first, again.
 
 ## Configuration
 

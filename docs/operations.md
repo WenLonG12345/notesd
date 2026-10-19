@@ -49,7 +49,7 @@ and `--log-level debug` adds detail.
 
 ## Docker
 
-With the [Docker setup](hosting.md#docker), the data directory is the
+With the [Docker setup](hosting.md#with-docker), the data directory is the
 `notesd-data` volume, and the commands above run inside the container:
 
 ```bash
