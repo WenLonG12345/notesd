@@ -2,8 +2,8 @@ import Foundation
 import NotesCore
 import Observation
 
-/// Server address → new account (when the server has none yet) or sign in. With `lockedServer` it's "sign in again": straight to sign-in on
-/// the server these notes belong to. A port of Android's OnboardingViewModel.
+/// Server address → new account (when the server has none yet) or sign in. With `lockedServer` it's
+/// "sign in again": straight to sign-in on the server these notes belong to. A port of Android's OnboardingViewModel.
 @MainActor
 @Observable
 final class OnboardingModel {

@@ -36,7 +36,9 @@ const nodeFetch = globalThis.fetch
 export async function startServer({ resendUrl }: { resendUrl?: string } = {}): Promise<TestServer> {
   const dataDir = mkdtempSync(join(tmpdir(), 'notes-data-'))
   const args = ['--data-dir', dataDir, '--listen', '127.0.0.1:0', ...(resendUrl ? ['--resend-url', resendUrl] : [])]
-  const proc = spawn(inject('serverBin'), args)
+  // An exported NOTESD_OWNER_* would create the owner at startup, before the test can.
+  const env = { ...process.env, NOTESD_OWNER_USERNAME: '', NOTESD_OWNER_PASSWORD: '' }
+  const proc = spawn(inject('serverBin'), args, { env })
   const url = await readStartup(proc)
 
   const browser = cookieFetch(url)

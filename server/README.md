@@ -48,7 +48,7 @@ working on them:
   §10). While there's no owner, `serve` logs a warning with the app's `url`
   (`--public-url` when set, otherwise the listen address).
   `NOTESD_OWNER_USERNAME` and `NOTESD_OWNER_PASSWORD` create the owner at
-  startup instead. They're env-only, so the password stays out of `ps`.
+  startup instead. They're env-only, so the password stays out of process arguments.
 
 ## API
 

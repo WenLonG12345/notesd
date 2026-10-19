@@ -98,8 +98,15 @@ account before you put notesd on the network, in one of these ways:
   Environment=NOTESD_OWNER_PASSWORD=…
   ```
 
-  notesd creates the account the first time it starts. After that it ignores
-  both lines, so you can delete them. Changing the password there later does
+  Then reload systemd and restart notesd, which creates the account as it
+  starts:
+
+  ```bash
+  sudo systemctl daemon-reload
+  sudo systemctl restart notesd
+  ```
+
+  After that notesd ignores both lines, so you can delete them. Changing the password there later does
   nothing; use `notesd reset-password` instead.
 - **From the command line:**
 
@@ -108,7 +115,9 @@ account before you put notesd on the network, in one of these ways:
   ```
 
 If someone else creates the account first, you'll find it already exists. Stop
-notesd, delete `/var/lib/notesd`, and start again.
+notesd and delete `/var/lib/notesd`. Then create your account with
+`notesd create-owner` (above) *before* starting notesd again; otherwise the
+fresh install is open to whoever reaches it first, again.
 
 ## 4. HTTPS
 

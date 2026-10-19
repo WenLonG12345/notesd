@@ -321,8 +321,9 @@ func serve(ctx context.Context, db *database.DB, o options) error {
 }
 
 // ownerFromEnv creates the owner from NOTESD_OWNER_USERNAME and
-// NOTESD_OWNER_PASSWORD when there is none yet, so setup is never open to
-// the network. Once an owner exists they are ignored: changing them later
+// NOTESD_OWNER_PASSWORD when there is none yet. Setting both keeps first-run
+// setup from ever being open to the network; with neither, serve starts with
+// setup open. Once an owner exists they are ignored: changing them later
 // changes nothing (reset-password does). It reports whether an owner exists.
 func ownerFromEnv(ctx context.Context, a *auth.Service, log *slog.Logger) (bool, error) {
 	has, err := a.HasOwner(ctx)

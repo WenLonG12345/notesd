@@ -165,6 +165,12 @@ func TestFirstRunSetup(t *testing.T) {
 	}); r.status != 409 {
 		t.Fatalf("second setup: %d", r.status)
 	}
+	// Refused before validation (and the password hash), not after.
+	if r := c.do("POST", "/api/v1/auth/setup", map[string]string{
+		"username": "intruder", "password": "short",
+	}); r.status != 409 {
+		t.Fatalf("second setup with short password: %d", r.status)
+	}
 }
 
 func TestAuthRequired(t *testing.T) {

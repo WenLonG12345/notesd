@@ -94,6 +94,14 @@ func (s *Service) HasOwner(ctx context.Context) (bool, error) {
 // API, `notesd create-owner` and NOTESD_OWNER_* at startup all use it; the
 // first to arrive wins (§10).
 func (s *Service) CreateOwner(ctx context.Context, username, password string) error {
+	// Setup is unauthenticated, so refuse before validating and hashing once an
+	// owner exists; the transaction below still settles a race.
+	if has, err := s.HasOwner(ctx); err != nil || has {
+		if err == nil {
+			err = ErrOwnerExists
+		}
+		return err
+	}
 	username = strings.TrimSpace(username)
 	if err := validateUsername(username); err != nil {
 		return err

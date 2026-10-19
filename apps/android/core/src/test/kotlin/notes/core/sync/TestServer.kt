@@ -34,6 +34,8 @@ class TestServer(private val resendUrl: String? = null) : AutoCloseable {
             (resendUrl?.let { listOf("--resend-url", it) } ?: emptyList())
         val p = ProcessBuilder(args)
             .redirectErrorStream(true)
+            // An exported NOTESD_OWNER_* would create the owner at startup, before init can.
+            .apply { environment().keys.removeAll { it.startsWith("NOTESD_OWNER_") } }
             .start()
         process = p
         val reader = p.inputStream.bufferedReader()

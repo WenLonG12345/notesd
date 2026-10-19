@@ -45,6 +45,8 @@ final class TestServer: Sendable {
             // Pinned: the listen line is parsed, so inherited NOTESD_LOG_* mustn't reshape them.
             + ["--log-level", "info", "--log-format", "text"]
             + (resendURL.map { ["--resend-url", $0] } ?? [])
+        // An exported NOTESD_OWNER_* would create the owner at startup, before start() can.
+        process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("NOTESD_OWNER_") }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
