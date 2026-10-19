@@ -55,7 +55,7 @@ docker run -d --name notesd --restart unless-stopped \
 
 - The port is published on `127.0.0.1` only, for the [reverse proxy or tunnel](#2-https) on the same machine. To reach notesd directly on a LAN or VPN, publish it as `"8080:8080"` instead (see [Without a domain](#without-a-domain)).
 - Other settings from [Configuration](#configuration) go under `environment:`. Inside the container, `NOTESD_LISTEN` and `NOTESD_DATA_DIR` are already set; leave them alone.
-- notesd runs as an unprivileged user (uid 65532). If you'd rather keep the data in a folder (`./data:/data`) than a volume, give it that owner first: `sudo chown 65532:65532 ./data`.
+- notesd runs as an unprivileged user (uid 65532). If you'd rather keep the data in a folder (`./data:/data`) than a volume, create it with that owner first: `mkdir -p data && sudo chown 65532:65532 data`. Otherwise Docker creates it owned by root and notesd can't write to it.
 - To upgrade, back up, or run maintenance commands, see [operations.md](operations.md#docker).
 
 Next, [set up HTTPS](#2-https).
@@ -205,6 +205,8 @@ For LAN or VPN access, you can serve HTTP directly. With the binary, change the 
 ```
 
 With Docker, publish the port on every address instead: `"8080:8080"` in `compose.yaml`, or `-p 8080:8080`.
+
+Docker's published ports bypass host firewalls such as UFW and firewalld, so on a machine with a public IP this exposes notesd to the internet. There, publish on the LAN or VPN address only (`"192.168.1.10:8080:8080"`, or `-p 192.168.1.10:8080:8080`), or block the port at your provider's firewall.
 
 Set `NOTESD_PUBLIC_URL` to `http://<server-ip>:8080` and access notesd at that address.
 
