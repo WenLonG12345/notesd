@@ -1,7 +1,8 @@
 # Running notesd
 
 Everything notesd stores is in its data directory (`/var/lib/notesd` in
-[hosting.md](hosting.md)):
+[hosting.md](hosting.md), or the `notesd-data` volume with
+[Docker](#docker)):
 
 ```text
 notes.db       notes, account, sessions and settings
@@ -45,3 +46,38 @@ notesd logs to stderr, so systemd captures it: `journalctl -u notesd`.
 Every API request is logged in one line (query strings are left out, so
 search terms aren't). `--log-format json` produces JSON for log collectors,
 and `--log-level debug` adds detail.
+
+## Docker
+
+With the [Docker setup](hosting.md#with-docker), the data directory is the
+`notesd-data` volume, and the commands above run inside the container:
+
+```bash
+docker compose exec notesd notesd check
+docker compose logs -f notesd
+```
+
+To export your notes to a folder on the host:
+
+```bash
+docker compose exec notesd notesd export --out /tmp/export
+docker compose cp notesd:/tmp/export ./notes-export
+```
+
+To upgrade to the latest release:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+To stay on one release line, use its tag instead of `latest`, e.g.
+`ghcr.io/cassiozen/notesd:0.2`.
+
+To back up, stop the server and copy the volume to a file:
+
+```bash
+docker compose stop notesd
+docker run --rm -v notesd-data:/data -v "$PWD":/backup busybox tar czf /backup/notesd-backup.tgz -C /data .
+docker compose start notesd
+```
