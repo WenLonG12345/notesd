@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { App } from '../src/app'
+import { timing } from '../src/notes/saver'
 import {
   body,
   bodyText,
@@ -374,6 +375,12 @@ describe('deleting', () => {
     })
     await openNote(user, 'Remove me')
 
+    // Long enough to click Undo on a slow runner; the second delete puts the short window back.
+    const short = timing.undoDeleteMs
+    onTestFinished(() => {
+      timing.undoDeleteMs = short
+    })
+    timing.undoDeleteMs = 5000
     await deleteNote(user)
     expect(within(list()).queryByRole('link', { name: /^Remove me/ })).toBeNull()
     expect(screen.getByText('Note deleted')).toBeTruthy()
@@ -387,6 +394,7 @@ describe('deleting', () => {
     await waitFor(() => expect(row('Remove me').getAttribute('aria-current')).toBe('page'))
     expect((await listNotes(server)).map((n) => n.title).toSorted()).toEqual(['Keep', 'Remove me'])
 
+    timing.undoDeleteMs = short
     await deleteNote(user)
     await waitFor(async () => expect((await listNotes(server)).map((n) => n.title)).toEqual(['Keep']))
     await waitFor(() => expect(screen.queryByText('Note deleted')).toBeNull())

@@ -133,8 +133,7 @@ final class FlowTests: XCTestCase {
         screenshot("connect")
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.staticTexts["No notes yet"].waitForExistence(timeout: 5))
-        app.buttons["New note"].tap()
-        app.typeText("Offline thoughts\nWritten with no server.")
+        writeNewNote("Offline thoughts\nWritten with no server.")
         // Undo and Redo in the bar step through the typing.
         let editor = app.textViews.firstMatch
         let typed = editor.value as? String ?? ""
@@ -154,8 +153,7 @@ final class FlowTests: XCTestCase {
     func testSpaces() throws {
         app.launch()
         XCTAssertTrue(app.buttons["New note"].waitForExistence(timeout: 10))
-        app.buttons["New note"].tap()
-        app.typeText("Groceries\nMilk")
+        writeNewNote("Groceries\nMilk")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["Groceries"].waitForExistence(timeout: 5))
         // The list is titled by what it shows.
@@ -181,8 +179,7 @@ final class FlowTests: XCTestCase {
 
         // Straight to the new, empty space.
         XCTAssertTrue(app.staticTexts["No notes in Work yet"].waitForExistence(timeout: 10))
-        app.buttons["New note"].tap()
-        app.typeText("Standup\nStatus")
+        writeNewNote("Standup\nStatus")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["Standup"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Groceries"].exists)
@@ -207,8 +204,7 @@ final class FlowTests: XCTestCase {
     func testALongNoteScrolls() throws {
         app.launch()
         XCTAssertTrue(app.buttons["New note"].waitForExistence(timeout: 10))
-        app.buttons["New note"].tap()
-        app.typeText("Long note\n" + (1...60).map { "Line \($0)" }.joined(separator: "\n"))
+        writeNewNote("Long note\n" + (1...60).map { "Line \($0)" }.joined(separator: "\n"))
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["Long note"].waitForExistence(timeout: 5))
         // Opened again, at the top and with no keyboard: a swipe scrolls the text.
@@ -279,14 +275,20 @@ final class FlowTests: XCTestCase {
         XCTFail("\(field) never took the keyboard")
     }
 
+    /// Starts a note and types into it once the editor has the keyboard:
+    /// typing straight after the tap can beat the focus.
+    private func writeNewNote(_ text: String) {
+        app.buttons["New note"].tap()
+        let focused = app.descendants(matching: .any).element(matching: NSPredicate(format: "hasKeyboardFocus == true"))
+        XCTAssertTrue(focused.waitForExistence(timeout: 5), "the new note never took the keyboard")
+        app.typeText(text)
+    }
+
     func testSignInWriteAndSync() async throws {
         try signIn(screenshotted: true)
 
         // A note with a checklist, a heading and a tag.
-        let newNote = app.buttons["New note"]
-        XCTAssertTrue(newNote.waitForExistence(timeout: 10))
-        newNote.tap()
-        app.typeText("Weekend\n")
+        writeNewNote("Weekend\n")
         app.buttons["Checklist"].tap()
         app.typeText("Milk\nBread #groceries\nCoffee\n\n")
         app.typeText("Plans for the trip")
@@ -354,8 +356,7 @@ final class FlowTests: XCTestCase {
     func testFaceIDUnlocksALockedNote() throws {
         app.launchArguments += ["--fake-biometrics=match"]
         try signIn()
-        app.buttons["New note"].tap()
-        app.typeText("Bank\nPIN 4321")
+        writeNewNote("Bank\nPIN 4321")
         app.buttons["More"].tap()
         app.buttons["Lock note"].tap()
         try enterLockPassword()
@@ -408,8 +409,7 @@ final class FlowTests: XCTestCase {
     func testDismissedFaceIDIsNotOfferedAgain() throws {
         app.launchArguments += ["--fake-biometrics=cancel"]
         try signIn()
-        app.buttons["New note"].tap()
-        app.typeText("Diary\nDear diary")
+        writeNewNote("Diary\nDear diary")
         app.buttons["More"].tap()
         app.buttons["Lock note"].tap()
         try enterLockPassword()
@@ -432,8 +432,7 @@ final class FlowTests: XCTestCase {
 
     func testLockAndUnlockANote() async throws {
         try signIn()
-        app.buttons["New note"].tap()
-        app.typeText("Secret plans\nMeet at noon")
+        writeNewNote("Secret plans\nMeet at noon")
         app.buttons["More"].tap()
         app.buttons["Lock note"].tap()
         try enterLockPassword(screenshotted: true)
