@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { auth } from '../api/auth'
 import { settings } from '../api/settings'
 import { ApiError } from '../api/client'
@@ -15,6 +15,7 @@ import { applyTheme, readTheme, type ThemeChoice } from '../theme'
 import { Button } from '../ui/button'
 import { Command } from '../ui/code'
 import { Field } from '../ui/field'
+import { AppearanceIcon, ChevronIcon, LockIcon, MailIcon, SpacesIcon } from '../ui/icons'
 import { Kicker } from '../ui/kicker'
 import { PHONE, useMediaQuery } from '../ui/media'
 import { Sheet } from '../ui/sheet'
@@ -39,7 +40,7 @@ export function SettingsSheet({
 }) {
   const phone = useMediaQuery(PHONE)
   const [theme, setTheme] = useState<ThemeChoice>(readTheme)
-  const summaries = useSummaries(username, theme)
+  const values = useValues(theme)
   const shown = section ?? (phone ? null : 'server')
   const title = SECTIONS.find((s) => s.key === shown)?.title
 
@@ -63,7 +64,7 @@ export function SettingsSheet({
 
       <div className={styles.layout}>
         {!(phone && shown) && (
-          <SettingsNav shown={shown} summaries={summaries} host={window.location.host} replace={!phone} />
+          <SettingsNav shown={shown} username={username} values={values} replace={!phone} />
         )}
         {shown && (
           <div className={styles.page}>
@@ -83,70 +84,96 @@ export function SettingsSheet({
 }
 
 const GROUPS = [
-  { group: 'account', label: 'Your account', note: (host: string) => `Kept on ${host}, the same on every device.` },
-  { group: 'device', label: 'This device', note: () => 'Only in this browser.' },
+  { group: 'account', label: 'Synced to your account' },
+  { group: 'device', label: 'This browser only' },
 ] as const
 
+const ICONS: Partial<Record<SettingsSection, ReactNode>> = {
+  security: <LockIcon size={15} />,
+  spaces: <SpacesIcon size={15} />,
+  integrations: <MailIcon size={15} />,
+  appearance: <AppearanceIcon size={15} />,
+}
+
+/**
+ * Like the system's settings: who you're signed in as at the top, then each category with its state on the
+ * right, under a header that says where its settings are kept.
+ */
 function SettingsNav({
   shown,
-  summaries,
-  host,
+  username,
+  values,
   replace,
 }: {
   shown: SettingsSection | null
-  summaries: Record<SettingsSection, string>
-  host: string
+  username: string
+  values: Record<SettingsSection, string>
   /** Beside the page, moving between categories needn't stack up in the history. */
   replace: boolean
 }) {
+  const link = (key: SettingsSection) => ({
+    href: `/settings/${key}`,
+    'aria-current': shown === key ? ('page' as const) : undefined,
+    onClick: (e: MouseEvent) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      e.preventDefault()
+      navigate(`/settings/${key}`, { replace })
+    },
+  })
+
   return (
     <nav className={styles.nav} aria-label="Settings categories">
+      <a
+        {...link('server')}
+        className={[styles.navItem, styles.account].join(' ')}
+        aria-label={`Server: ${username} on ${window.location.host}`}
+      >
+        <span className={styles.avatar} aria-hidden="true">
+          {username.charAt(0).toUpperCase()}
+        </span>
+        <span className={styles.accountText}>
+          <span className={styles.navTitle}>{username}</span>
+          <span className={styles.navValue}>{window.location.host}</span>
+        </span>
+        <span className={styles.chevron}>
+          <ChevronIcon />
+        </span>
+      </a>
       {GROUPS.map((g) => (
         <div key={g.group} className={styles.navGroup}>
           <span id={`settings-${g.group}`} className={styles.navLabel}>
             {g.label}
           </span>
           <ul className={styles.navList} aria-labelledby={`settings-${g.group}`}>
-            {SECTIONS.filter((s) => s.group === g.group).map((s) => (
+            {SECTIONS.filter((s) => s.group === g.group && s.key !== 'server').map((s) => (
               <li key={s.key}>
-                <a
-                  href={`/settings/${s.key}`}
-                  className={styles.navItem}
-                  aria-current={shown === s.key ? 'page' : undefined}
-                  onClick={(e) => {
-                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-                    e.preventDefault()
-                    navigate(`/settings/${s.key}`, { replace })
-                  }}
-                >
+                <a {...link(s.key)} className={styles.navItem}>
+                  <span className={styles.navIcon}>{ICONS[s.key]}</span>
                   <span className={styles.navTitle}>{s.title}</span>
-                  {summaries[s.key] && <span className={styles.navSummary}>{summaries[s.key]}</span>}
+                  <span className={styles.navValue}>{values[s.key]}</span>
+                  <span className={styles.chevron}>
+                    <ChevronIcon />
+                  </span>
                 </a>
               </li>
             ))}
           </ul>
-          <span className={styles.navNote}>{g.note(host)}</span>
         </div>
       ))}
     </nav>
   )
 }
 
-/** Each category's state in a few words, for the list (docs/settings.md); empty while it loads. */
-function useSummaries(username: string, theme: ThemeChoice): Record<SettingsSection, string> {
+/** Each category's state in a word, as the list shows it (docs/settings.md); empty while it loads. */
+function useValues(theme: ThemeChoice): Record<SettingsSection, string> {
   const locks = useLockStatus()
   const spaces = useSpaces()
   const email = useEmailSettings()
   return {
-    server: `${window.location.host} · ${username}`,
-    security: {
-      unknown: '',
-      none: 'No lock password',
-      locked: 'Locked notes · locked',
-      unlocked: 'Locked notes · unlocked',
-    }[locks],
-    spaces: spaces ? `${spaces.length} ${spaces.length === 1 ? 'space' : 'spaces'}` : '',
-    integrations: !email ? '' : email.configured ? `Email · ${email.from}` : 'Email not set up',
+    server: window.location.host,
+    security: { unknown: '', none: 'Off', locked: 'Locked', unlocked: 'Unlocked' }[locks],
+    spaces: spaces ? String(spaces.length) : '',
+    integrations: !email ? '' : email.configured ? 'Email' : 'Off',
     appearance: themes.find((t) => t.value === theme)?.label ?? '',
   }
 }

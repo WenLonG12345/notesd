@@ -1,4 +1,5 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { navigate } from '../src/router'
 import { createNote, noteTitle, openSettings, phoneLayout, signedIn } from './helpers'
@@ -77,23 +78,24 @@ describe('settings', () => {
 })
 
 describe('settings categories', () => {
-  it('opens on Server and sums up each category beside it', async () => {
-    const { user } = await signedIn({
+  it('opens on Server and shows each category’s state beside it', async () => {
+    await signedIn({
       seed: async (s) => {
         await s.api('PUT', '/settings/email', { apiKey: 're_test_123456789', from: 'Me <notes@example.com>' })
       },
     })
-    await openSettings(user)
+    await openSettings(userEvent.setup())
+    // Who's signed in, and where, opens Server.
+    expect(category('Server').getAttribute('aria-label')).toBe(`Server: me on ${window.location.host}`)
     expect(category('Server').getAttribute('aria-current')).toBe('page')
     expect(screen.getByRole('heading', { name: 'Server', level: 3 })).toBeTruthy()
-    expect(category('Server').textContent).toBe(`Server${window.location.host} · me`)
-    await waitFor(() => expect(category('Security').textContent).toBe('SecurityNo lock password'))
-    await waitFor(() => expect(category('Spaces').textContent).toBe('Spaces1 space'))
-    await waitFor(() => expect(category('Integrations').textContent).toBe('IntegrationsEmail · Me <notes@example.com>'))
+    await waitFor(() => expect(category('Security').textContent).toBe('SecurityOff'))
+    await waitFor(() => expect(category('Spaces').textContent).toBe('Spaces1'))
+    await waitFor(() => expect(category('Integrations').textContent).toBe('IntegrationsEmail'))
     expect(category('Appearance').textContent).toBe('AppearanceSystem')
-    // What follows the account, and what stays here.
-    expect(within(nav()).getByRole('list', { name: 'Your account' })).toBeTruthy()
-    expect(within(within(nav()).getByRole('list', { name: 'This device' })).getAllByRole('link')).toHaveLength(1)
+    // Each group says where its settings are kept.
+    expect(within(nav()).getAllByRole('list', { name: 'Synced to your account' })).toHaveLength(1)
+    expect(within(within(nav()).getByRole('list', { name: 'This browser only' })).getAllByRole('link')).toHaveLength(1)
   })
 
   it('moves between categories without stacking up history, and Done still goes back', async () => {

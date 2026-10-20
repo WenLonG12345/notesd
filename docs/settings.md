@@ -7,29 +7,38 @@ nothing in it there, and leaves out rows it doesn't support.
 When you add a setting, put it in one of these categories. Add a new category only when a feature
 has several settings that don't fit any existing one. Update this file in the same change.
 
-## Groups
+## Layout
 
-- **Your account**: stored on the server. Every device signed in to the account sees the same
-  values.
-- **This device**: stored only on this browser, iPhone or Android phone.
+The list works like the system's own settings:
 
-A row inside a "Your account" category that applies to this device only says so in its footnote
-("Only on this iPhone", "Only on this phone"). Biometric unlock is one example.
+1. **The account row** at the top: an initial, the username and the server. It opens Server. When
+   not connected, it says "Not connected" and opens Server, where you can connect.
+2. **The groups.** Each has a one-line header that says where its settings are kept. The header
+   is the group's only label: there's no separate description.
+   - **Synced to your account**: stored on the server. Every device signed in to the account sees
+     the same values.
+   - **This device only** ("This browser only" on the web, "This iPhone only" on iOS, "This phone
+     only" on Android): stored only here.
+3. **The category rows.** Each row has an icon, the title, and its current state as a short value
+   on the right ("Off", "3", "System"), like the system's own settings. On a phone, each row also
+   ends in a chevron.
+
+A row inside a synced category that applies to this device only says so in its footnote ("Only on
+this iPhone", "Only on this phone"). Biometric unlock is one example.
 
 ## Categories
 
-Each row in the top-level list shows its title and a one-line summary of the current state. The
-summary is never a description of the category.
+A value is the category's state in a word or two. It's never a description of the category.
 
-| # | Group | Category | Route key | Summary in the list |
-|---|-------|----------|-----------|---------------------|
-| 1 | Your account | Server | `server` | `host · username`; "Signed out · host"; "Not connected" |
-| 2 | Your account | Security | `security` | "No lock password"; "Locked notes · locked/unlocked"; adds " · Face ID on" (fingerprint on Android) when on |
-| 3 | Your account | Spaces | `spaces` | "1 space" / "N spaces" |
-| 4 | Your account | Integrations | `integrations` | "Email · <from address>"; "Email not set up" |
-| 5 | This device | Appearance | `appearance` | "System" / "Light" / "Dark" |
-| 6 | This device | Sync & data | `device` | sync status ("Up to date", "N notes waiting", "Offline", …) |
-| 7 | This device | About | `about` | "Version X.Y.Z" |
+| # | Group | Category | Route key | Icon | Value in the list |
+|---|-------|----------|-----------|------|-------------------|
+| 1 | (account row) | Server | `server` | initial | username and server; "Signed out"; "Not connected" |
+| 2 | Synced | Security | `security` | lock | "Off" (no lock password), "Locked", "Unlocked" |
+| 3 | Synced | Spaces | `spaces` | four squares | the number of spaces |
+| 4 | Synced | Integrations | `integrations` | envelope | "Email" when set up, else "Off" |
+| 5 | This device | Appearance | `appearance` | half-filled circle | "System", "Light", "Dark" |
+| 6 | This device | Sync & data | `device` | arrows | "Up to date", "N waiting", "Offline" |
+| 7 | This device | About | `about` | info | the version |
 
 On a wide web window, the category list sits beside the selected category's page, and Server is
 selected when Settings opens. A category has its own address (`/settings/security`). On a phone,
