@@ -83,7 +83,7 @@ export function SettingsSheet({
 }
 
 const GROUPS = [
-  { group: 'account', label: 'Your account', note: (host: string) => `Kept on ${host}: the same on every device.` },
+  { group: 'account', label: 'Your account', note: (host: string) => `Kept on ${host}, the same on every device.` },
   { group: 'device', label: 'This device', note: () => 'Only in this browser.' },
 ] as const
 
@@ -103,10 +103,9 @@ function SettingsNav({
     <nav className={styles.nav} aria-label="Settings categories">
       {GROUPS.map((g) => (
         <div key={g.group} className={styles.navGroup}>
-          <div className={styles.navHead}>
-            <Kicker id={`settings-${g.group}`}>{g.label}</Kicker>
-            <span className={styles.muted}>{g.note(host)}</span>
-          </div>
+          <span id={`settings-${g.group}`} className={styles.navLabel}>
+            {g.label}
+          </span>
           <ul className={styles.navList} aria-labelledby={`settings-${g.group}`}>
             {SECTIONS.filter((s) => s.group === g.group).map((s) => (
               <li key={s.key}>
@@ -126,6 +125,7 @@ function SettingsNav({
               </li>
             ))}
           </ul>
+          <span className={styles.navNote}>{g.note(host)}</span>
         </div>
       ))}
     </nav>
