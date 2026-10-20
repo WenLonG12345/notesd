@@ -1,20 +1,10 @@
 # Hosting notesd
 
-Setting up notesd takes three steps:
+notesd runs on 64-bit Linux (x86-64 or ARM64, including Raspberry Pi 4/5) and Apple silicon Macs. Run it as a single binary or [with Docker](#running-with-docker).
 
-1. **[Run the server](#1-run-the-server)**, either [as a binary with systemd](#with-the-binary-and-systemd) or [with Docker](#with-docker).
-2. **[Create your account](#2-create-your-account)**.
-3. **[Set up HTTPS](#3-https)** with a reverse proxy or tunnel, or [skip it on a private network](#without-a-domain).
+## Quick start
 
-You'll need a 64-bit Linux machine (x86-64 or ARM64) (or a Mac on Apple silicon), and either a domain name for HTTPS access or a private LAN/VPN.
-
-## 1. Run the server
-
-### With the binary and systemd
-
-#### Install the binary
-
-Download the binary from the [latest release](https://github.com/cassiozen/notesd/releases/latest):
+Download the binary for your machine from the [latest release](https://github.com/cassiozen/notesd/releases/latest):
 
 | Platform | Binary |
 | --- | --- |
@@ -22,34 +12,37 @@ Download the binary from the [latest release](https://github.com/cassiozen/notes
 | Linux ARM64 (including Raspberry Pi 4/5) | `notesd-linux-arm64` |
 | macOS Apple silicon | `notesd-darwin-arm64` |
 
-For example, on Linux x86-64:
+Make it executable and start it (use the file name you downloaded):
 
 ```bash
-VERSION=v0.1.0
-curl -fLO https://github.com/cassiozen/notesd/releases/download/$VERSION/notesd-linux-amd64
-curl -fLO https://github.com/cassiozen/notesd/releases/download/$VERSION/SHA256SUMS
-sha256sum --check --ignore-missing SHA256SUMS
-sudo install -m 755 notesd-linux-amd64 /usr/local/bin/notesd
-notesd version
+chmod +x notesd-linux-amd64
+./notesd-linux-amd64 serve --listen 0.0.0.0:8080
 ```
 
-The binary includes the web app. No additional dependencies are required.
+Open `http://localhost:8080` and [create your account](#create-your-account).
+
+By default the binary only accepts connections from this machine. `--listen 0.0.0.0:8080` lets your other devices reach it. Notes are stored in `./data`.
+
+That's all you need on a home network. The rest of this page covers [keeping notesd running](#keep-it-running-with-systemd), [limiting access](#limiting-who-can-reach-notesd) and [using notesd outside your network](#access-from-anywhere-with-https).
 
 To build from source, see [development.md](development.md).
 
-#### Set up systemd
+### Keep it running with systemd
 
-You can run notesd directly with `notesd serve`, but for a permanent installation, you'll probably want to run it as a systemd service. This starts notesd on boot and automatically restarts it if it crashes.
+To start notesd on boot and restart it if it crashes, install the binary:
 
-Create `/etc/systemd/system/notesd.service`:
+```bash
+sudo install -m 755 notesd-linux-amd64 /usr/local/bin/notesd
+```
+
+Then create `/etc/systemd/system/notesd.service`:
 
 ```ini
 [Unit]
 Description=notesd
 
 [Service]
-ExecStart=/usr/local/bin/notesd serve --data-dir /var/lib/notesd
-Environment=NOTESD_PUBLIC_URL=https://notes.example.com
+ExecStart=/usr/local/bin/notesd serve --listen 0.0.0.0:8080 --data-dir /var/lib/notesd
 DynamicUser=yes
 StateDirectory=notesd
 StateDirectoryMode=0700
@@ -59,80 +52,80 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-Set `NOTESD_PUBLIC_URL` to the address you'll open notesd at (see [Configuration](#configuration)).
-
-**Notes**:
-
-- `StateDirectory` creates `/var/lib/notesd` with the appropriate permissions and preserves its contents across restarts.
-- `DynamicUser` runs notesd as an unprivileged user without requiring a separate system account. 
-
-Enable and start the service:
+Then enable it:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now notesd
 ```
 
-To check its status or follow the logs:
+Check on it with `sudo systemctl status notesd`, or follow the logs with `sudo journalctl -u notesd -f`.
+
+## Running with Docker
+
+Alternatively, you can use Docker:
 
 ```bash
-sudo systemctl status notesd
-sudo journalctl -u notesd -f
-```
-
-The default listen address is `127.0.0.1:8080`. For other options, see [Configuration](#configuration).
-
-
-### With Docker
-
-The image is `ghcr.io/cassiozen/notesd`, for x86-64 and ARM64 (including Raspberry Pi 4/5). Pull it and start a container, with `NOTESD_PUBLIC_URL` set to the address you'll open notesd at (see [Configuration](#configuration)):
-
-```bash
-docker pull ghcr.io/cassiozen/notesd:latest
 docker run -d --name notesd --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 \
+  -p 8080:8080 \
   -v notesd-data:/data \
-  -e NOTESD_PUBLIC_URL=https://notes.example.com \
   ghcr.io/cassiozen/notesd:latest
-docker logs notesd
 ```
 
-Your notes are kept in the `notesd-data` volume, which Docker creates on first run.
+Open the same addresses as in the [quick start](#quick-start), then [create your account](#create-your-account). Your notes are stored in the `notesd-data` Docker volume. To change a setting later, see [Changing Docker settings](#changing-docker-settings).
 
-Keep the `docker run` command around: it's how you'll [upgrade](operations.md#docker) or change a setting. The container's flags can't be edited in place, so to change one, remove the container and run it again (`docker rm -f notesd`, then the command with the new flags). The volume, and your notes, are unaffected.
+## Create your account
 
-**Notes**:
-
-- The port is published on `127.0.0.1` only, for the [reverse proxy or tunnel](#3-https) on the same machine. To reach notesd directly on a LAN or VPN, publish it as `-p 8080:8080` once your account exists (see [Without a domain](#without-a-domain)).
-- Other settings from [Configuration](#configuration) are passed as `-e NAME=value`. Inside the container, `NOTESD_LISTEN` and `NOTESD_DATA_DIR` are already set; leave them alone.
-- notesd runs as an unprivileged user (uid 65532). If you'd rather keep the data in a folder (`-v "$PWD/data:/data"`) than a volume, create it with that owner first: `mkdir -p data && sudo chown 65532:65532 data`. Otherwise Docker creates it owned by root and notesd can't write to it.
-
-
-## 2. Create your account
-
-Open notesd in a browser, or point the Android/iPhone app to the new server and create your account.
-
+Open notesd in a browser, or enter the server address in the Android or iPhone app, and sign up.
 
 > [!IMPORTANT]
-> Until the owner account exists, **anyone who can reach the server can create
-> it**.
-> Create the account now
+> Until the account exists, anyone who can reach the server can create it. Do this right after starting notesd.
 
-You can also use environment variables to create the account as the server starts the first time (with Docker, as `-e` flags on `docker run`):
+You can also create the account when the server first starts by setting these variables (with Docker, as `-e` flags):
 
 ```text
 NOTESD_OWNER_USERNAME=me
 NOTESD_OWNER_PASSWORD=…
 ```
 
+## Limiting who can reach notesd
 
-## 3. HTTPS
+The quick start accepts connections on every network the machine is connected to. That's fine at home, but not on a server with a public IP.
 
-notesd serves plain HTTP, whether it runs in Docker or as a binary. For public access, put it behind a reverse proxy or tunnel and configure `NOTESD_PUBLIC_URL` with the external HTTPS address.
+| Reachable from | Docker | Binary |
+| --- | --- | --- |
+| Every network (quick start) | `-p 8080:8080` | `--listen 0.0.0.0:8080` |
+| One network, such as your LAN or VPN | `-p 192.168.1.10:8080:8080` | `--listen 192.168.1.10:8080` |
+| This machine only (use with HTTPS below) | `-p 127.0.0.1:8080:8080` | `--listen 127.0.0.1:8080` |
 
-### Option A: Reverse proxy
+Replace `192.168.1.10` with the machine's address on that network. To change Docker flags, see [Changing Docker settings](#changing-docker-settings).
 
-**Caddy** handles certificates automatically. Add to `/etc/caddy/Caddyfile`:
+> [!WARNING]
+> Docker's published ports bypass host firewalls such as UFW and firewalld. On a machine with a public IP, `-p 8080:8080` exposes notesd to the internet.
+
+Without HTTPS, your password and notes are sent unencrypted, so use plain HTTP only on networks you trust. The apps allow plain HTTP only to private addresses (`192.168.x`, `10.x`, `172.16–31.x`, `localhost`, `*.local`). Anything else needs HTTPS.
+
+## Access from anywhere with HTTPS
+
+notesd serves plain HTTP. To use it outside your network, put HTTPS in front of it:
+
+1. Make notesd reachable from [this machine only](#limiting-who-can-reach-notesd).
+2. Set `NOTESD_PUBLIC_URL` to the HTTPS address, such as `https://notes.example.com`. With Docker, add `-e NOTESD_PUBLIC_URL=…`. With systemd, add `Environment=NOTESD_PUBLIC_URL=…` under `[Service]`.
+3. Set up one of the options below.
+
+### Tailscale
+
+If your devices use Tailscale, this is the simplest option. It needs no domain, and notesd stays private to your tailnet:
+
+```bash
+tailscale serve --bg 8080
+```
+
+The address is `https://<machine>.<tailnet>.ts.net`.
+
+### Caddy
+
+Caddy gets certificates automatically. Add to `/etc/caddy/Caddyfile`:
 
 ```caddyfile
 notes.example.com {
@@ -140,7 +133,11 @@ notes.example.com {
 }
 ```
 
-Or use **nginx** with a certificate provisioned through certbot:
+The machine must be reachable on port 443, with your domain's DNS pointing to it.
+
+### nginx
+
+With a certificate from certbot:
 
 ```nginx
 server {
@@ -159,66 +156,45 @@ server {
 }
 ```
 
-The host must be reachable on port 443, with DNS pointing to it. notesd accepts request bodies up to 4 MiB.
+### Cloudflare Tunnel
 
-### Option B: Tunnel
-
-Tunnels avoid inbound ports and work behind CGNAT. Options include [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), [ngrok](https://ngrok.com), and [Tailscale Funnel](https://tailscale.com/kb/1223/funnel).
-
-For Cloudflare Tunnel:
+A tunnel needs no open ports and works behind CGNAT. Your domain's DNS must be on Cloudflare. Note that Cloudflare can see your traffic unencrypted.
 
 1. Install `cloudflared` from [Cloudflare's packages](https://pkg.cloudflare.com/).
-2. In the [Zero Trust dashboard](https://one.dash.cloudflare.com), create a Cloudflared tunnel under **Networks → Tunnels**.
-3. Install the tunnel service using the provided token:
-
-   ```bash
-   sudo cloudflared service install <token>
-   ```
-
+2. In the [Zero Trust dashboard](https://one.dash.cloudflare.com), create a tunnel under **Networks → Tunnels**.
+3. Install it with the token it gives you: `sudo cloudflared service install <token>`.
 4. Add a public hostname pointing to `http://127.0.0.1:8080`.
 
-Your domain's DNS must be managed by Cloudflare. Set `NOTESD_PUBLIC_URL` to the resulting HTTPS address.
+ngrok and Tailscale Funnel work too.
 
-Unlike a locally terminated reverse proxy, a provider-terminated tunnel allows the provider to inspect decrypted traffic.
+### Good to know
 
-### Proxy considerations
+- Use a dedicated hostname (`notes.example.com`), not a path (`example.com/notes`).
+- If saving fails with HTTP 403, check that `NOTESD_PUBLIC_URL` matches the address you open, or that your proxy forwards the `Host` header.
+- After 10 failed sign-ins in 15 minutes from one IP, notesd blocks sign-ins from that IP for a while. Behind a proxy, all clients may share one IP. People who are already signed in aren't affected.
+- Uploads are limited to 4 MiB.
 
-- **Public URL:** Set `NOTESD_PUBLIC_URL` to the external HTTPS URL. This enables `Secure` cookies and makes the address in the first-run log line correct.
-- **Root path:** Use a dedicated hostname (`notes.example.com`), not a subpath (`example.com/notes`).
-- **Origin validation:** Preserve the `Host` header or configure `NOTESD_PUBLIC_URL`. Otherwise, writes may fail with HTTP 403.
-- **Rate limiting:** Authentication is limited to 10 failed attempts per 15 minutes per client IP. Behind a proxy or tunnel, clients may share the same limit, potentially blocking new logins temporarily. Existing sessions are unaffected.
+## Changing Docker settings
 
-### Without a domain
-
-For LAN or VPN access, you can serve HTTP directly. With the binary, change the listen address in your systemd unit to:
-
-```text
---listen 0.0.0.0:8080
-```
-
-With Docker, publish the port on every address instead: `-p 8080:8080` (remove and re-run the container, see [With Docker](#with-docker)).
-
-Docker's published ports bypass host firewalls such as UFW and firewalld, so on a machine with a public IP this exposes notesd to the internet. There, publish on the LAN or VPN address only (`-p 192.168.1.10:8080:8080`), or block the port at your provider's firewall.
-
-Set `NOTESD_PUBLIC_URL` to `http://<server-ip>:8080` and access notesd at that address.
-
-Plain HTTP sends credentials without transport encryption and uses cookies without the `Secure` flag. Use it only on networks you trust.
-
-The Android app permits HTTP connections to private IPv4 ranges (`192.168.x`, `10.x`, `172.16–31.x`), `localhost`, and `*.local`. Other addresses require HTTPS.
-
-#### Tailscale
-
-If you use Tailscale, you can expose notesd over HTTPS within your tailnet without a separate reverse proxy:
+You can't change the flags of an existing container. Remove it and run it again with the new flags. Your notes stay in the volume. For example, to switch to HTTPS behind a proxy:
 
 ```bash
-tailscale serve --bg 8080
+docker rm -f notesd
+docker run -d --name notesd --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 \
+  -v notesd-data:/data \
+  -e NOTESD_PUBLIC_URL=https://notes.example.com \
+  ghcr.io/cassiozen/notesd:latest
 ```
 
-Set `NOTESD_PUBLIC_URL` to `https://<machine>.<tailnet>.ts.net`.
+Keep your `docker run` command somewhere; you'll need it for [upgrades](operations.md#docker).
+
+- Pass any [setting](#configuration) as `-e NAME=value`. Don't change `NOTESD_LISTEN` or `NOTESD_DATA_DIR`; use `-p` and `-v` instead.
+- To store notes in a folder instead of a volume (`-v "$PWD/data:/data"`), create it first with `mkdir -p data && sudo chown 65532:65532 data`. notesd runs as user 65532 and can't write to a folder owned by root.
 
 ## Configuration
 
-Configuration is available through CLI flags or environment variables. No configuration file is required. With Docker, use the environment variables.
+Set options with flags or environment variables. With Docker, use environment variables.
 
 | Flag | Environment variable | Default | Description |
 | --- | --- | --- | --- |
@@ -227,15 +203,9 @@ Configuration is available through CLI flags or environment variables. No config
 | `--public-url` | `NOTESD_PUBLIC_URL` | Unset | External URL; HTTPS enables `Secure` cookies |
 | `--log-level` | `NOTESD_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `--log-format` | `NOTESD_LOG_FORMAT` | `text` | `text` or `json` |
-| | `NOTESD_OWNER_USERNAME`, `NOTESD_OWNER_PASSWORD` | Unset | Create the owner account at startup if there is none ([details](#2-create-your-account)) |
+| | `NOTESD_OWNER_USERNAME`, `NOTESD_OWNER_PASSWORD` | Unset | Create the account at startup ([details](#create-your-account)) |
 
-For memory-constrained hosts, `GOMEMLIMIT` can reduce Go's memory usage by triggering garbage collection earlier:
-
-```ini
-Environment=GOMEMLIMIT=64MiB
-```
-
-With Docker, add `-e GOMEMLIMIT=64MiB` to `docker run`.
+On machines with little memory, `GOMEMLIMIT=64MiB` makes notesd use less memory.
 
 ## Next steps
 

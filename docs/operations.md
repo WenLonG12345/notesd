@@ -49,7 +49,7 @@ and `--log-level debug` adds detail.
 
 ## Docker
 
-With the [Docker setup](hosting.md#with-docker), the data directory is the
+With the [Docker setup](hosting.md#running-with-docker), the data directory is the
 `notesd-data` volume, and the commands above run inside the container:
 
 ```bash
@@ -65,15 +65,14 @@ docker cp notesd:/tmp/export ./notes-export
 ```
 
 To upgrade to the latest release, pull the image, then replace the container
-with the same `docker run` command you started it with:
+with the same flags you started it with:
 
 ```bash
 docker pull ghcr.io/cassiozen/notesd:latest
 docker rm -f notesd
 docker run -d --name notesd --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 \
+  -p 8080:8080 \
   -v notesd-data:/data \
-  -e NOTESD_PUBLIC_URL=https://notes.example.com \
   ghcr.io/cassiozen/notesd:latest
 ```
 
