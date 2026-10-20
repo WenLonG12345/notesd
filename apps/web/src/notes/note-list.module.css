@@ -20,13 +20,6 @@
   gap: 8px;
 }
 
-.mark {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  background: url('../ui/mark.png') center / contain no-repeat;
-}
-
 .heading {
   flex: 1;
   margin: 0;
@@ -41,8 +34,11 @@
   min-width: 0;
 }
 
+/* Clipped for the ellipsis: room for descenders (g, y) below the 1.0 line, given back in the margin. */
 .scope {
   min-width: 0;
+  padding: 0.15em 0;
+  margin: -0.15em 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -238,6 +234,16 @@
 .rowTime {
   flex: none;
   font-weight: 500;
+}
+
+.rowSpace {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--tint);
 }
 
 .rowPreview {

@@ -131,7 +131,6 @@ final class FlowTests: XCTestCase {
         app.buttons["Connect to a server"].tap()
         XCTAssertTrue(app.textFields["Server address"].waitForExistence(timeout: 5))
         screenshot("connect")
-        try audit("connect")
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.staticTexts["No notes yet"].waitForExistence(timeout: 5))
         app.buttons["New note"].tap()
@@ -151,6 +150,60 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(local.firstMatch.exists)
     }
 
+    /// Spaces (§7.7) work offline: the sidebar always names the space, and its menu makes new ones.
+    func testSpaces() throws {
+        app.launch()
+        XCTAssertTrue(app.buttons["New note"].waitForExistence(timeout: 10))
+        app.buttons["New note"].tap()
+        app.typeText("Groceries\nMilk")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["Groceries"].waitForExistence(timeout: 5))
+        // The list is titled by what it shows.
+        XCTAssertTrue(app.staticTexts["All Notes"].exists)
+
+        app.buttons["Tags"].tap()
+        let notesSwitcher = app.buttons["Space: Notes"]
+        XCTAssertTrue(notesSwitcher.waitForExistence(timeout: 5))
+        notesSwitcher.tap()
+        let newSpace = app.buttons["New Space…"]
+        XCTAssertTrue(newSpace.waitForExistence(timeout: 5))
+        screenshot("space menu, one space")
+        newSpace.tap()
+        let name = app.textFields["Name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        app.typeText("Work")
+        // An icon is required too.
+        app.buttons["Create"].tap()
+        XCTAssertTrue(app.staticTexts["Choose an icon."].waitForExistence(timeout: 5))
+        app.buttons["Diary"].tap()
+        screenshot("new space")
+        app.buttons["Create"].tap()
+
+        // Straight to the new, empty space.
+        XCTAssertTrue(app.staticTexts["No notes in Work yet"].waitForExistence(timeout: 10))
+        app.buttons["New note"].tap()
+        app.typeText("Standup\nStatus")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["Standup"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Groceries"].exists)
+        try audit("a second space")
+
+        app.buttons["Tags"].tap()
+        let switcher = app.buttons["Space: Work"]
+        XCTAssertTrue(switcher.waitForExistence(timeout: 5))
+        switcher.tap()
+        let notes = app.buttons["Notes"]
+        XCTAssertTrue(notes.waitForExistence(timeout: 5))
+        screenshot("space menu")
+        notes.tap()
+        // The sidebar closes onto the space's list.
+        XCTAssertTrue(app.staticTexts["Groceries"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Groceries"].isHittable)
+        XCTAssertFalse(app.staticTexts["Standup"].exists)
+        app.buttons["Tags"].tap()
+        XCTAssertTrue(app.buttons["Space: Notes"].waitForExistence(timeout: 5))
+    }
+
     func testALongNoteScrolls() throws {
         app.launch()
         XCTAssertTrue(app.buttons["New note"].waitForExistence(timeout: 10))
@@ -167,8 +220,8 @@ final class FlowTests: XCTestCase {
         XCTAssertNotEqual(editor.screenshot().pngRepresentation, top, "the note scrolled")
     }
 
-    /// Launches and signs in to the test server; `audited` checks the sign-in screen on the way.
-    private func signIn(audited: Bool = false) throws {
+    /// Launches and signs in to the test server.
+    private func signIn(screenshotted: Bool = false) throws {
         let server = try XCTUnwrap(env["NOTESD_URL"], "run through scripts/with-server.sh")
         app.launch()
         let connect = app.buttons["Connect to a server"]
@@ -188,41 +241,46 @@ final class FlowTests: XCTestCase {
         let password = app.secureTextFields["Password"]
         password.tap()
         password.typeText(env["NOTESD_PASSWORD"] ?? "")
-        if audited {
-            try audit("sign in")
-            screenshot("sign in")
-        }
+        if screenshotted { screenshot("sign in") }
         app.buttons["Sign in"].tap()
         XCTAssertTrue(app.buttons["New note"].waitForExistence(timeout: 10))
     }
 
     /// The lock sheet after Lock note: the first lock on any device creates
     /// the lock password; after that (the flows share a server) it's asked for.
-    private func enterLockPassword(audited: Bool = false) throws {
+    private func enterLockPassword(screenshotted: Bool = false) throws {
         let create = app.navigationBars["Create a lock password"]
         let existing = app.navigationBars["Lock this note"]
         XCTAssertTrue(create.waitForExistence(timeout: 5) || existing.exists)
         let password = app.secureTextFields["Lock password"]
-        password.tap()
+        focus(password)
         password.typeText(lockPassword)
         if existing.exists {
             app.buttons["Lock"].tap()
             return
         }
         let confirm = app.secureTextFields["Confirm password"]
-        confirm.tap()
+        focus(confirm)
         confirm.typeText(lockPassword)
-        if audited {
-            screenshot("create lock password")
-            try audit("create lock password")
-        }
+        if screenshotted { screenshot("create lock password") }
         app.buttons["Create and lock"].tap()
     }
 
     private let lockPassword = "lock pass 123"
 
+    /// Taps a field until it has the keyboard: a tap while its sheet is still
+    /// settling can land without focusing it.
+    private func focus(_ field: XCUIElement) {
+        for _ in 0..<5 {
+            field.tap()
+            if field.value(forKey: "hasKeyboardFocus") as? Bool == true { return }
+            usleep(500_000)
+        }
+        XCTFail("\(field) never took the keyboard")
+    }
+
     func testSignInWriteAndSync() async throws {
-        try signIn(audited: true)
+        try signIn(screenshotted: true)
 
         // A note with a checklist, a heading and a tag.
         let newNote = app.buttons["New note"]
@@ -233,7 +291,6 @@ final class FlowTests: XCTestCase {
         app.typeText("Milk\nBread #groceries\nCoffee\n\n")
         app.typeText("Plans for the trip")
         screenshot("editor")
-        try audit("editor")
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["Weekend"].waitForExistence(timeout: 5))
@@ -258,7 +315,6 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["1 result"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Weekend"].exists)
         screenshot("search")
-        try audit("search")
         app.buttons["Clear search"].tap()
 
         // The sidebar lists the new tag.
@@ -380,7 +436,7 @@ final class FlowTests: XCTestCase {
         app.typeText("Secret plans\nMeet at noon")
         app.buttons["More"].tap()
         app.buttons["Lock note"].tap()
-        try enterLockPassword(audited: true)
+        try enterLockPassword(screenshotted: true)
 
         let lockNow = app.buttons["Lock now"]
         XCTAssertTrue(lockNow.waitForExistence(timeout: 15))

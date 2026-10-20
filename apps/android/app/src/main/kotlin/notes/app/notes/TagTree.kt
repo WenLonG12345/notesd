@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -49,6 +50,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -57,17 +59,19 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.mapLatest
-import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.flow.stateIn
 import notes.app.ui.Backdrop
-import notes.app.ui.BrandMark
 import notes.app.ui.Icons
 import notes.app.ui.LocalTokens
 import notes.app.ui.Type
 import notes.app.ui.pressScale
 import notes.core.db.NoteFilter
 import notes.core.db.NoteStore
+import notes.core.db.Space
+import notes.core.db.Spaces
 import notes.core.db.TagCount
 
 /** Which parent tags are expanded, kept in [prefs]. */
@@ -109,14 +113,16 @@ private fun visibleRows(nodes: List<TagNode>, expanded: Set<String>, depth: Int 
 
 /** Every tag, for the tags screen and sidebar; the list's filter is shared with the notes list. */
 @OptIn(ExperimentalCoroutinesApi::class)
-class TagsViewModel(store: NoteStore, private val filter: MutableStateFlow<NoteFilter?>) : ViewModel() {
+class TagsViewModel(store: NoteStore, private val filter: MutableStateFlow<NoteFilter?>, space: StateFlow<String>) :
+    ViewModel() {
+    /** The space's tags (§7.7). */
     val tags: StateFlow<List<TagCount>> =
-        store.changes.onStart { emit(Unit) }.mapLatest { store.tags() }
+        combine(store.changes.onSubscription { emit(Unit) }, space) { _, s -> s }.mapLatest { store.tags(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Hides the Locked row while there are none. */
     val lockedCount: StateFlow<Int> =
-        store.changes.onStart { emit(Unit) }.mapLatest { store.lockedCount() }
+        combine(store.changes.onSubscription { emit(Unit) }, space) { _, s -> s }.mapLatest { store.lockedCount(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     val selected: StateFlow<NoteFilter?> = filter
@@ -138,7 +144,12 @@ fun TagsPane(
     docked: Boolean,
     onShow: (NoteFilter?) -> Unit,
     onSettings: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Every space, and the one shown: the header switches between them and makes new ones (§7.7). */
+    spaces: List<Space> = emptyList(),
+    space: String = Spaces.DEFAULT,
+    onSpace: (String) -> Unit = {},
+    onNewSpace: () -> Unit = {}
 ) {
     val t = LocalTokens.current
     val tags by vm.tags.collectAsStateWithLifecycle()
@@ -173,13 +184,22 @@ fun TagsPane(
                     Modifier.fillMaxWidth().padding(
                         start = 20.dp,
                         end = 8.dp,
-                        top = if (docked) 12.dp else 56.dp,
+                        top = 12.dp,
                         bottom = 12.dp
                     ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    BrandMark(if (docked) 22.dp else 26.dp)
-                    Spacer(Modifier.weight(1f))
+                    // The space, always, the whole row before Settings opening its sheet. Before the
+                    // list loads, the default: the switcher keeps its place.
+                    SpaceSwitcher(
+                        spaces.ifEmpty { listOf(Space(Spaces.DEFAULT, "Notes", 0)) },
+                        space,
+                        onSpace,
+                        onNewSpace,
+                        Modifier.weight(1f).offset(x = (-6).dp).semantics { heading() },
+                        style = Type.title.copy(fontSize = 26.sp, lineHeight = 30.sp),
+                        iconSize = 30.dp
+                    )
                     SettingsButton(onSettings)
                 }
             }

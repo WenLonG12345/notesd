@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.mapLatest
-import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -32,6 +32,7 @@ import notes.core.crypto.LockedException
 import notes.core.crypto.LockedNotes
 import notes.core.db.Note
 import notes.core.db.NoteStore
+import notes.core.db.Spaces
 import notes.core.db.TagCount
 import notes.core.doc.Document
 import notes.core.images.ImageRef
@@ -69,8 +70,13 @@ class EditorViewModel(
     private val appScope: CoroutineScope,
     private val locks: LockSession,
     private val startTag: String? = null,
-    private val images: ImageStore? = null
+    private val images: ImageStore? = null,
+    /** Where a new note is created: the space the list showed (§7.7). */
+    spaceId: String = Spaces.DEFAULT
 ) : ViewModel() {
+    /** The note's space: where it's created, or where it is once loaded or moved. */
+    private var noteSpace = spaceId
+
     private val _document = MutableStateFlow<Document?>(null)
 
     /** The text to show, null while loading. Kept current on every save so a recreated view picks it up. */
@@ -90,7 +96,7 @@ class EditorViewModel(
 
     /** Every tag, for completing one being typed. */
     val tags: StateFlow<List<TagCount>> =
-        store.changes.onStart { emit(Unit) }.mapLatest { store.tags() }
+        store.changes.onSubscription { emit(Unit) }.mapLatest { store.tags() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _gone = MutableStateFlow(false)
@@ -207,6 +213,7 @@ class EditorViewModel(
         viewModelScope.launch {
             val note = store.get(id)
             isNew = note == null
+            note?.let { noteSpace = it.spaceId }
             known = note?.let { it.title to it.content }
             _locked.value = note != null && LockedNotes.isLocked(note.content)
             _title.value = note?.title.orEmpty()
@@ -279,6 +286,21 @@ class EditorViewModel(
         }
     }
 
+    /** The space the note is in, or will be created in. */
+    fun spaceId(): String = noteSpace
+
+    /**
+     * Moves the note to another space, after the saves started so far. A new note not stored yet
+     * is created there instead.
+     */
+    fun move(target: String) {
+        noteSpace = target
+        appScope.launch {
+            saved()
+            saveLock.withLock { store.move(id, target) }
+        }
+    }
+
     /** Waits for the saves started so far; they run in order, so the last one is enough. False if it failed. */
     suspend fun saved(): Boolean {
         val last = lastSave ?: return true
@@ -309,11 +331,11 @@ class EditorViewModel(
         // The server can't read a locked body's images: the save lists them (§7.6).
         // From the body being saved, not the lock flag, which may have changed while it encrypted.
         val imageIds = if (LockedNotes.isLocked(content)) ImageRef.ids(plain) else null
-        val note = store.save(id, title, content, basedOn, imageIds)
+        val note = store.save(id, title, content, basedOn, imageIds, noteSpace)
         if (note == null) {
             if (basedOn != null && basedOn != (title to content)) {
                 // Deleted elsewhere while typed into here: keep the typing.
-                store.recover(title, content, imageIds)
+                store.recover(title, content, imageIds, noteSpace)
                 _gone.value = true
             } else if (edit == edits) {
                 _status.value = SaveStatus.Blank
@@ -322,6 +344,7 @@ class EditorViewModel(
         }
         val stored = note.title to note.content
         _title.value = note.title
+        noteSpace = note.spaceId
         if (_locked.value && note.content == content) sealed = plain to content
         if (stored != (title to content) && edit == edits) {
             // Merged with a sync change: the editor shows the result.
@@ -348,6 +371,8 @@ class EditorViewModel(
         val stored = note.title to note.content
         val before = known
         _title.value = note.title
+        // Sync may have moved it to another space.
+        noteSpace = note.spaceId
         if (before != null && stored != before) {
             known = stored
             _locked.value = LockedNotes.isLocked(note.content)

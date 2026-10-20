@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import notes.app.AppGraph
 import notes.app.BuildConfig
@@ -69,6 +70,8 @@ import notes.app.locks.FingerprintUnlock
 import notes.app.locks.MIN_LOCK_PASSWORD
 import notes.app.locks.UnlockDialog
 import notes.app.locks.message
+import notes.app.notes.SpaceIconImage
+import notes.app.notes.SpaceIconPicker
 import notes.app.ui.BackLink
 import notes.app.ui.BrandMark
 import notes.app.ui.ButtonKind
@@ -78,11 +81,14 @@ import notes.app.ui.Kicker
 import notes.app.ui.LocalReduceMotion
 import notes.app.ui.LocalTokens
 import notes.app.ui.NotesButton
+import notes.app.ui.NotesDialog
 import notes.app.ui.NotesField
 import notes.app.ui.Type
 import notes.app.ui.pressScale
 import notes.core.api.ApiResult
 import notes.core.crypto.LockSession
+import notes.core.db.Space
+import notes.core.db.Spaces
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private sealed interface Confirm {
@@ -98,7 +104,9 @@ fun SettingsScreen(
     backLabel: String?,
     onBack: () -> Unit,
     onConnect: () -> Unit,
-    onSignIn: () -> Unit
+    onSignIn: () -> Unit,
+    /** A new space: the app switches to it (§7.7). */
+    onSpaceCreated: (String) -> Unit = {}
 ) {
     val t = LocalTokens.current
     val theme by graph.appearance.theme.collectAsStateWithLifecycle()
@@ -171,6 +179,9 @@ fun SettingsScreen(
                     Section("Email")
                     EmailCard(graph)
                 }
+
+                Section("Spaces")
+                SpacesCard(graph, onSpaceCreated)
 
                 val lockState by graph.locks.state.collectAsStateWithLifecycle()
                 if (account is Account.SignedIn || lockState != LockSession.State.None) {
@@ -701,6 +712,167 @@ private fun <T> Segmented(options: List<T>, selected: T, label: (T) -> String, o
                     )
                 }
             }
+        }
+    }
+}
+
+private fun notesIn(space: Space) = "${space.noteCount} ${if (space.noteCount == 1) "note" else "notes"}" +
+    when {
+        space.id == Spaces.DEFAULT -> " · Can be renamed, not deleted"
+        space.noteCount > 0 -> " · Move or delete its notes to delete it"
+        else -> ""
+    }
+
+/** Spaces (§7.7): create, rename and delete them. The sidebar's switcher can make one too. */
+@Composable
+private fun SpacesCard(graph: AppGraph, onCreated: (String) -> Unit) {
+    val t = LocalTokens.current
+    val spaces by graph.spaces.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var editing by remember { mutableStateOf<Space?>(null) }
+    var creating by remember { mutableStateOf(false) }
+
+    Card {
+        for ((i, s) in spaces.withIndex()) {
+            if (i > 0) Divider()
+            Row(
+                Modifier.fillMaxWidth().heightIn(
+                    min = 64.dp
+                ).padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SpaceIconImage(s.icon, 28.dp)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(s.name, style = Type.rowTitle, color = t.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(notesIn(s), style = Type.rowMeta, color = t.ink2)
+                }
+                NotesButton(
+                    "Edit",
+                    { editing = s },
+                    Modifier.semantics { contentDescription = "Edit ${s.name}" },
+                    kind = ButtonKind.Ghost,
+                    small = true
+                )
+                if (s.id != Spaces.DEFAULT) {
+                    NotesButton(
+                        "Delete",
+                        {
+                            scope.launch {
+                                if (graph.sync.spaces.delete(s.id)) graph.scheduler.request()
+                            }
+                        },
+                        Modifier.semantics { contentDescription = "Delete ${s.name}" },
+                        kind = ButtonKind.DangerText,
+                        enabled = s.noteCount == 0,
+                        small = true
+                    )
+                }
+            }
+        }
+        Divider()
+        Action("New space", t.link, enabled = spaces.isNotEmpty()) { creating = true }
+    }
+    Text(
+        "Keep separate contexts, like Work and Personal, apart. Each space has its own notes and tags, " +
+            "and new notes go to the one you're in.",
+        style = Type.small,
+        color = t.ink3,
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+    )
+
+    editing?.let { space ->
+        SpaceDialog(
+            title = "Edit space",
+            action = "Save",
+            initial = space.name,
+            initialIcon = space.icon,
+            taken = { name -> spaces.any { it.id != space.id && it.name.equals(name, ignoreCase = true) } },
+            onDismiss = { editing = null }
+        ) { name, icon ->
+            editing = null
+            scope.launch {
+                graph.sync.spaces.update(space.id, name, icon)
+                graph.scheduler.request()
+            }
+        }
+    }
+    if (creating) {
+        NewSpaceDialog(graph, onDismiss = { creating = false }) { id ->
+            creating = false
+            onCreated(id)
+        }
+    }
+}
+
+/** A new space's name and icon; [onCreated] once it's saved on this device, to sync, and listed. */
+@Composable
+fun NewSpaceDialog(graph: AppGraph, onDismiss: () -> Unit, onCreated: (String) -> Unit) {
+    val spaces by graph.spaces.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    // One create per dialog: a second tap mustn't make a twin before the list shows the first.
+    var saving by remember { mutableStateOf(false) }
+    SpaceDialog(
+        title = "New space",
+        action = "Create",
+        initial = "",
+        initialIcon = null,
+        taken = { name -> spaces.any { it.name.equals(name, ignoreCase = true) } },
+        onDismiss = onDismiss
+    ) { name, icon ->
+        if (saving) return@SpaceDialog
+        saving = true
+        scope.launch {
+            val id = graph.sync.spaces.create(name, icon)
+            graph.scheduler.request()
+            // Shown once the list has it: switched to sooner, a list read before the insert would
+            // look as if it were deleted and send the switch back to the default.
+            graph.spaces.first { list -> list.any { it.id == id } }
+            onCreated(id)
+        }
+    }
+}
+
+/** A space's name and icon. */
+@Composable
+private fun SpaceDialog(
+    title: String,
+    action: String,
+    initial: String,
+    initialIcon: String?,
+    taken: (String) -> Boolean,
+    onDismiss: () -> Unit,
+    onDone: (name: String, icon: String) -> Unit
+) {
+    var name by remember { mutableStateOf(initial) }
+    var icon by remember { mutableStateOf(initialIcon) }
+    var iconError by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    NotesDialog(onDismiss, title) {
+        NotesField(name, {
+            name = it
+            error = null
+        }, "Name", placeholder = "Work", error = error)
+        Spacer(Modifier.height(12.dp))
+        SpaceIconPicker(icon, {
+            icon = it
+            iconError = null
+        }, iconError)
+        Spacer(Modifier.height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            NotesButton("Cancel", onDismiss, Modifier.weight(1f), kind = ButtonKind.Chip)
+            NotesButton(action, {
+                val n = Spaces.normalize(name)
+                error = when {
+                    n == null -> "Enter a name."
+                    n.codePointCount(0, n.length) > Spaces.MAX_NAME -> "At most ${Spaces.MAX_NAME} characters."
+                    taken(n) -> "Another space has this name."
+                    else -> null
+                }
+                iconError = if (icon == null) "Choose an icon." else null
+                val chosen = icon
+                if (n != null && chosen != null && error == null) onDone(n, chosen)
+            }, Modifier.weight(1f))
         }
     }
 }

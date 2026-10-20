@@ -105,7 +105,6 @@ import notes.app.ui.BackLink
 import notes.app.ui.Backdrop
 import notes.app.ui.Banner
 import notes.app.ui.BannerKind
-import notes.app.ui.BrandMark
 import notes.app.ui.ButtonKind
 import notes.app.ui.IconAction
 import notes.app.ui.Icons
@@ -123,8 +122,13 @@ import notes.app.ui.hairline
 import notes.app.ui.pressScale
 import notes.core.db.NoteFilter
 import notes.core.db.Search
+import notes.core.db.Space
+import notes.core.db.Spaces
 import notes.core.db.SyncEvent
 import notes.core.sync.SyncStatus
+
+/** The note a row's more-menu is open for; [elsewhere] is its space when it's a match from another. */
+private data class SheetFor(val id: String, val title: String, val elsewhere: String? = null)
 
 /**
  * The notes list. [selected] is the note open beside it in two-pane layouts.
@@ -140,14 +144,23 @@ fun NotesListScreen(
     onOpen: (String) -> Unit,
     onNew: () -> Unit,
     /** To the tags screen; null when the tags sit in a sidebar beside the list. */
-    onTags: (() -> Unit)?
+    onTags: (() -> Unit)?,
+    /** Every space, and the one shown (§7.7): search names the space, and finds notes in the others. */
+    spaces: List<Space> = emptyList(),
+    space: String = Spaces.DEFAULT,
+    /** A search result from another space: switch to its space, then open it. */
+    onOpenElsewhere: (id: String, space: String) -> Unit = { id, _ -> onOpen(id) }
 ) {
     val t = LocalTokens.current
     val state by vm.state.collectAsStateWithLifecycle()
+    val many = spaces.size > 1
+    val spaceName = spaces.nameOf(space)
+    // The other spaces' matches, listed once asked for, for these words.
+    var elsewhereFor by remember { mutableStateOf<String?>(null) }
     val pending by vm.deletions.pending.collectAsStateWithLifecycle()
     val notSynced by vm.notSynced.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
-    var sheetFor by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var sheetFor by remember { mutableStateOf<SheetFor?>(null) }
     var syncSheet by remember { mutableStateOf(false) }
     val toasts = remember { SnackbarHostState() }
     val haze = rememberHazeState()
@@ -230,7 +243,7 @@ fun NotesListScreen(
                         Header(
                             notSynced?.pending,
                             scope,
-                            mark = onTags != null,
+                            icon = spaces.iconOf(space),
                             onClear = { vm.filter(null) },
                             onNotSynced = { syncSheet = true }
                         )
@@ -238,7 +251,7 @@ fun NotesListScreen(
                     // Nothing to search before the first note.
                     if (state.notes.isNotEmpty() || query.isNotEmpty() || scope != null) {
                         item(key = "search", contentType = "search") {
-                            SearchField(query, scope, onChange = {
+                            SearchField(query, scope ?: spaceName.takeIf { many }, onChange = {
                                 query = it
                                 vm.search(it)
                             })
@@ -272,7 +285,7 @@ fun NotesListScreen(
                             )
                         }
 
-                        searching && state.hits.isEmpty() -> item(key = "noMatch") {
+                        searching && state.hits.isEmpty() && state.elsewhereCount == 0 -> item(key = "noMatch") {
                             Empty(
                                 kicker = "Search",
                                 title = "No matches",
@@ -282,14 +295,14 @@ fun NotesListScreen(
 
                         !searching && state.notes.isEmpty() -> item(key = "empty") {
                             Empty(
-                                kicker = "No notes yet",
+                                kicker = if (many) "No notes in $spaceName yet" else "No notes yet",
                                 action = "Write a note",
                                 onAction = onNew
                             )
                         }
 
                         searching -> {
-                            item(key = "results") { GroupLabel(results(state.hits.size)) }
+                            if (state.hits.isNotEmpty()) item(key = "results") { GroupLabel(results(state.hits.size)) }
                             items(state.hits, key = { it.id }, contentType = { "row" }) { hit ->
                                 NoteRow(
                                     title = hit.title,
@@ -301,10 +314,48 @@ fun NotesListScreen(
                                     locked = hit.locked,
                                     selected = hit.id == selected,
                                     onOpen = { onOpen(hit.id) },
-                                    onMore = { sheetFor = hit.id to hit.title },
+                                    onMore = { sheetFor = SheetFor(hit.id, hit.title) },
                                     onDelete = { vm.deletions.request(hit.id) },
                                     modifier = Modifier.animateItem()
                                 )
+                            }
+                            val others = state.elsewhere
+                            if (state.elsewhereCount > 0 && elsewhereFor != state.query) {
+                                item(key = "elsewhere") {
+                                    val where = spaces.filter { it.id != space }.singleOrNull()?.name ?: "other spaces"
+                                    NotesButton(
+                                        "${state.elsewhereCount} more in $where",
+                                        { elsewhereFor = state.query },
+                                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                        kind = ButtonKind.Chip,
+                                        small = true
+                                    )
+                                }
+                            }
+                            if (others.isNotEmpty() && elsewhereFor == state.query) {
+                                item(key = "elsewhere:label") { GroupLabel("Other spaces") }
+                                items(others, key = { "elsewhere:${it.id}" }, contentType = { "row" }) { hit ->
+                                    NoteRow(
+                                        title = hit.title,
+                                        time = listTime(hit.updatedAt),
+                                        preview = buildAnnotatedString {
+                                            withStyle(SpanStyle(color = t.tint)) { append(spaces.nameOf(hit.spaceId)) }
+                                            append(" · ")
+                                            append(
+                                                highlight(
+                                                    hit.excerpt,
+                                                    SpanStyle(background = t.accent.copy(alpha = 0.45f))
+                                                )
+                                            )
+                                        },
+                                        locked = hit.locked,
+                                        selected = hit.id == selected,
+                                        onOpen = { onOpenElsewhere(hit.id, hit.spaceId) },
+                                        onMore = { sheetFor = SheetFor(hit.id, hit.title, hit.spaceId) },
+                                        onDelete = { vm.deletions.request(hit.id) },
+                                        modifier = Modifier.animateItem()
+                                    )
+                                }
                             }
                         }
 
@@ -322,7 +373,7 @@ fun NotesListScreen(
                                     locked = note.locked,
                                     selected = note.id == selected,
                                     onOpen = { onOpen(note.id) },
-                                    onMore = { sheetFor = note.id to note.title },
+                                    onMore = { sheetFor = SheetFor(note.id, note.title) },
                                     onDelete = { vm.deletions.request(note.id) },
                                     modifier = Modifier.animateItem()
                                 )
@@ -332,7 +383,7 @@ fun NotesListScreen(
                 }
             }
 
-            TopBar(collapsed, scope ?: "Notes", onTags, Modifier.align(Alignment.TopCenter))
+            TopBar(collapsed, scope ?: "All Notes", onTags, Modifier.align(Alignment.TopCenter))
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                 ToastHost(toasts, Modifier.align(Alignment.CenterHorizontally))
                 Footer(state.notes.size, searching, onNew)
@@ -340,11 +391,12 @@ fun NotesListScreen(
         }
     }
 
-    sheetFor?.let { (id, title) ->
+    sheetFor?.let { (id, title, elsewhere) ->
         Sheet(onDismiss = { sheetFor = null }, title = title.trim().ifEmpty { "New note" }) {
             SheetItem(Icons.Edit, "Open", {
                 sheetFor = null
-                onOpen(id)
+                // A match from another space opens in its space, as tapping the row does.
+                if (elsewhere != null) onOpenElsewhere(id, elsewhere) else onOpen(id)
             })
             SheetItem(Icons.Trash, "Delete note", {
                 sheetFor = null
@@ -412,23 +464,21 @@ private fun TopBar(collapsed: Boolean, title: String, onTags: (() -> Unit)?, mod
 }
 
 /**
- * The large title (the selected tag, if any, with a way back to all notes).
- * [mark]: the brand mark leads the title, unless the tags sidebar beside the list already shows it.
+ * The large title: what the list shows, All Notes or the filter, with a way back to all notes.
+ * [icon]: the space's, leading the title, so the space shows even with the sidebar away.
  * [notSynced]: notes stuck on this phone; a quiet icon at the end, and nothing when sync is fine.
  */
 @Composable
-private fun Header(notSynced: Int?, scope: String?, mark: Boolean, onClear: () -> Unit, onNotSynced: () -> Unit) {
+private fun Header(notSynced: Int?, scope: String?, icon: String, onClear: () -> Unit, onNotSynced: () -> Unit) {
     val t = LocalTokens.current
     Row(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (mark) {
-            BrandMark(26.dp)
-            Spacer(Modifier.width(12.dp))
-        }
+        SpaceIconImage(icon, 28.dp)
+        Spacer(Modifier.width(12.dp))
         Text(
-            scope ?: "Notes",
+            scope ?: "All Notes",
             style = Type.display,
             color = t.ink,
             maxLines = 1,

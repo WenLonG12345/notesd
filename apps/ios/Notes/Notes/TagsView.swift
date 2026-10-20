@@ -12,12 +12,20 @@ struct TagsView: View {
     @State private var tags: [TagCount] = []
     @State private var lockedCount = 0
     @State private var open: Set<String> = Self.savedOpen
+    @State private var creating = false
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    BrandMark(size: 26)
+                    // The space, always: its menu makes new ones too.
+                    SpaceMenu(
+                        font: .custom("InstrumentSerif-Regular", size: 27, relativeTo: .title), iconSize: 31,
+                        onSwitched: { drawer.close() }
+                    ) {
+                        creating = true
+                    }
+                    .accessibilityAddTraits(.isHeader)
                     Spacer()
                     Button(action: openSettings) {
                         Image(systemName: "gearshape")
@@ -70,16 +78,25 @@ struct TagsView: View {
         }
         .scrollIndicators(.hidden)
         .background { Backdrop() }
-        .task {
+        .sheet(isPresented: $creating) {
+            SpaceSheet { id in
+                creating = false
+                graph.switchSpace(id)
+                // To the new space's list, empty and ready for a note.
+                drawer.close()
+            }
+        }
+        .task(id: graph.space) {
             let changes = graph.store.changes()
             await reload()
             for await _ in changes { await reload() }
         }
     }
 
+    /// The space's tags (§7.7).
     private func reload() async {
-        let next = (try? await graph.store.tags()) ?? tags
-        let locked = (try? await graph.store.lockedCount()) ?? 0
+        let next = (try? await graph.store.tags(space: graph.space)) ?? tags
+        let locked = (try? await graph.store.lockedCount(space: graph.space)) ?? 0
         withAnimation(.snappy) {
             tags = next
             lockedCount = locked

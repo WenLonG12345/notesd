@@ -18,6 +18,11 @@ struct NotesListView: View {
     @State private var notes: [NoteSummary] = []
     @State private var loaded = false
     @State private var hits: [SearchHit]?
+    /// Searching: the matches in every other space (§7.7), listed once asked for.
+    @State private var elsewhere: [SearchHit] = []
+    /// How many match in the other spaces: `elsewhere` stops at a page.
+    @State private var elsewhereCount = 0
+    @State private var elsewhereShownFor: String?
     @State private var query = ""
     @State private var pendingDeletes: [String: Task<Void, Never>] = [:]
     @State private var pendingNotes = 0
@@ -33,9 +38,12 @@ struct NotesListView: View {
         List {
             header
             if !notes.isEmpty || !query.isEmpty || graph.listFilter != nil {
-                SearchField(query: $query, prompt: scope.map { "Search in \($0)" } ?? "Search", focused: $searching)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 6, trailing: 16))
-                    .plainRow()
+                SearchField(
+                    query: $query, prompt: (scope ?? (many ? spaceName : nil)).map { "Search in \($0)" } ?? "Search",
+                    focused: $searching
+                )
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 6, trailing: 16))
+                .plainRow()
             }
             if let notice = graph.notice {
                 Notice(text: notice) { withAnimation { graph.notice = nil } }
@@ -47,12 +55,16 @@ struct NotesListView: View {
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .plainRow()
             }
-            if let hits {
-                if hits.isEmpty {
+            if let all = hits {
+                // Notes waiting out the undo window are hidden, as in the list.
+                let hits = all.filter { pendingDeletes[$0.id] == nil }
+                let others = elsewhere.filter { pendingDeletes[$0.id] == nil }
+                let othersCount = elsewhereCount - (elsewhere.count - others.count)
+                if hits.isEmpty && othersCount <= 0 {
                     EmptyList(
                         kicker: "Search", title: "No matches",
                         text: "Nothing in your notes matches “\(query.trimmed)”.")
-                } else {
+                } else if !hits.isEmpty {
                     GroupLabel(hits.count == 1 ? "1 result" : "\(hits.count) results")
                 }
                 ForEach(hits) { hit in
@@ -60,6 +72,29 @@ struct NotesListView: View {
                         NoteRow(
                             title: hit.title, time: listTime(hit.updatedAt), preview: highlighted(hit.excerpt),
                             locked: hit.locked)
+                    }
+                }
+                if othersCount > 0 {
+                    if elsewhereShownFor == query.trimmed {
+                        GroupLabel("Other spaces")
+                        ForEach(others) { hit in
+                            row(id: hit.id, locked: hit.locked, open: { openElsewhere(hit) }) {
+                                NoteRow(
+                                    title: hit.title, time: listTime(hit.updatedAt),
+                                    preview: AttributedString(graph.spaceName(hit.spaceId) + " · ")
+                                        + highlighted(hit.excerpt),
+                                    locked: hit.locked)
+                            }
+                        }
+                    } else {
+                        Button("\(othersCount) more in \(otherSpaces)") {
+                            elsewhereShownFor = query.trimmed
+                        }
+                        .font(.notesButton)
+                        .foregroundStyle(Color.notesTint)
+                        .frame(minHeight: 44)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 24, bottom: 8, trailing: 16))
+                        .plainRow()
                     }
                 }
             } else if loaded {
@@ -107,8 +142,8 @@ struct NotesListView: View {
             // While searching, the keyboard needs the room more than the compose button does.
             if !searching { footer }
         }
-        .task(id: graph.listFilter) { await watch() }
-        .task(id: query) { await search() }
+        .task(id: Watched(filter: graph.listFilter, space: graph.space)) { await watch() }
+        .task(id: Watched(filter: graph.listFilter, space: graph.space, query: query)) { await search() }
         .onDisappear { commitDeletes() }
         .sheet(isPresented: $syncSheet) {
             SyncSheet(status: graph.syncStatus, pending: pendingNotes) {
@@ -121,7 +156,25 @@ struct NotesListView: View {
         }
     }
 
-    private var title: String { scope ?? "Notes" }
+    private var title: String { scope ?? "All Notes" }
+
+    /// More than one space (§7.7): search names the space, and finds notes in the others.
+    private var many: Bool { graph.spaces.count > 1 }
+
+    private var spaceName: String { graph.spaceName(graph.space) }
+
+    /// With two spaces, the other one by name.
+    private var otherSpaces: String {
+        let others = graph.spaces.filter { $0.id != graph.space }
+        return others.count == 1 ? others[0].name : "other spaces"
+    }
+
+    /// What the list follows: a change to any of these reloads it.
+    private struct Watched: Hashable {
+        var filter: NoteFilter?
+        var space: String
+        var query = ""
+    }
 
     /// The filter's name, or nil for every note.
     private var scope: String? {
@@ -133,10 +186,11 @@ struct NotesListView: View {
         }
     }
 
-    /// The large title, led by the mark; with a filter, a way back to all notes.
+    /// The large title, the filter shown, led by the space's icon so the space
+    /// shows with the sidebar away; with a filter, a way back to all notes.
     private var header: some View {
         HStack(spacing: 12) {
-            BrandMark(size: 28)
+            SpaceIconImage(icon: graph.spaces.first { $0.id == graph.space }?.icon ?? "", size: 30)
             Text(title)
                 .font(.notesDisplay)
                 .foregroundStyle(Color.ink)
@@ -174,7 +228,13 @@ struct NotesListView: View {
     @ViewBuilder private var empty: some View {
         switch graph.listFilter {
         case nil:
-            NoNotes(offline: graph.account == .none) { connecting = true }
+            if many {
+                EmptyList(
+                    kicker: spaceName, title: "No notes in \(spaceName) yet",
+                    text: "Notes you write here stay in \(spaceName).", action: newNote)
+            } else {
+                NoNotes(offline: graph.account == .none) { connecting = true }
+            }
         case .untagged:
             EmptyList(kicker: "Untagged", title: "Nothing here yet", text: "Every note has a tag.", action: newNote)
         case .locked:
@@ -188,10 +248,12 @@ struct NotesListView: View {
         }
     }
 
-    /// One note: tap opens, swipe or long-press deletes.
-    private func row(id: String, locked: Bool, @ViewBuilder _ label: () -> some View) -> some View {
+    /// One note: tap opens (or `open`), swipe or long-press deletes.
+    private func row(
+        id: String, locked: Bool, open custom: (() -> Void)? = nil, @ViewBuilder _ label: () -> some View
+    ) -> some View {
         Button {
-            open(id)
+            if let custom { custom() } else { open(id) }
         } label: {
             label()
         }
@@ -202,7 +264,7 @@ struct NotesListView: View {
             Button("Delete", systemImage: "trash", role: .destructive) { delete(id) }
         }
         .contextMenu {
-            Button("Open", systemImage: "doc.text") { open(id) }
+            Button("Open", systemImage: "doc.text") { if let custom { custom() } else { open(id) } }
             Button("Delete Note", systemImage: "trash", role: .destructive) { delete(id) }
         }
         .accessibilityAction(named: "Delete note") { delete(id) }
@@ -293,9 +355,9 @@ struct NotesListView: View {
     }
 
     private func reload() async {
-        let next = (try? await graph.store.list(graph.listFilter)) ?? notes
+        let next = (try? await graph.store.list(graph.listFilter, space: graph.space)) ?? notes
         pendingNotes = (try? await graph.store.pendingNotes()) ?? 0
-        if !query.trimmed.isEmpty { hits = try? await graph.store.search(query, filter: graph.listFilter) }
+        if !query.trimmed.isEmpty { await runSearch() }
         if loaded && next != notes {
             withAnimation(.snappy) { notes = next }
         } else {
@@ -307,11 +369,26 @@ struct NotesListView: View {
     private func search() async {
         if query.trimmed.isEmpty {
             hits = nil
+            elsewhere = []
+            elsewhereCount = 0
             return
         }
         try? await Task.sleep(for: .milliseconds(120))
         if Task.isCancelled { return }
-        hits = (try? await graph.store.search(query, filter: graph.listFilter)) ?? []
+        await runSearch()
+    }
+
+    /// The current space's matches, and the other spaces' for the row under them.
+    private func runSearch() async {
+        hits = (try? await graph.store.search(query, filter: graph.listFilter, scope: .only(graph.space))) ?? []
+        elsewhere = (try? await graph.store.search(query, scope: .except(graph.space))) ?? []
+        elsewhereCount = (try? await graph.store.countElsewhere(query, space: graph.space)) ?? elsewhere.count
+    }
+
+    /// A match in another space: the list moves there, then the note opens.
+    private func openElsewhere(_ hit: SearchHit) {
+        graph.switchSpace(hit.spaceId)
+        open(hit.id)
     }
 
     /// Reads the note first, so its screen slides in with the text already there.

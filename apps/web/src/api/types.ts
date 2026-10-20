@@ -9,9 +9,11 @@ export type Note = {
   updatedAt: number
   deletedAt: number | null
   conflictOf?: string
+  /** The space the note is in (architecture §7.7). */
+  spaceId: string
 }
 
-export type ListItem = Pick<Note, 'id' | 'title' | 'revision' | 'createdAt' | 'updatedAt'> & {
+export type ListItem = Pick<Note, 'id' | 'title' | 'revision' | 'createdAt' | 'updatedAt' | 'spaceId'> & {
   preview: string
   /** The body is encrypted (§10.1): no preview. */
   locked: boolean
@@ -44,6 +46,20 @@ export type SearchResult = {
   updatedAt: number
   /** Matched on the title only; the body is encrypted. */
   locked: boolean
+  spaceId: string
+}
+
+/** Searching one space, or every space but one (the "more in other spaces" results). */
+export type SearchScope = { space: string } | { exceptSpace: string }
+
+/** A space (§7.7): a separate context with its own notes. */
+export type Space = {
+  id: string
+  name: string
+  /** A key into the apps' icons (notes/space-icons.ts); '' for the default one. */
+  icon: string
+  createdAt: number
+  noteCount: number
 }
 
 export type MutationResult = {
@@ -53,6 +69,8 @@ export type MutationResult = {
   changeSeq: number
   updatedAt: number
   deletedAt?: number
+  /** Creates and updates: the space the note is in now, the default if the one sent is gone. */
+  spaceId?: string
 }
 
 export type Session = {
@@ -70,6 +88,8 @@ export type ErrorBody = {
   message?: string
   field?: string
   current?: Note
+  /** space_not_empty: the notes still in the space. */
+  count?: number
 }
 
 /** The server's Resend settings for emailing notes; the key itself is never sent back. */

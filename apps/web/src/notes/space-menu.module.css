@@ -1,0 +1,125 @@
+/* Pulled left so the name lines up with a title; on the anchor, not the button, whose
+   max-width: 100% would otherwise come out short by the margin and cut the name. */
+.anchor {
+  position: relative;
+  min-width: 0;
+  display: inline-flex;
+  margin-left: -6px;
+}
+
+.button {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.button:hover,
+.button[aria-expanded='true'] {
+  background: var(--hover);
+}
+
+/* Clipped for the ellipsis: room for descenders below a tight title line, given back in the margin. */
+.name {
+  min-width: 0;
+  padding: 0.15em 0;
+  margin: -0.15em 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The chevron points right; turned down, it reads as a menu. Small and quiet: until hovered,
+   the switcher reads as a title rather than a field. */
+.chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+  transform: rotate(90deg);
+}
+
+.menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  /* No wider than the sidebar (a size container), whose edge would cut it off. */
+  max-width: min(280px, calc(100cqi - 16px));
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--glass-hi);
+  backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid var(--edge);
+  box-shadow:
+    var(--inset),
+    0 24px 50px -16px rgb(0 0 0 / 0.35);
+  animation: pop-in 0.3s var(--spring);
+}
+
+.item {
+  min-height: 38px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font: 400 14px/1.2 var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover,
+.item:focus-visible {
+  background: var(--hover);
+}
+
+.itemName {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.separator {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--edge);
+}
+
+/* In the icons' column. */
+.plus {
+  flex: none;
+  width: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+
+.check {
+  flex: none;
+  color: var(--tint);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
