@@ -145,3 +145,10 @@ export async function deleteNote(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'More' }))
   await user.click(within(screen.getByRole('menu', { name: 'More' })).getByRole('menuitem', { name: 'Delete note' }))
 }
+
+/** Opens Settings at one of its categories (Server when none). */
+export async function openSettings(user: ReturnType<typeof userEvent.setup>, category?: string) {
+  await user.click(screen.getByRole('button', { name: 'Settings' }))
+  const nav = await screen.findByRole('navigation', { name: 'Settings categories' })
+  if (category) await user.click(within(nav).getByRole('link', { name: new RegExp(`^${category}`) }))
+}

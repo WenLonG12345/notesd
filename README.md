@@ -105,5 +105,6 @@ A few things that may be interesting if you're reading the code:
 | [iPhone](docs/ios.md) | Building and installing the iPhone app, connecting |
 | [Operations](docs/operations.md) | Upgrades, maintenance, monitoring |
 | [Development](docs/development.md) | Building from source and working on notesd |
+| [Settings](docs/settings.md) | How Settings is organized on every app, and where a new setting goes |
 | [Architecture](docs/architecture.md) | How it works: data model, sync protocol, conflicts |
 | [Server API](server/README.md) | The HTTP API reference |

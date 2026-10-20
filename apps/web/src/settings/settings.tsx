@@ -6,73 +6,201 @@ import type { Session } from '../api/types'
 import { platformBadge, sessionName } from '../api/user-agent'
 import { useAuth } from '../auth/auth-context'
 import { genericMessage } from '../auth/errors'
+import { useLockStatus } from '../locks/session'
 import { setEmailSettings, useEmailSettings } from '../notes/email-settings'
 import { relativeTime } from '../notes/relative-time'
+import { useSpaces } from '../notes/spaces'
+import { navigate } from '../router'
 import { applyTheme, readTheme, type ThemeChoice } from '../theme'
 import { Button } from '../ui/button'
 import { Command } from '../ui/code'
 import { Field } from '../ui/field'
 import { Kicker } from '../ui/kicker'
+import { PHONE, useMediaQuery } from '../ui/media'
 import { Sheet } from '../ui/sheet'
 import { Surface } from '../ui/surface'
 import { LockedNotesCard } from './locked-notes'
+import { SECTIONS, type SettingsSection } from './sections'
 import { SpacesCard } from './spaces'
 import styles from './settings.module.css'
 
 export function SettingsSheet({
   username,
+  section,
   onClose,
   onSpaceCreated,
 }: {
   username: string
+  /** None: the list of categories on a phone, Server on a wider screen. */
+  section?: SettingsSection
   onClose: () => void
   /** A new space: the app switches to it, and Settings closes. */
   onSpaceCreated: (id: string) => void
 }) {
-  const { signOut } = useAuth()
-  // Bumped after a password change, which signs out every other session.
-  const [sessionsVersion, setSessionsVersion] = useState(0)
+  const phone = useMediaQuery(PHONE)
+  const [theme, setTheme] = useState<ThemeChoice>(readTheme)
+  const summaries = useSummaries(username, theme)
+  const shown = section ?? (phone ? null : 'server')
+  const title = SECTIONS.find((s) => s.key === shown)?.title
 
   return (
     <Sheet labelledBy="settings-title" onClose={onClose}>
       <div className={styles.top}>
-        <h2 id="settings-title">Settings</h2>
+        {phone && title ? (
+          <div className={styles.back}>
+            <Button size="md" onClick={() => navigate('/settings')} aria-label="Back to Settings">
+              ‹ Settings
+            </Button>
+            <h2 id="settings-title">{title}</h2>
+          </div>
+        ) : (
+          <h2 id="settings-title">Settings</h2>
+        )}
         <Button size="md" onClick={onClose}>
           Done
         </Button>
       </div>
 
-      <div className={styles.row}>
-        <Surface as="section" className={[styles.card, styles.wide].join(' ')} aria-labelledby="server-kicker">
-          <Kicker id="server-kicker">Server</Kicker>
-          <div className={styles.who}>
-            <span className={styles.host}>{window.location.host}</span>
-            <span className={styles.muted}>Signed in as {username}</span>
+      <div className={styles.layout}>
+        {!(phone && shown) && (
+          <SettingsNav shown={shown} summaries={summaries} host={window.location.host} replace={!phone} />
+        )}
+        {shown && (
+          <div className={styles.page}>
+            {!phone && <h3 className={styles.pageTitle}>{title}</h3>}
+            <SettingsPage
+              section={shown}
+              username={username}
+              theme={theme}
+              onTheme={setTheme}
+              onSpaceCreated={onSpaceCreated}
+            />
           </div>
-        </Surface>
-        <Appearance />
+        )}
       </div>
-
-      <div className={styles.row}>
-        <PasswordCard onChanged={() => setSessionsVersion((v) => v + 1)} />
-        <Surface as="section" className={styles.card} aria-label="Sign out">
-          <span className={styles.text}>Sign out of this browser. Your notes stay on the server.</span>
-          <Button variant="danger" size="md" onClick={() => void signOut()}>
-            Sign out
-          </Button>
-        </Surface>
-      </div>
-
-      <SpacesCard onCreated={onSpaceCreated} />
-
-      <LockedNotesCard username={username} />
-
-      <EmailCard />
-
-      {/* Remounted (and refetched) after a password change signs other sessions out. */}
-      <Devices key={sessionsVersion} />
     </Sheet>
   )
+}
+
+const GROUPS = [
+  { group: 'account', label: 'Your account', note: (host: string) => `Kept on ${host}: the same on every device.` },
+  { group: 'device', label: 'This device', note: () => 'Only in this browser.' },
+] as const
+
+function SettingsNav({
+  shown,
+  summaries,
+  host,
+  replace,
+}: {
+  shown: SettingsSection | null
+  summaries: Record<SettingsSection, string>
+  host: string
+  /** Beside the page, moving between categories needn't stack up in the history. */
+  replace: boolean
+}) {
+  return (
+    <nav className={styles.nav} aria-label="Settings categories">
+      {GROUPS.map((g) => (
+        <div key={g.group} className={styles.navGroup}>
+          <div className={styles.navHead}>
+            <Kicker id={`settings-${g.group}`}>{g.label}</Kicker>
+            <span className={styles.muted}>{g.note(host)}</span>
+          </div>
+          <ul className={styles.navList} aria-labelledby={`settings-${g.group}`}>
+            {SECTIONS.filter((s) => s.group === g.group).map((s) => (
+              <li key={s.key}>
+                <a
+                  href={`/settings/${s.key}`}
+                  className={styles.navItem}
+                  aria-current={shown === s.key ? 'page' : undefined}
+                  onClick={(e) => {
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+                    e.preventDefault()
+                    navigate(`/settings/${s.key}`, { replace })
+                  }}
+                >
+                  <span className={styles.navTitle}>{s.title}</span>
+                  {summaries[s.key] && <span className={styles.navSummary}>{summaries[s.key]}</span>}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </nav>
+  )
+}
+
+/** Each category's state in a few words, for the list (docs/settings.md); empty while it loads. */
+function useSummaries(username: string, theme: ThemeChoice): Record<SettingsSection, string> {
+  const locks = useLockStatus()
+  const spaces = useSpaces()
+  const email = useEmailSettings()
+  return {
+    server: `${window.location.host} · ${username}`,
+    security: {
+      unknown: '',
+      none: 'No lock password',
+      locked: 'Locked notes · locked',
+      unlocked: 'Locked notes · unlocked',
+    }[locks],
+    spaces: spaces ? `${spaces.length} ${spaces.length === 1 ? 'space' : 'spaces'}` : '',
+    integrations: !email ? '' : email.configured ? `Email · ${email.from}` : 'Email not set up',
+    appearance: themes.find((t) => t.value === theme)?.label ?? '',
+  }
+}
+
+function SettingsPage({
+  section,
+  username,
+  theme,
+  onTheme,
+  onSpaceCreated,
+}: {
+  section: SettingsSection
+  username: string
+  theme: ThemeChoice
+  onTheme: (theme: ThemeChoice) => void
+  onSpaceCreated: (id: string) => void
+}) {
+  const { signOut } = useAuth()
+  switch (section) {
+    case 'server':
+      return (
+        <>
+          <div className={styles.row}>
+            <Surface as="section" className={[styles.card, styles.wide].join(' ')} aria-labelledby="server-kicker">
+              <Kicker id="server-kicker">Server</Kicker>
+              <div className={styles.who}>
+                <span className={styles.host}>{window.location.host}</span>
+                <span className={styles.muted}>Signed in as {username}</span>
+              </div>
+            </Surface>
+            <Surface as="section" className={styles.card} aria-label="Sign out">
+              <span className={styles.text}>Sign out of this browser. Your notes stay on the server.</span>
+              <Button variant="danger" size="md" onClick={() => void signOut()}>
+                Sign out
+              </Button>
+            </Surface>
+          </div>
+          <PasswordCard />
+        </>
+      )
+    case 'security':
+      return (
+        <>
+          <LockedNotesCard username={username} />
+          <Devices />
+        </>
+      )
+    case 'spaces':
+      return <SpacesCard onCreated={onSpaceCreated} />
+    case 'integrations':
+      return <EmailCard />
+    case 'appearance':
+      return <Appearance theme={theme} onChange={onTheme} />
+  }
 }
 
 const themes: { value: ThemeChoice; label: string }[] = [
@@ -81,8 +209,7 @@ const themes: { value: ThemeChoice; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ]
 
-function Appearance() {
-  const [theme, setTheme] = useState<ThemeChoice>(readTheme)
+function Appearance({ theme, onChange }: { theme: ThemeChoice; onChange: (theme: ThemeChoice) => void }) {
   return (
     <Surface as="section" className={styles.card} aria-labelledby="appearance-kicker">
       <Kicker id="appearance-kicker">Appearance</Kicker>
@@ -95,7 +222,7 @@ function Appearance() {
             aria-checked={theme === t.value}
             className={styles.segment}
             onClick={() => {
-              setTheme(t.value)
+              onChange(t.value)
               applyTheme(t.value)
             }}
           >
@@ -103,13 +230,14 @@ function Appearance() {
           </button>
         ))}
       </div>
+      <span className={styles.muted}>Only in this browser. Your other devices keep their own theme.</span>
     </Surface>
   )
 }
 
 type PasswordErrors = Partial<Record<'current' | 'next' | 'confirm', string>>
 
-function PasswordCard({ onChanged }: { onChanged: () => void }) {
+function PasswordCard() {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -136,7 +264,6 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
       setNext('')
       setConfirm('')
       setDone(true)
-      onChanged()
     } catch (err) {
       if (err instanceof ApiError && err.code === 'invalid_credentials') {
         setErrors({ current: 'That isn’t your current password.' })

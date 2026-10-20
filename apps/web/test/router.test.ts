@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { navigate, transitionFor } from '../src/router'
+import { navigate, parseRoute, transitionFor } from '../src/router'
 import { phoneLayout } from './helpers'
+
+describe('routes', () => {
+  it('reads a Settings category from the path, and drops one it doesn’t know', () => {
+    expect(parseRoute('/settings')).toEqual({ name: 'settings' })
+    expect(parseRoute('/settings/security')).toEqual({ name: 'settings', section: 'security' })
+    expect(parseRoute('/settings/nope')).toEqual({ name: 'settings' })
+  })
+})
 
 describe('navigation transitions', () => {
   afterEach(() => {
@@ -15,6 +23,7 @@ describe('navigation transitions', () => {
     expect(transitionFor('/notes/a', '/')).toBe('back')
     expect(transitionFor('/tags', '/')).toBe('forward')
     expect(transitionFor('/', '/settings')).toBeNull()
+    expect(transitionFor('/settings', '/settings/spaces')).toBeNull()
   })
 
   it('only crossfades the page between notes on a wider screen', () => {

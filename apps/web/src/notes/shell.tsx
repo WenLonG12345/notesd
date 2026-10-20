@@ -277,8 +277,10 @@ function ShellView({ username }: { username: string }) {
       {route.name === 'settings' && (
         <SettingsSheet
           username={username}
+          section={route.section}
           onSpaceCreated={switchSpace}
-          onClose={() => navigate(settingsFrom === '/settings' ? listPath : settingsFrom)}
+          // Opened straight from its address: there's nowhere to go back to but the list.
+          onClose={() => navigate(parseRoute(settingsFrom).name === 'settings' ? listPath : settingsFrom)}
         />
       )}
 

@@ -1,8 +1,14 @@
 import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
+import { isSettingsSection, type SettingsSection } from './settings/sections'
 import { PHONE } from './ui/media'
 
-export type Route = { name: 'notes' } | { name: 'note'; id: string } | { name: 'settings' } | { name: 'tags' }
+/** settings without a section: the list of categories on a phone, Server on a wider screen. */
+export type Route =
+  | { name: 'notes' }
+  | { name: 'note'; id: string }
+  | { name: 'settings'; section?: SettingsSection }
+  | { name: 'tags' }
 
 const listeners = new Set<() => void>()
 
@@ -53,6 +59,11 @@ export function transitionFor(from: string, to: string): 'forward' | 'back' | 's
 
 export function parseRoute(pathname: string): Route {
   if (pathname === '/settings') return { name: 'settings' }
+  const settings = /^\/settings\/([a-z]+)$/.exec(pathname)?.[1]
+  // An unknown section is Settings' first page, not the notes.
+  if (settings !== undefined) {
+    return isSettingsSection(settings) ? { name: 'settings', section: settings } : { name: 'settings' }
+  }
   if (pathname === '/tags') return { name: 'tags' }
   const match = /^\/notes\/([A-Za-z0-9_-]{1,64})$/.exec(pathname)
   if (match?.[1]) return { name: 'note', id: match[1] }
