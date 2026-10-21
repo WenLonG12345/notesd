@@ -54,6 +54,9 @@ class EditorStyle(
     val quoteScale = 20f / 17f
     val rawScale = 0.82f
 
+    /** The view's line spacing multiplier; spans that size lines account for it. */
+    val lineSpacing = 1.5f
+
     val semibold: Typeface = Typeface.create(typeface, 600, false)
     val serifItalic: Typeface = Typeface.create(serif, Typeface.ITALIC)
 

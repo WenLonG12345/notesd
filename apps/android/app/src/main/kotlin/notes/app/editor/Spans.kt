@@ -240,14 +240,19 @@ class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, val quoted: Boolean, priva
             is Leaf.Raw -> height * 0.3f
             else -> 0f
         }.toInt()
+        val gap = if (leaf is Leaf.Heading) style.dp(6f).toInt() else 0
         val below = when (leaf) {
             Leaf.Title -> height * 0.05f
             is Leaf.Raw -> height * 0.3f
             else -> 0f
         }.toInt()
-        if (above > 0 && start == spanned.getSpanStart(this)) {
-            fm.ascent -= above
-            fm.top -= above
+        if (above + gap > 0 && start == spanned.getSpanStart(this)) {
+            fm.ascent -= above + gap
+            fm.top -= above + gap
+            // Line spacing scales the whole line and puts the extra below it, so
+            // the gap would push the next line down too: take back what it adds.
+            // The last line gets no line spacing.
+            if (end < text.length) fm.descent -= (gap * (style.lineSpacing - 1) / style.lineSpacing).toInt()
         }
         if (below > 0 && end >= spanned.getSpanEnd(this)) {
             fm.descent += below
