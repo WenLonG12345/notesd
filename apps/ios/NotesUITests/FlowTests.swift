@@ -286,12 +286,19 @@ final class FlowTests: XCTestCase {
         XCTFail("\(field) never took the keyboard")
     }
 
-    /// Starts a note and types into it once the editor has the keyboard:
-    /// typing straight after the tap can beat the focus.
+    /// Opens a new note and types into it. A tap while a sheet is still closing (sign-in's, on CI) can be
+    /// lost, and the text would go to the sheet's field: so it waits for the editor to have the keyboard.
     private func writeNewNote(_ text: String) {
-        app.buttons["New note"].tap()
-        let focused = app.descendants(matching: .any).element(matching: NSPredicate(format: "hasKeyboardFocus == true"))
-        XCTAssertTrue(focused.waitForExistence(timeout: 5), "the new note never took the keyboard")
+        let editor = app.textViews.firstMatch
+        for _ in 0..<3 {
+            let newNote = app.buttons["New note"]
+            XCTAssertTrue(newNote.waitForExistence(timeout: 10))
+            newNote.tap()
+            if editor.waitForExistence(timeout: 5) { break }
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while editor.value(forKey: "hasKeyboardFocus") as? Bool != true && Date() < deadline { usleep(200_000) }
+        XCTAssertEqual(editor.value(forKey: "hasKeyboardFocus") as? Bool, true, "the new note took the keyboard")
         app.typeText(text)
     }
 
