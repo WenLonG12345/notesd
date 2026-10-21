@@ -23,6 +23,7 @@ import {
   listNotes,
   newNoteButton,
   noteTitle,
+  openSettings,
   saved,
   signedIn,
   typeAtEnd,
@@ -145,7 +146,7 @@ describe('locked notes', () => {
   it('changing the lock password re-wraps the same key: notes still open', async () => {
     const s = await seeded()
     await lockOpenNote(s)
-    await s.user.click(screen.getByRole('button', { name: 'Settings' }))
+    await openSettings(s.user, 'Security')
     const card = await screen.findByRole('region', { name: 'Locked notes' })
     await s.user.type(within(card).getByLabelText('Current lock password'), LOCK_PASSWORD)
     await s.user.type(within(card).getByLabelText('New lock password'), 'brand new pass')
@@ -192,7 +193,7 @@ describe('locked notes', () => {
 })
 
 async function addPasskey(s: Session) {
-  await s.user.click(screen.getByRole('button', { name: 'Settings' }))
+  await openSettings(s.user, 'Security')
   const group = await screen.findByRole('group', { name: 'Passkeys' })
   await s.user.click(within(group).getByRole('button', { name: 'Add a passkey' }))
   await s.user.type(within(group).getByLabelText('Lock password'), LOCK_PASSWORD)
@@ -267,7 +268,7 @@ describe('passkeys for locked notes', () => {
     fakeAuthenticator()
     const s = await seeded()
     await lockOpenNote(s)
-    await s.user.click(screen.getByRole('button', { name: 'Settings' }))
+    await openSettings(s.user, 'Security')
     const group = await screen.findByRole('group', { name: 'Passkeys' })
     await s.user.click(within(group).getByRole('button', { name: 'Add a passkey' }))
     await s.user.type(within(group).getByLabelText('Lock password'), 'not it')
@@ -444,7 +445,7 @@ describe('locked notes, when things happen meanwhile', () => {
     const s = await seeded()
     await lockOpenNote(s)
     await s.server.api('DELETE', '/locks', { accountPassword: s.password })
-    await s.user.click(screen.getByRole('button', { name: 'Settings' }))
+    await openSettings(s.user, 'Security')
     const card = await screen.findByRole('region', { name: 'Locked notes' })
     // Settings fetched the keyring afresh rather than trusting the one from sign-in.
     expect(await within(card).findByText(/^No lock password yet\./)).toBeTruthy()
@@ -458,7 +459,7 @@ describe('locked notes, when things happen meanwhile', () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) =>
       String(input).endsWith('/api/v1/locks') ? Promise.reject(new TypeError('offline')) : real(input, init),
     )
-    await s.user.click(screen.getByRole('button', { name: 'Settings' }))
+    await openSettings(s.user, 'Security')
     const card = await screen.findByRole('region', { name: 'Locked notes' })
     expect(await within(card).findByRole('alert')).toBeTruthy()
     spy.mockRestore()

@@ -49,6 +49,8 @@ import notes.app.account.OnboardingScreen
 import notes.app.account.OnboardingViewModel
 import notes.app.settings.NewSpaceDialog
 import notes.app.settings.SettingsScreen
+import notes.app.settings.SettingsSection
+import notes.app.settings.SettingsSectionScreen
 import notes.app.ui.KeyboardBar
 import notes.app.ui.KeyboardBarSlot
 import notes.app.ui.LocalKeyboardBar
@@ -76,6 +78,10 @@ data class EditorKey(val id: String, val startTag: String? = null) : NavKey
 
 @Serializable
 data object SettingsKey : NavKey
+
+/** One of Settings' categories, opened from its list. */
+@Serializable
+data class SettingsSectionKey(val section: SettingsSection) : NavKey
 
 /** Connecting to a server; with [signInAgain], signing back in to the one these notes belong to. */
 @Serializable
@@ -243,7 +249,11 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
                         state = graph.tagTree,
                         docked = true,
                         onShow = ::show,
-                        onSettings = { if (backStack.lastOrNull() != SettingsKey) backStack += SettingsKey },
+                        onSettings = {
+                            // On a category's page: back to Settings' list.
+                            while (backStack.lastOrNull() is SettingsSectionKey) backStack.removeAt(backStack.lastIndex)
+                            if (backStack.lastOrNull() != SettingsKey) backStack += SettingsKey
+                        },
                         modifier = Modifier.width(280.dp),
                         spaces = spaces,
                         space = space,
@@ -371,6 +381,14 @@ fun NotesNavigation(graph: AppGraph, newNote: Flow<Unit> = emptyFlow(), emailNot
                                     graph,
                                     // The sidebar screen has no name to go back to.
                                     backLabel = if (from == TagsKey) null else "Notes",
+                                    onBack = { pop() },
+                                    onOpen = { backStack += SettingsSectionKey(it) }
+                                )
+                            }
+                            entry<SettingsSectionKey> { key ->
+                                SettingsSectionScreen(
+                                    graph,
+                                    key.section,
                                     onBack = { pop() },
                                     onConnect = { backStack += OnboardingKey() },
                                     onSignIn = { backStack += OnboardingKey(signInAgain = true) },

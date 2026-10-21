@@ -4,7 +4,8 @@ import SwiftUI
 /// Spaces (§7.7): create, edit and delete them. The sidebar's switcher can make one too.
 struct SpacesSection: View {
     @Environment(AppGraph.self) private var graph
-    @Environment(\.dismiss) private var dismiss
+    /// A new space was made and switched to.
+    let onCreated: () -> Void
     @State private var creating = false
     @State private var editing: Space?
 
@@ -36,15 +37,12 @@ struct SpacesSection: View {
                     SpaceSheet { id in
                         creating = false
                         graph.switchSpace(id)
-                        // Back to the list, to show the new space.
-                        dismiss()
+                        onCreated()
                     }
                 }
                 .sheet(item: $editing) { space in
                     SpaceSheet(editing: space) { _ in editing = nil }
                 }
-        } header: {
-            SectionHeader("Spaces")
         } footer: {
             Text(
                 "Keep separate contexts, like Work and Personal, apart. Each space has its own notes and tags, "

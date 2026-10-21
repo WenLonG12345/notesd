@@ -1,13 +1,18 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import { createNote, noteTitle, signedIn } from './helpers'
+import { navigate } from '../src/router'
+import { createNote, noteTitle, openSettings, phoneLayout, signedIn } from './helpers'
 
-async function openSettings() {
+/** Signed in, with Settings open at one of its categories. */
+async function inSettings(category?: string) {
   const ctx = await signedIn()
-  await ctx.user.click(screen.getByRole('button', { name: 'Settings' }))
-  await screen.findByRole('heading', { name: 'Settings' })
+  await openSettings(ctx.user, category)
   return ctx
 }
+
+const nav = () => screen.getByRole('navigation', { name: 'Settings categories' })
+const category = (name: string) => within(nav()).getByRole('link', { name: new RegExp(`^${name}`) })
 
 describe('settings', () => {
   it('switches the theme and remembers it', async () => {
@@ -20,7 +25,7 @@ describe('settings', () => {
       return meta
     })
     const colors = () => metas.map((m) => m.content)
-    const { user } = await openSettings()
+    const { user } = await inSettings('Appearance')
     const group = screen.getByRole('radiogroup', { name: 'Appearance' })
     expect(within(group).getByRole('radio', { name: 'System' }).getAttribute('aria-checked')).toBe('true')
 
@@ -38,7 +43,7 @@ describe('settings', () => {
   })
 
   it('changes the password and signs out every other session', async () => {
-    const { server, user, password } = await openSettings()
+    const { server, user, password } = await inSettings()
 
     await user.type(screen.getByLabelText('Current password'), 'not it')
     await user.type(screen.getByLabelText('New password'), 'a brand new one')
@@ -60,7 +65,7 @@ describe('settings', () => {
   })
 
   it('lists signed-in devices and signs one out', async () => {
-    const { server, user } = await openSettings()
+    const { server, user } = await inSettings('Security')
     const devices = screen.getByRole('region', { name: 'Signed-in devices' })
     await within(devices).findByText('2 devices')
     expect(within(devices).getByText('This browser')).toBeTruthy()
@@ -69,6 +74,91 @@ describe('settings', () => {
     await user.click(other)
     await within(devices).findByText('1 device')
     expect((await server.api('GET', '/auth/session')).status).toBe(401)
+  })
+})
+
+describe('settings categories', () => {
+  it('opens on Server and shows each category’s state beside it', async () => {
+    await signedIn({
+      seed: async (s) => {
+        await s.api('PUT', '/settings/email', { apiKey: 're_test_123456789', from: 'Me <notes@example.com>' })
+      },
+    })
+    await openSettings(userEvent.setup())
+    // Who's signed in, and where, opens Server.
+    expect(category('Server').getAttribute('aria-label')).toBe(`Server: me on ${window.location.host}`)
+    expect(category('Server').getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('heading', { name: 'Server', level: 3 })).toBeTruthy()
+    await waitFor(() => expect(category('Security').textContent).toBe('SecurityOff'))
+    await waitFor(() => expect(category('Spaces').textContent).toBe('Spaces1'))
+    await waitFor(() => expect(category('Integrations').textContent).toBe('IntegrationsEmail'))
+    expect(category('Appearance').textContent).toBe('AppearanceSystem')
+    // Each group says where its settings are kept.
+    expect(within(nav()).getAllByRole('list', { name: 'Synced to your account' })).toHaveLength(1)
+    expect(within(within(nav()).getByRole('list', { name: 'This browser only' })).getAllByRole('link')).toHaveLength(1)
+  })
+
+  it('moves between categories without stacking up history, and Done still goes back', async () => {
+    const { user } = await signedIn()
+    await openSettings(user, 'Security')
+    expect(window.location.pathname).toBe('/settings/security')
+    expect(await screen.findByRole('region', { name: 'Signed-in devices' })).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Password' })).toBeNull()
+
+    const entries = window.history.length
+    await user.click(category('Appearance'))
+    expect(window.location.pathname).toBe('/settings/appearance')
+    expect(window.history.length).toBe(entries)
+    expect(category('Appearance').getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('radiogroup', { name: 'Appearance' })).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('opens a category from its address, and Server for one it doesn’t know', async () => {
+    await signedIn()
+    act(() => navigate('/settings/integrations'))
+    expect(await screen.findByRole('region', { name: 'Email' })).toBeTruthy()
+    act(() => navigate('/settings/nope'))
+    expect(await screen.findByText('Signed in as me')).toBeTruthy()
+  })
+
+  it('on a phone, shows the list, then a category with a way back to it', async () => {
+    phoneLayout()
+    const { user } = await signedIn()
+    // On a phone, Settings is on the tags screen.
+    act(() => navigate('/settings'))
+    await screen.findByRole('navigation', { name: 'Settings categories' })
+    expect(screen.queryByRole('region', { name: 'Server' })).toBeNull()
+
+    await user.click(category('Spaces'))
+    expect(await screen.findByRole('heading', { name: 'Spaces', level: 2 })).toBeTruthy()
+    expect(screen.queryByRole('navigation', { name: 'Settings categories' })).toBeNull()
+    expect(screen.getByRole('region', { name: 'Spaces' })).toBeTruthy()
+    // The page starts at its title.
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Spaces', level: 2 }))
+
+    // Back pops the page's entry, so browser Back doesn't reopen it.
+    const entries = window.history.length
+    await user.click(screen.getByRole('button', { name: 'Back to Settings' }))
+    await waitFor(() => expect(window.location.pathname).toBe('/settings'))
+    expect(nav()).toBeTruthy()
+    // And the list returns to the category that was open.
+    expect(window.history.length).toBe(entries)
+    await waitFor(() => expect(document.activeElement).toBe(category('Spaces')))
+  })
+
+  it('on a phone, goes back to the list from a category opened by its address', async () => {
+    phoneLayout()
+    const { user } = await signedIn()
+    act(() => navigate('/settings/spaces'))
+    await screen.findByRole('heading', { name: 'Spaces', level: 2 })
+    const entries = window.history.length
+    await user.click(screen.getByRole('button', { name: 'Back to Settings' }))
+    expect(window.location.pathname).toBe('/settings')
+    expect(window.history.length).toBe(entries)
+    expect(nav()).toBeTruthy()
   })
 })
 

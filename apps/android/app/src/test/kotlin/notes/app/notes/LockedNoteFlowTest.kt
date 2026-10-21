@@ -228,6 +228,7 @@ class LockedNoteFlowTest {
         // Settings is on the sidebar screen, behind the list.
         compose.onNodeWithContentDescription("Sidebar").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Security").performClick()
         compose.onNode(hasText("Unlock with fingerprint")).performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasText("Unlock locked notes"))
         unlock(PASSWORD)
@@ -235,6 +236,9 @@ class LockedNoteFlowTest {
         assertTrue(graph.fingerprint.enabled.value)
 
         onMain { graph.locks.lock() }
+        // Security, then Settings' list, back to the sidebar screen.
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Appearance"))
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("All notes").performClick()
         compose.onNodeWithText("Bank").performClick()

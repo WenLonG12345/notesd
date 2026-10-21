@@ -11,6 +11,7 @@ import {
   noteTitle,
   op,
   openNote,
+  openSettings,
   phoneLayout,
   saved,
   signedIn,
@@ -89,7 +90,7 @@ describe('creating spaces', () => {
 
   it('names the new space, then switches to it', async () => {
     const { server, user } = await signedIn({ seed: (s) => createNote(s, 'Old', 'text\n').then(() => undefined) })
-    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await openSettings(user, 'Spaces')
     const card = await screen.findByRole('region', { name: 'Spaces' })
     await user.click(within(card).getByRole('button', { name: 'New space' }))
 
@@ -123,7 +124,7 @@ describe('creating spaces', () => {
 
   it('changes a space’s name and icon', async () => {
     const { server, user } = await withWork()
-    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await openSettings(user, 'Spaces')
     const card = await screen.findByRole('region', { name: 'Spaces' })
     await user.click(await within(card).findByRole('button', { name: 'Edit Notes' }))
 
@@ -145,7 +146,7 @@ describe('creating spaces', () => {
   it('shows the notes that stopped a delete', async () => {
     const { server, user } = await withWork()
     await server.api('PUT', '/spaces/empty', { name: 'Empty' })
-    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await openSettings(user, 'Spaces')
     const card = await screen.findByRole('region', { name: 'Spaces' })
     const remove = await waitFor(() => within(card).getByRole('button', { name: 'Delete Empty' }))
     // Another device files a note there meanwhile.
@@ -159,7 +160,7 @@ describe('creating spaces', () => {
   it('only deletes an empty space', async () => {
     const { server, user } = await withWork()
     await server.api('PUT', '/spaces/empty', { name: 'Empty' })
-    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await openSettings(user, 'Spaces')
     const card = await screen.findByRole('region', { name: 'Spaces' })
     await waitFor(() => within(card).getByRole('button', { name: 'Delete Empty' }))
 

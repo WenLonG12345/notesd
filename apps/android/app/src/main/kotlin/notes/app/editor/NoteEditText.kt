@@ -135,7 +135,7 @@ class NoteEditText @JvmOverloads constructor(context: Context, attrs: AttributeS
         gravity = Gravity.TOP or Gravity.START
         background = null
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-        setLineSpacing(0f, 1.5f)
+        setLineSpacing(0f, editorStyle.lineSpacing)
         setTextColor(editorStyle.ink)
         setHintTextColor(editorStyle.ink3)
         setLinkTextColor(editorStyle.link)

@@ -148,5 +148,9 @@ class AccessibilityTest {
         compose.onNode(hasContentDescription("Settings")).performClick()
         compose.waitUntilExactlyOneExists(hasText("Settings"))
         audit("settings")
+        // A category's page.
+        compose.onNode(hasText("Appearance")).performClick()
+        compose.waitUntilExactlyOneExists(hasText("Dark"))
+        audit("settings-appearance")
     }
 }

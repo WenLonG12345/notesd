@@ -65,6 +65,16 @@ object Icons {
     val Outdent = icon("M2.5 3h11M7.5 6.5h6M7.5 9.5h6M2.5 13h11", "M4.7 6L2.5 8l2.2 2")
     val CloudOff = icon("M4.5 12.5a3 3 0 0 1-.4-6A4 4 0 0 1 11.8 5.6a3.4 3.4 0 0 1 .2 6.9z", "M2.5 2l11 12")
     val Cloud = icon("M4.5 12.5a3 3 0 0 1-.4-6A4 4 0 0 1 11.8 5.6a3.4 3.4 0 0 1 .2 6.9z")
+    val Spaces = icon(square(2.5f, 2.5f), square(9f, 2.5f), square(2.5f, 9f), square(9f, 9f))
+    val Mail = icon(
+        "M4 3.5h8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2z",
+        "M2.5 4.5L8 8.8l5.5-4.3"
+    )
+    val Appearance = icon(
+        "M8 2.5a5.5 5.5 0 1 1 0 11a5.5 5.5 0 1 1 0-11z",
+        fills = listOf("M8 2.5a5.5 5.5 0 0 1 0 11z")
+    )
+    val Info = icon("M8 2.5a5.5 5.5 0 1 1 0 11a5.5 5.5 0 1 1 0-11z", "M8 7.3v3.7", dotsAt = listOf(8f to 5f))
     val Lock =
         icon("M5 7h6a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z", "M5.5 7V5a2.5 2.5 0 0 1 5 0v2")
 
@@ -72,7 +82,8 @@ object Icons {
         vararg paths: String,
         stroke: Float = 1.4f,
         width: Float = 16f,
-        dotsAt: List<Pair<Float, Float>> = emptyList()
+        dotsAt: List<Pair<Float, Float>> = emptyList(),
+        fills: List<String> = emptyList()
     ): ImageVector = ImageVector.Builder(
         defaultWidth = (width * 1.5f).dp,
         defaultHeight = 24.dp,
@@ -89,6 +100,7 @@ object Icons {
             )
         }
         for ((x, y) in dotsAt) addPath(addPathNodes(circle(x, y, 1.15f)), fill = SolidColor(Color.Black))
+        for (d in fills) addPath(addPathNodes(d), fill = SolidColor(Color.Black))
     }.build()
 
     private fun dots(): ImageVector = ImageVector.Builder(
@@ -99,6 +111,11 @@ object Icons {
     ).apply {
         for (x in listOf(3.2f, 8f, 12.8f)) addPath(addPathNodes(circle(x, 8f, 1.3f)), fill = SolidColor(Color.Black))
     }.build()
+
+    /** A 4.5-unit square with rounded corners, from its top left corner. */
+    private fun square(x: Float, y: Float) =
+        "M${x + 1.2f} ${y}h2.1a1.2 1.2 0 0 1 1.2 1.2v2.1a1.2 1.2 0 0 1-1.2 1.2h-2.1a1.2 1.2 0 0 1-1.2-1.2v-2.1" +
+            "a1.2 1.2 0 0 1 1.2-1.2z"
 
     private fun circle(cx: Float, cy: Float, r: Float) =
         "M${cx - r} ${cy}a$r $r 0 1 0 ${2 * r} 0a$r $r 0 1 0 ${-2 * r} 0z"

@@ -243,6 +243,22 @@ class ScreenshotTest {
         compose.onNode(hasContentDescription("Settings")).performClick()
         compose.waitUntilExactlyOneExists(hasText("Appearance", ignoreCase = true))
         shoot("settings-signed-in")
+        // Each category's page; the account row opens Server.
+        for ((row, name) in listOf(
+            "cassio" to "server",
+            "Security" to "security",
+            "Spaces" to "spaces",
+            "Integrations" to "integrations",
+            "Appearance" to "appearance",
+            "Sync & data" to "device",
+            "About" to "about"
+        )) {
+            compose.onNode(hasText(row)).performClick()
+            compose.waitUntilExactlyOneExists(hasContentDescription("Back") and hasText("Settings"))
+            shoot("settings-$name")
+            compose.onNode(hasContentDescription("Back")).performClick()
+            compose.waitUntilExactlyOneExists(hasText(row))
+        }
     }
 
     @Test

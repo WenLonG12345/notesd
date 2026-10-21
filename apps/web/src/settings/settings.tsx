@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { auth } from '../api/auth'
 import { settings } from '../api/settings'
 import { ApiError } from '../api/client'
@@ -6,73 +6,249 @@ import type { Session } from '../api/types'
 import { platformBadge, sessionName } from '../api/user-agent'
 import { useAuth } from '../auth/auth-context'
 import { genericMessage } from '../auth/errors'
+import { useLockStatus } from '../locks/session'
 import { setEmailSettings, useEmailSettings } from '../notes/email-settings'
 import { relativeTime } from '../notes/relative-time'
+import { useSpaces } from '../notes/spaces'
+import { navigate } from '../router'
 import { applyTheme, readTheme, type ThemeChoice } from '../theme'
 import { Button } from '../ui/button'
 import { Command } from '../ui/code'
 import { Field } from '../ui/field'
+import { AppearanceIcon, ChevronIcon, LockIcon, MailIcon, SpacesIcon } from '../ui/icons'
 import { Kicker } from '../ui/kicker'
+import { PHONE, useMediaQuery } from '../ui/media'
 import { Sheet } from '../ui/sheet'
 import { Surface } from '../ui/surface'
 import { LockedNotesCard } from './locked-notes'
+import { SECTIONS, type SettingsSection } from './sections'
 import { SpacesCard } from './spaces'
 import styles from './settings.module.css'
 
+/** On a phone. Opened from the list, a page's entry is popped, so browser Back won't reopen the page. */
+function backToList() {
+  if ((window.history.state as { fromList?: boolean } | null)?.fromList) window.history.back()
+  else navigate('/settings', { replace: true })
+}
+
 export function SettingsSheet({
   username,
+  section,
   onClose,
   onSpaceCreated,
 }: {
   username: string
+  /** None: the list of categories on a phone, Server on a wider screen. */
+  section?: SettingsSection
   onClose: () => void
   /** A new space: the app switches to it, and Settings closes. */
   onSpaceCreated: (id: string) => void
 }) {
-  const { signOut } = useAuth()
-  // Bumped after a password change, which signs out every other session.
-  const [sessionsVersion, setSessionsVersion] = useState(0)
+  const phone = useMediaQuery(PHONE)
+  const [theme, setTheme] = useState<ThemeChoice>(readTheme)
+  const values = useValues(theme)
+  const shown = section ?? (phone ? null : 'server')
+  const title = SECTIONS.find((s) => s.key === shown)?.title
+  const heading = useRef<HTMLHeadingElement>(null)
+  const layout = useRef<HTMLDivElement>(null)
+  const was = useRef(shown)
+
+  // On a phone, the list and a page replace each other, taking focus with them: a page starts at its
+  // title, and the list returns to the category that was open.
+  useEffect(() => {
+    const before = was.current
+    was.current = shown
+    if (!phone || before === shown) return
+    if (shown) heading.current?.focus()
+    else if (before) layout.current?.querySelector<HTMLElement>(`a[href="/settings/${before}"]`)?.focus()
+  }, [phone, shown])
 
   return (
     <Sheet labelledBy="settings-title" onClose={onClose}>
       <div className={styles.top}>
-        <h2 id="settings-title">Settings</h2>
+        {phone && title ? (
+          <div className={styles.back}>
+            <Button size="md" onClick={backToList} aria-label="Back to Settings">
+              ‹ Settings
+            </Button>
+            <h2 id="settings-title" ref={heading} tabIndex={-1}>
+              {title}
+            </h2>
+          </div>
+        ) : (
+          <h2 id="settings-title">Settings</h2>
+        )}
         <Button size="md" onClick={onClose}>
           Done
         </Button>
       </div>
 
-      <div className={styles.row}>
-        <Surface as="section" className={[styles.card, styles.wide].join(' ')} aria-labelledby="server-kicker">
-          <Kicker id="server-kicker">Server</Kicker>
-          <div className={styles.who}>
-            <span className={styles.host}>{window.location.host}</span>
-            <span className={styles.muted}>Signed in as {username}</span>
+      <div className={styles.layout} ref={layout}>
+        {!(phone && shown) && (
+          <SettingsNav shown={shown} username={username} values={values} replace={!phone} />
+        )}
+        {shown && (
+          <div className={styles.page}>
+            {!phone && <h3 className={styles.pageTitle}>{title}</h3>}
+            <SettingsPage
+              section={shown}
+              username={username}
+              theme={theme}
+              onTheme={setTheme}
+              onSpaceCreated={onSpaceCreated}
+            />
           </div>
-        </Surface>
-        <Appearance />
+        )}
       </div>
-
-      <div className={styles.row}>
-        <PasswordCard onChanged={() => setSessionsVersion((v) => v + 1)} />
-        <Surface as="section" className={styles.card} aria-label="Sign out">
-          <span className={styles.text}>Sign out of this browser. Your notes stay on the server.</span>
-          <Button variant="danger" size="md" onClick={() => void signOut()}>
-            Sign out
-          </Button>
-        </Surface>
-      </div>
-
-      <SpacesCard onCreated={onSpaceCreated} />
-
-      <LockedNotesCard username={username} />
-
-      <EmailCard />
-
-      {/* Remounted (and refetched) after a password change signs other sessions out. */}
-      <Devices key={sessionsVersion} />
     </Sheet>
   )
+}
+
+const GROUPS = [
+  { group: 'account', label: 'Synced to your account' },
+  { group: 'device', label: 'This browser only' },
+] as const
+
+const ICONS: Partial<Record<SettingsSection, ReactNode>> = {
+  security: <LockIcon size={15} />,
+  spaces: <SpacesIcon size={15} />,
+  integrations: <MailIcon size={15} />,
+  appearance: <AppearanceIcon size={15} />,
+}
+
+/**
+ * Like the system's settings: who you're signed in as at the top, then each category with its state on the
+ * right, under a header that says where its settings are kept.
+ */
+function SettingsNav({
+  shown,
+  username,
+  values,
+  replace,
+}: {
+  shown: SettingsSection | null
+  username: string
+  values: Record<SettingsSection, string>
+  /** Beside the page, moving between categories needn't stack up in the history. */
+  replace: boolean
+}) {
+  const link = (key: SettingsSection) => ({
+    href: `/settings/${key}`,
+    'aria-current': shown === key ? ('page' as const) : undefined,
+    onClick: (e: MouseEvent) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      e.preventDefault()
+      navigate(`/settings/${key}`, { replace, state: replace ? null : { fromList: true } })
+    },
+  })
+
+  return (
+    <nav className={styles.nav} aria-label="Settings categories">
+      <a
+        {...link('server')}
+        className={[styles.navItem, styles.account].join(' ')}
+        aria-label={`Server: ${username} on ${window.location.host}`}
+      >
+        <span className={styles.avatar} aria-hidden="true">
+          {username.charAt(0).toUpperCase()}
+        </span>
+        <span className={styles.accountText}>
+          <span className={styles.navTitle}>{username}</span>
+          <span className={styles.navValue}>{window.location.host}</span>
+        </span>
+        <span className={styles.chevron}>
+          <ChevronIcon />
+        </span>
+      </a>
+      {GROUPS.map((g) => (
+        <div key={g.group} className={styles.navGroup}>
+          <span id={`settings-${g.group}`} className={styles.navLabel}>
+            {g.label}
+          </span>
+          <ul className={styles.navList} aria-labelledby={`settings-${g.group}`}>
+            {SECTIONS.filter((s) => s.group === g.group && s.key !== 'server').map((s) => (
+              <li key={s.key}>
+                <a {...link(s.key)} className={styles.navItem}>
+                  <span className={styles.navIcon}>{ICONS[s.key]}</span>
+                  <span className={styles.navTitle}>{s.title}</span>
+                  <span className={styles.navValue}>{values[s.key]}</span>
+                  <span className={styles.chevron}>
+                    <ChevronIcon />
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </nav>
+  )
+}
+
+/** Each category's state in a word, as the list shows it (docs/settings.md); empty while it loads. */
+function useValues(theme: ThemeChoice): Record<SettingsSection, string> {
+  const locks = useLockStatus()
+  const spaces = useSpaces()
+  const email = useEmailSettings()
+  return {
+    server: window.location.host,
+    security: { unknown: '', none: 'Off', locked: 'Locked', unlocked: 'Unlocked' }[locks],
+    spaces: spaces ? String(spaces.length) : '',
+    integrations: !email ? '' : email.configured ? 'Email' : 'Off',
+    appearance: themes.find((t) => t.value === theme)?.label ?? '',
+  }
+}
+
+function SettingsPage({
+  section,
+  username,
+  theme,
+  onTheme,
+  onSpaceCreated,
+}: {
+  section: SettingsSection
+  username: string
+  theme: ThemeChoice
+  onTheme: (theme: ThemeChoice) => void
+  onSpaceCreated: (id: string) => void
+}) {
+  const { signOut } = useAuth()
+  switch (section) {
+    case 'server':
+      return (
+        <>
+          <div className={styles.row}>
+            <Surface as="section" className={[styles.card, styles.wide].join(' ')} aria-labelledby="server-kicker">
+              <Kicker id="server-kicker">Server</Kicker>
+              <div className={styles.who}>
+                <span className={styles.host}>{window.location.host}</span>
+                <span className={styles.muted}>Signed in as {username}</span>
+              </div>
+            </Surface>
+            <Surface as="section" className={styles.card} aria-label="Sign out">
+              <span className={styles.text}>Sign out of this browser. Your notes stay on the server.</span>
+              <Button variant="danger" size="md" onClick={() => void signOut()}>
+                Sign out
+              </Button>
+            </Surface>
+          </div>
+          <PasswordCard />
+        </>
+      )
+    case 'security':
+      return (
+        <>
+          <LockedNotesCard username={username} />
+          <Devices />
+        </>
+      )
+    case 'spaces':
+      return <SpacesCard onCreated={onSpaceCreated} />
+    case 'integrations':
+      return <EmailCard />
+    case 'appearance':
+      return <Appearance theme={theme} onChange={onTheme} />
+  }
 }
 
 const themes: { value: ThemeChoice; label: string }[] = [
@@ -81,8 +257,7 @@ const themes: { value: ThemeChoice; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ]
 
-function Appearance() {
-  const [theme, setTheme] = useState<ThemeChoice>(readTheme)
+function Appearance({ theme, onChange }: { theme: ThemeChoice; onChange: (theme: ThemeChoice) => void }) {
   return (
     <Surface as="section" className={styles.card} aria-labelledby="appearance-kicker">
       <Kicker id="appearance-kicker">Appearance</Kicker>
@@ -95,7 +270,7 @@ function Appearance() {
             aria-checked={theme === t.value}
             className={styles.segment}
             onClick={() => {
-              setTheme(t.value)
+              onChange(t.value)
               applyTheme(t.value)
             }}
           >
@@ -103,13 +278,14 @@ function Appearance() {
           </button>
         ))}
       </div>
+      <span className={styles.muted}>Only in this browser. Your other devices keep their own theme.</span>
     </Surface>
   )
 }
 
 type PasswordErrors = Partial<Record<'current' | 'next' | 'confirm', string>>
 
-function PasswordCard({ onChanged }: { onChanged: () => void }) {
+function PasswordCard() {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -136,7 +312,6 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
       setNext('')
       setConfirm('')
       setDone(true)
-      onChanged()
     } catch (err) {
       if (err instanceof ApiError && err.code === 'invalid_credentials') {
         setErrors({ current: 'That isn’t your current password.' })

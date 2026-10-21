@@ -54,7 +54,7 @@ nonisolated struct EditorStyle {
             p.paragraphSpacing = 6
             p.lineHeightMultiple = 1.0
         case .heading:
-            p.paragraphSpacingBefore = 10
+            p.paragraphSpacingBefore = 13
             p.paragraphSpacing = 2
             p.lineHeightMultiple = 1.05
         default:

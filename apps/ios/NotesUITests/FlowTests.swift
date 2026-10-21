@@ -147,6 +147,17 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Offline thoughts"].waitForExistence(timeout: 5))
         let local = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "On this iPhone only"))
         XCTAssertTrue(local.firstMatch.exists)
+
+        // Settings says what syncs once there's a server, and offers one from the account row.
+        app.buttons["Tags"].tap()
+        app.buttons["Settings"].tap()
+        XCTAssertTrue(app.staticTexts["Synced once you connect"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Security"].exists)
+        XCTAssertFalse(app.buttons["Integrations"].exists)
+        XCTAssertEqual(app.buttons["Sync & Data"].value as? String, "1 waiting")
+        try audit("settings offline", [.sufficientElementDescription, .hitRegion])
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Not connected")).firstMatch.tap()
+        XCTAssertTrue(app.buttons["Connect to a server"].waitForExistence(timeout: 5))
     }
 
     /// Spaces (§7.7) work offline: the sidebar always names the space, and its menu makes new ones.
@@ -275,12 +286,19 @@ final class FlowTests: XCTestCase {
         XCTFail("\(field) never took the keyboard")
     }
 
-    /// Starts a note and types into it once the editor has the keyboard:
-    /// typing straight after the tap can beat the focus.
+    /// Opens a new note and types into it. A tap while a sheet is still closing (sign-in's, on CI) can be
+    /// lost, and the text would go to the sheet's field: so it waits for the editor to have the keyboard.
     private func writeNewNote(_ text: String) {
-        app.buttons["New note"].tap()
-        let focused = app.descendants(matching: .any).element(matching: NSPredicate(format: "hasKeyboardFocus == true"))
-        XCTAssertTrue(focused.waitForExistence(timeout: 5), "the new note never took the keyboard")
+        let editor = app.textViews.firstMatch
+        for _ in 0..<3 {
+            let newNote = app.buttons["New note"]
+            XCTAssertTrue(newNote.waitForExistence(timeout: 10))
+            newNote.tap()
+            if editor.waitForExistence(timeout: 5) { break }
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while editor.value(forKey: "hasKeyboardFocus") as? Bool != true && Date() < deadline { usleep(200_000) }
+        XCTAssertEqual(editor.value(forKey: "hasKeyboardFocus") as? Bool, true, "the new note took the keyboard")
         app.typeText(text)
     }
 
@@ -331,6 +349,14 @@ final class FlowTests: XCTestCase {
         // The last row on screen leaves it as the text grows, which the Dynamic Type check reports as
         // partial support; the form's fonts are the ones the other screens check.
         try audit("settings", [.sufficientElementDescription, .hitRegion])
+        // Each category says its state; the account row opens Server.
+        XCTAssertEqual(app.buttons["Spaces"].value as? String, "1")
+        // The lock tests share the server, so its lock password may exist already.
+        XCTAssertTrue(["Off", "Locked", "Unlocked"].contains(app.buttons["Security"].value as? String ?? ""))
+        account.firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Signed in as"].waitForExistence(timeout: 5))
+        screenshot("settings server")
+        try audit("settings server", [.sufficientElementDescription, .hitRegion])
     }
 
     func testAPictureFromAnotherDeviceShows() async throws {
@@ -391,11 +417,20 @@ final class FlowTests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["Tags"].tap()
         app.buttons["Settings"].tap()
+        let security = app.buttons["Security"]
+        XCTAssertTrue(security.waitForExistence(timeout: 5))
+        XCTAssertEqual(security.value as? String, "Unlocked")
+        security.tap()
         let toggle = app.switches["Unlock with Face ID"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        let onlyHere = NSPredicate(format: "label CONTAINS %@", "only on this iPhone")
+        XCTAssertTrue(app.staticTexts.matching(onlyHere).firstMatch.exists)
         XCTAssertEqual(toggle.value as? String, "1")
         toggle.switches.firstMatch.tap()
         XCTAssertEqual(toggle.value as? String, "0")
+        // Back to Settings, then to the list.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(security.waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
@@ -566,5 +601,8 @@ final class FlowTests: XCTestCase {
         app.buttons["Settings"].tap()
         sleep(1)
         screenshot("08 settings")
+        app.buttons["Security"].tap()
+        sleep(1)
+        screenshot("09 settings security")
     }
 }

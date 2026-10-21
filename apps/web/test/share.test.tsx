@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { createNote, signedIn, typeAtEnd } from './helpers'
+import { createNote, openSettings, signedIn, typeAtEnd } from './helpers'
 import { startFakeResend, type TestServer } from './server'
 
 const KEY = 're_test_123456789'
@@ -15,7 +15,7 @@ const moreMenu = () => screen.getByRole('menu', { name: 'More' })
 describe('email settings', () => {
   it('saves the key and sender, shows only the key’s end, and removes them', async () => {
     const { server, user } = await signedIn()
-    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await openSettings(user, 'Integrations')
     const card = await screen.findByRole('region', { name: 'Email' })
 
     await user.type(within(card).getByLabelText('From'), 'Me <notes@example.com>')

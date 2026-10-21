@@ -16,6 +16,7 @@ import android.text.style.StyleSpan
 import android.text.style.URLSpan
 import android.text.style.UpdateAppearance
 import android.view.View
+import kotlin.math.roundToInt
 import notes.core.doc.Container
 import notes.core.doc.Leaf
 
@@ -240,14 +241,25 @@ class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, val quoted: Boolean, priva
             is Leaf.Raw -> height * 0.3f
             else -> 0f
         }.toInt()
+        val gap = if (leaf is Leaf.Heading) style.dp(6f).toInt() else 0
         val below = when (leaf) {
             Leaf.Title -> height * 0.05f
             is Leaf.Raw -> height * 0.3f
             else -> 0f
         }.toInt()
-        if (above > 0 && start == spanned.getSpanStart(this)) {
-            fm.ascent -= above
-            fm.top -= above
+        if (above + gap > 0 && start == spanned.getSpanStart(this)) {
+            fm.ascent -= above + gap
+            fm.top -= above + gap
+        }
+        // Headings space their lines as on the web (line-height 1.2, then 0.2em
+        // before the next block), not by the view's line spacing, which would put
+        // half a large line under each. Layout adds that spacing below the descent,
+        // so solve for a descent that lands the next line where the heading wants
+        // it. The text's last line gets no spacing and has no next line.
+        if (leaf is Leaf.Heading && end < text.length) {
+            val want = fm.descent + (height * if (end >= spanned.getSpanEnd(this)) 0.27f else 0.1f).toInt()
+            val m = style.lineSpacing
+            fm.descent = ((want + fm.ascent * (m - 1)) / m).roundToInt()
         }
         if (below > 0 && end >= spanned.getSpanEnd(this)) {
             fm.descent += below
