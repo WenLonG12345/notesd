@@ -7,7 +7,7 @@
 <p align="center">Native mobile apps that works fully
 offline and syncs your notes whenever a connection is available.</p>
 
-<img width="1536" height="1024" alt="Image" src="https://github.com/user-attachments/assets/61603468-28eb-45aa-983a-609850966c15" />
+<img width="1524" height="880" alt="NotesD on browser and mobile" src="https://github.com/user-attachments/assets/63c6bfed-1554-46d8-b60d-5d339590b458" />
 
 ## Features
 
