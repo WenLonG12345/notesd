@@ -105,8 +105,10 @@ describe('settings categories', () => {
     expect(await screen.findByRole('region', { name: 'Signed-in devices' })).toBeTruthy()
     expect(screen.queryByRole('region', { name: 'Password' })).toBeNull()
 
+    const entries = window.history.length
     await user.click(category('Appearance'))
     expect(window.location.pathname).toBe('/settings/appearance')
+    expect(window.history.length).toBe(entries)
     expect(category('Appearance').getAttribute('aria-current')).toBe('page')
     expect(screen.getByRole('radiogroup', { name: 'Appearance' })).toBeTruthy()
 
@@ -134,9 +136,28 @@ describe('settings categories', () => {
     expect(await screen.findByRole('heading', { name: 'Spaces', level: 2 })).toBeTruthy()
     expect(screen.queryByRole('navigation', { name: 'Settings categories' })).toBeNull()
     expect(screen.getByRole('region', { name: 'Spaces' })).toBeTruthy()
+    // The page starts at its title.
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Spaces', level: 2 }))
 
+    // Back pops the page's entry, so browser Back doesn't reopen it.
+    const entries = window.history.length
+    await user.click(screen.getByRole('button', { name: 'Back to Settings' }))
+    await waitFor(() => expect(window.location.pathname).toBe('/settings'))
+    expect(nav()).toBeTruthy()
+    // And the list returns to the category that was open.
+    expect(window.history.length).toBe(entries)
+    await waitFor(() => expect(document.activeElement).toBe(category('Spaces')))
+  })
+
+  it('on a phone, goes back to the list from a category opened by its address', async () => {
+    phoneLayout()
+    const { user } = await signedIn()
+    act(() => navigate('/settings/spaces'))
+    await screen.findByRole('heading', { name: 'Spaces', level: 2 })
+    const entries = window.history.length
     await user.click(screen.getByRole('button', { name: 'Back to Settings' }))
     expect(window.location.pathname).toBe('/settings')
+    expect(window.history.length).toBe(entries)
     expect(nav()).toBeTruthy()
   })
 })

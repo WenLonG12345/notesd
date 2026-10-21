@@ -21,12 +21,18 @@ function subscribe(listener: () => void) {
   }
 }
 
-/** [animate]: false for moves the user didn't make, which shouldn't play a transition. */
-export function navigate(path: string, { replace = false, animate = true } = {}) {
+/**
+ * [animate]: false for moves the user didn't make, which shouldn't play a transition.
+ * [state]: kept with the history entry, as `window.history.state`.
+ */
+export function navigate(
+  path: string,
+  { replace = false, animate = true, state = null }: { replace?: boolean; animate?: boolean; state?: unknown } = {},
+) {
   if (path === window.location.pathname) return
   const go = () => {
-    if (replace) window.history.replaceState(null, '', path)
-    else window.history.pushState(null, '', path)
+    if (replace) window.history.replaceState(state, '', path)
+    else window.history.pushState(state, '', path)
     for (const listener of listeners) listener()
   }
   const nav = replace || !animate ? null : transitionFor(window.location.pathname, path)
@@ -59,7 +65,7 @@ export function transitionFor(from: string, to: string): 'forward' | 'back' | 's
 
 export function parseRoute(pathname: string): Route {
   if (pathname === '/settings') return { name: 'settings' }
-  const settings = /^\/settings\/([a-z]+)$/.exec(pathname)?.[1]
+  const settings = /^\/settings\/([^/]+)$/.exec(pathname)?.[1]
   // An unknown section is Settings' first page, not the notes.
   if (settings !== undefined) {
     return isSettingsSection(settings) ? { name: 'settings', section: settings } : { name: 'settings' }

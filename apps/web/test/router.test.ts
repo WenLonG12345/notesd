@@ -7,6 +7,9 @@ describe('routes', () => {
     expect(parseRoute('/settings')).toEqual({ name: 'settings' })
     expect(parseRoute('/settings/security')).toEqual({ name: 'settings', section: 'security' })
     expect(parseRoute('/settings/nope')).toEqual({ name: 'settings' })
+    expect(parseRoute('/settings/Security')).toEqual({ name: 'settings' })
+    expect(parseRoute('/settings/sync-data')).toEqual({ name: 'settings' })
+    expect(parseRoute('/settings/a/b')).toEqual({ name: 'notes' })
   })
 })
 

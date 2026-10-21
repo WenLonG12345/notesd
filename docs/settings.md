@@ -24,7 +24,8 @@ The list works like the system's own settings:
    ends in a chevron.
 
 A row inside a synced category that applies to this device only says so in its footnote ("Only on
-this iPhone", "Only on this phone"). Biometric unlock is one example.
+this iPhone", "Only on this phone"). Biometric unlock (Face ID or Touch ID, as the iPhone has it;
+fingerprint on Android) is one example.
 
 ## Categories
 
@@ -48,13 +49,14 @@ the list is its own screen and a category opens on top of it with a back button.
 
 | Setting | Category | Synced? | Web | iOS | Android |
 |---------|----------|---------|-----|-----|---------|
-| Server address, signed-in username | Server | account | ✓ | ✓ | ✓ |
+| Server address (the web uses the address it's served from) | Server | device | ✓ | ✓ | ✓ |
+| Signed-in username | Server | account | ✓ | ✓ | ✓ |
 | Connect to a server / Sign in again | Server | – | – | ✓ | ✓ |
 | Sign out | Server | – | ✓ | ✓ | ✓ |
 | Change password (+ `notesd reset-password` hint) | Server | account | ✓ | – | – |
 | Lock password: create hint, lock now, change, forgot/reset | Security | account | ✓ | ✓ | ✓ |
 | Passkeys for locked notes | Security | account | ✓ | – | – |
-| Unlock with Face ID / fingerprint | Security | **device** | – | ✓ | ✓ |
+| Unlock with Face ID / Touch ID / fingerprint | Security | **device** | – | ✓ | ✓ |
 | Signed-in devices (list, sign one out) | Security | account | ✓ | – | – |
 | Spaces: list, new, edit, delete | Spaces | account | ✓ | ✓ | ✓ |
 | Email via Resend (API key, From) | Integrations | account | ✓ | ✓ | ✓ |
@@ -69,5 +71,6 @@ The rules for when a category or row is visible don't change from before the spl
 - Security appears when signed in or when a lock password already exists.
 - Sync & data's status rows appear only when there's an account.
 
-Because of these rules, web shows no Sync & data or About category, and a native app that isn't
-connected shows only Server, Spaces, Appearance, Sync & data and About.
+Web has no rows in Sync & data or About, so it leaves those categories out. Because of the rules
+above, a native app that isn't connected shows only Server, Spaces, Appearance, Sync & data and
+About.

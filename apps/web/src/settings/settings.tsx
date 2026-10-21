@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { auth } from '../api/auth'
 import { settings } from '../api/settings'
 import { ApiError } from '../api/client'
@@ -25,6 +25,12 @@ import { SECTIONS, type SettingsSection } from './sections'
 import { SpacesCard } from './spaces'
 import styles from './settings.module.css'
 
+/** On a phone. Opened from the list, a page's entry is popped, so browser Back won't reopen the page. */
+function backToList() {
+  if ((window.history.state as { fromList?: boolean } | null)?.fromList) window.history.back()
+  else navigate('/settings', { replace: true })
+}
+
 export function SettingsSheet({
   username,
   section,
@@ -43,16 +49,31 @@ export function SettingsSheet({
   const values = useValues(theme)
   const shown = section ?? (phone ? null : 'server')
   const title = SECTIONS.find((s) => s.key === shown)?.title
+  const heading = useRef<HTMLHeadingElement>(null)
+  const layout = useRef<HTMLDivElement>(null)
+  const was = useRef(shown)
+
+  // On a phone, the list and a page replace each other, taking focus with them: a page starts at its
+  // title, and the list returns to the category that was open.
+  useEffect(() => {
+    const before = was.current
+    was.current = shown
+    if (!phone || before === shown) return
+    if (shown) heading.current?.focus()
+    else if (before) layout.current?.querySelector<HTMLElement>(`a[href="/settings/${before}"]`)?.focus()
+  }, [phone, shown])
 
   return (
     <Sheet labelledBy="settings-title" onClose={onClose}>
       <div className={styles.top}>
         {phone && title ? (
           <div className={styles.back}>
-            <Button size="md" onClick={() => navigate('/settings')} aria-label="Back to Settings">
+            <Button size="md" onClick={backToList} aria-label="Back to Settings">
               ‹ Settings
             </Button>
-            <h2 id="settings-title">{title}</h2>
+            <h2 id="settings-title" ref={heading} tabIndex={-1}>
+              {title}
+            </h2>
           </div>
         ) : (
           <h2 id="settings-title">Settings</h2>
@@ -62,7 +83,7 @@ export function SettingsSheet({
         </Button>
       </div>
 
-      <div className={styles.layout}>
+      <div className={styles.layout} ref={layout}>
         {!(phone && shown) && (
           <SettingsNav shown={shown} username={username} values={values} replace={!phone} />
         )}
@@ -117,7 +138,7 @@ function SettingsNav({
     onClick: (e: MouseEvent) => {
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
       e.preventDefault()
-      navigate(`/settings/${key}`, { replace })
+      navigate(`/settings/${key}`, { replace, state: replace ? null : { fromList: true } })
     },
   })
 
