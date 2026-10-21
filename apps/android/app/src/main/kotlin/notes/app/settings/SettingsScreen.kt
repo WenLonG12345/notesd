@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -39,6 +40,7 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -62,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import notes.app.AppGraph
 import notes.app.BuildConfig
@@ -77,7 +81,6 @@ import notes.app.ui.BrandMark
 import notes.app.ui.ButtonKind
 import notes.app.ui.ConfirmDialog
 import notes.app.ui.Icons
-import notes.app.ui.Kicker
 import notes.app.ui.LocalReduceMotion
 import notes.app.ui.LocalTokens
 import notes.app.ui.NotesButton
@@ -98,10 +101,54 @@ private sealed interface Confirm {
     data object RemoveAll : Confirm
 }
 
+/**
+ * Settings, laid out like the system's (docs/settings.md): the account on top, then each category with its
+ * state on the right, under a header that says where its settings are kept.
+ */
 @Composable
-fun SettingsScreen(
+fun SettingsScreen(graph: AppGraph, backLabel: String?, onBack: () -> Unit, onOpen: (SettingsSection) -> Unit) {
+    val theme by graph.appearance.theme.collectAsStateWithLifecycle()
+    val account by graph.accounts.account.collectAsStateWithLifecycle()
+    val lockState by graph.locks.state.collectAsStateWithLifecycle()
+    val spaces by graph.spaces.collectAsStateWithLifecycle()
+    val email by graph.email.settings.collectAsStateWithLifecycle()
+    var pending by remember { mutableIntStateOf(0) }
+    LaunchedEffect(account) { if (account is Account.SignedIn) graph.email.refresh() }
+    LaunchedEffect(Unit) {
+        graph.store.changes.onSubscription { emit(Unit) }.collect { pending = graph.store.pendingNotes() }
+    }
+
+    SettingsFrame(backLabel, onBack, "Settings") {
+        Card {
+            AccountRow(account) { onOpen(SettingsSection.Server) }
+            GroupHeader(if (account == Account.None) "Synced once you connect" else "Synced to your account")
+            // With no lock password, creating one needs the server: signed out, there's nothing to offer.
+            if (account is Account.SignedIn || lockState != LockSession.State.None) {
+                val value = when (lockState) {
+                    LockSession.State.None -> "Off"
+                    LockSession.State.Locked -> "Locked"
+                    LockSession.State.Unlocked -> "Unlocked"
+                }
+                CategoryRow(Icons.Lock, SettingsSection.Security, value, onOpen)
+            }
+            CategoryRow(Icons.Spaces, SettingsSection.Spaces, "${spaces.size}", onOpen)
+            if (account is Account.SignedIn) {
+                val value = email?.let { if (it.configured) "Email" else "Off" }.orEmpty()
+                CategoryRow(Icons.Mail, SettingsSection.Integrations, value, onOpen)
+            }
+            GroupHeader("This phone only")
+            CategoryRow(Icons.Appearance, SettingsSection.Appearance, theme.label, onOpen)
+            CategoryRow(Icons.Cloud, SettingsSection.Device, if (pending > 0) "$pending waiting" else "", onOpen)
+            CategoryRow(Icons.Info, SettingsSection.About, BuildConfig.VERSION_NAME, onOpen)
+        }
+    }
+}
+
+/** One category's page, opened from [SettingsScreen]. */
+@Composable
+fun SettingsSectionScreen(
     graph: AppGraph,
-    backLabel: String?,
+    section: SettingsSection,
     onBack: () -> Unit,
     onConnect: () -> Unit,
     onSignIn: () -> Unit,
@@ -111,6 +158,8 @@ fun SettingsScreen(
     val t = LocalTokens.current
     val theme by graph.appearance.theme.collectAsStateWithLifecycle()
     val account by graph.accounts.account.collectAsStateWithLifecycle()
+    val lockState by graph.locks.state.collectAsStateWithLifecycle()
+    val canFingerprint = remember { graph.fingerprint.available() }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -127,99 +176,70 @@ fun SettingsScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(t.bg).statusBarsPadding()) {
-        Row(
-            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            BackLink(backLabel, onBack)
-        }
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Column(Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
-                Text(
-                    "Settings",
-                    style = Type.display,
-                    color = t.ink,
-                    modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 8.dp).semantics { heading() }
-                )
+    SettingsFrame("Settings", onBack, section.title) {
+        when (section) {
+            SettingsSection.Server -> Card {
+                when (val a = account) {
+                    Account.None -> {
+                        Info("Not connected", "Notes are kept on this phone only.")
+                        Divider()
+                        Action("Connect to a server", t.link, enabled = true, onClick = onConnect)
+                    }
 
-                Section("Server")
-                Card {
-                    when (val a = account) {
-                        Account.None -> {
-                            Info("Not connected", "Notes are kept on this phone only.")
-                            Divider()
-                            Action("Connect to a server", t.link, enabled = true, onClick = onConnect)
-                        }
-
-                        is Account.SignedIn -> {
-                            Who(a.username, a.server, null)
-                            Divider()
-                            Action(if (busy) "Signing out…" else "Sign out", t.link, enabled = !busy) {
-                                scope.launch { confirm = Confirm.SignOut(graph.store.pendingNotes()) }
-                            }
-                        }
-
-                        is Account.SignedOut -> {
-                            Who(a.username, a.server, "Signed out")
-                            Divider()
-                            Action("Sign in again", t.link, enabled = true, onClick = onSignIn)
+                    is Account.SignedIn -> {
+                        Who(a.username, a.server, null)
+                        Divider()
+                        Action(if (busy) "Signing out…" else "Sign out", t.link, enabled = !busy) {
+                            scope.launch { confirm = Confirm.SignOut(graph.store.pendingNotes()) }
                         }
                     }
+
+                    is Account.SignedOut -> {
+                        Who(a.username, a.server, "Signed out")
+                        Divider()
+                        Action("Sign in again", t.link, enabled = true, onClick = onSignIn)
+                    }
                 }
+            }
 
-                if (account is Account.SignedIn) {
-                    Section("Email")
-                    EmailCard(graph)
+            SettingsSection.Security -> {
+                LockedNotesCard(graph.locks, lockState, graph.fingerprint)
+                if (lockState != LockSession.State.None && canFingerprint) {
+                    Footnote("Fingerprint unlock is only on this phone.")
                 }
+            }
 
-                Section("Spaces")
-                SpacesCard(graph, onSpaceCreated)
+            SettingsSection.Spaces -> SpacesCard(graph, onSpaceCreated)
 
-                val lockState by graph.locks.state.collectAsStateWithLifecycle()
-                if (account is Account.SignedIn || lockState != LockSession.State.None) {
-                    Section("Locked notes")
-                    LockedNotesCard(graph.locks, lockState, graph.fingerprint)
-                }
+            SettingsSection.Integrations -> EmailCard(graph)
 
-                Section("Appearance")
+            SettingsSection.Appearance -> {
                 Segmented(Theme.entries, theme, { it.label }) { graph.appearance.set(it) }
+                Footnote("Only on this phone. Your other devices keep their own theme.")
+            }
 
-                Section("Data")
+            SettingsSection.Device -> {
                 Card {
                     Action("Remove all data from this device", t.danger, enabled = !busy) {
                         confirm = Confirm.RemoveAll
                     }
                 }
-                Text(
-                    "Deletes every note on this phone and signs you out. Notes on the server aren't touched.",
-                    style = Type.small,
-                    color = t.ink3,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
-                )
+                Footnote("Deletes every note on this phone and signs you out. Notes on the server aren't touched.")
+            }
 
-                Section("About")
-                Card {
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        BrandMark(24.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Text("notesd", style = Type.brand, color = t.ink, modifier = Modifier.weight(1f))
-                        Text(
-                            "Version ${BuildConfig.VERSION_NAME}",
-                            style = Type.mono.copy(fontSize = 12.sp),
-                            color = t.ink3
-                        )
-                    }
+            SettingsSection.About -> Card {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    BrandMark(24.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("notesd", style = Type.brand, color = t.ink, modifier = Modifier.weight(1f))
+                    Text(
+                        "Version ${BuildConfig.VERSION_NAME}",
+                        style = Type.mono.copy(fontSize = 12.sp),
+                        color = t.ink3
+                    )
                 }
             }
         }
@@ -249,6 +269,131 @@ fun SettingsScreen(
 
         null -> Unit
     }
+}
+
+/** The list and each category's page: a back link, the title, then the content in a readable column. */
+@Composable
+private fun SettingsFrame(
+    backLabel: String?,
+    onBack: () -> Unit,
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val t = LocalTokens.current
+    Column(Modifier.fillMaxSize().background(t.bg).statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BackLink(backLabel, onBack)
+        }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Column(Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
+                Text(
+                    title,
+                    style = Type.display,
+                    color = t.ink,
+                    modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 16.dp).semantics { heading() }
+                )
+                content()
+            }
+        }
+    }
+}
+
+/** Who's signed in, and where: opens Server. */
+@Composable
+private fun AccountRow(account: Account, onClick: () -> Unit) {
+    val t = LocalTokens.current
+    val (name, detail) = when (account) {
+        Account.None -> "Not connected" to "Notes are on this phone only"
+        is Account.SignedIn -> account.username to hostOf(account.server)
+        is Account.SignedOut -> account.username to "Signed out · ${hostOf(account.server)}"
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) {}
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(42.dp).clip(CircleShape).background(t.hover).border(1.dp, t.edge, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (account == Account.None) {
+                Icon(Icons.CloudOff, null, Modifier.size(20.dp), tint = t.ink2)
+            } else {
+                Text(name.take(1).uppercase(), style = Type.title, color = t.ink)
+            }
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = Type.rowTitle, color = t.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(detail, style = Type.rowMeta, color = t.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Chevron, null, Modifier.size(16.dp), tint = t.ink3)
+    }
+}
+
+/** A group's one line, saying where its settings are kept. */
+@Composable
+private fun GroupHeader(label: String) {
+    Text(
+        label,
+        style = Type.label,
+        color = LocalTokens.current.ink3,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp).semantics { heading() }
+    )
+}
+
+/** A category: its icon and title, and its state as a short value on the right. */
+@Composable
+private fun CategoryRow(icon: ImageVector, section: SettingsSection, value: String, onOpen: (SettingsSection) -> Unit) {
+    val t = LocalTokens.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clickable(role = Role.Button) { onOpen(section) }
+            .semantics(mergeDescendants = true) {}
+            .padding(start = 16.dp, end = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(t.hover),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, Modifier.size(20.dp), tint = t.ink2)
+        }
+        Spacer(Modifier.width(14.dp))
+        Text(section.title, style = Type.rowTitle, color = t.ink, modifier = Modifier.weight(1f))
+        if (value.isNotEmpty()) {
+            Text(value, style = Type.rowMeta, color = t.ink3, maxLines = 1)
+            Spacer(Modifier.width(8.dp))
+        }
+        Icon(Icons.Chevron, null, Modifier.size(16.dp), tint = t.ink3)
+    }
+}
+
+/** Below a card: what it applies to. */
+@Composable
+private fun Footnote(text: String) {
+    Text(
+        text,
+        style = Type.small,
+        color = LocalTokens.current.ink3,
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+    )
 }
 
 /** The server's Resend key and sender, for emailing notes from the share sheet. */
@@ -569,11 +714,6 @@ private fun LockedNotesCard(locks: LockSession, state: LockSession.State, finger
     }
 }
 
-@Composable
-private fun Section(label: String) {
-    Kicker(label, Modifier.padding(start = 8.dp, top = 24.dp, bottom = 8.dp).semantics { heading() })
-}
-
 /** A rounded group on the chip colour, like the web's settings sheet. */
 @Composable
 private fun Card(content: @Composable ColumnScope.() -> Unit) {
@@ -594,6 +734,9 @@ private fun Divider() {
     Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(1.dp).background(LocalTokens.current.hair))
 }
 
+private fun hostOf(server: String) =
+    server.toHttpUrlOrNull()?.let { it.host + if (it.port != 80 && it.port != 443) ":${it.port}" else "" } ?: server
+
 /** The server's address, then the account on it; [note] flags a problem, such as being signed out. */
 @Composable
 private fun Who(username: String, server: String, note: String?) {
@@ -601,8 +744,7 @@ private fun Who(username: String, server: String, note: String?) {
     Column(Modifier.fillMaxWidth().padding(16.dp).semantics(mergeDescendants = true) {}) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                server.toHttpUrlOrNull()?.let { it.host + if (it.port != 80 && it.port != 443) ":${it.port}" else "" }
-                    ?: server,
+                hostOf(server),
                 style = Type.mono.copy(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium),
                 color = t.ink,
                 maxLines = 1,

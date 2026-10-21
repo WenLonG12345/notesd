@@ -16,7 +16,7 @@ The list works like the system's own settings:
 2. **The groups.** Each has a one-line header that says where its settings are kept. The header
    is the group's only label: there's no separate description.
    - **Synced to your account**: stored on the server. Every device signed in to the account sees
-     the same values.
+     the same values. On a native app that isn't connected yet, "Synced once you connect".
    - **This device only** ("This browser only" on the web, "This iPhone only" on iOS, "This phone
      only" on Android): stored only here.
 3. **The category rows.** Each row has an icon, the title, and its current state as a short value
@@ -37,8 +37,8 @@ A value is the category's state in a word or two. It's never a description of th
 | 3 | Synced | Spaces | `spaces` | four squares | the number of spaces |
 | 4 | Synced | Integrations | `integrations` | envelope | "Email" when set up, else "Off" |
 | 5 | This device | Appearance | `appearance` | half-filled circle | "System", "Light", "Dark" |
-| 6 | This device | Sync & data | `device` | arrows | "Up to date", "N waiting", "Offline" |
-| 7 | This device | About | `about` | info | the version |
+| 6 | This device | Sync & data | `device` | cloud | "Up to date", "N waiting", "Offline"; Android, with no sync status yet, shows only "N waiting" |
+| 7 | This device | About | `about` | info (i in a circle) | the version |
 
 On a wide web window, the category list sits beside the selected category's page, and Server is
 selected when Settings opens. A category has its own address (`/settings/security`). On a phone,
