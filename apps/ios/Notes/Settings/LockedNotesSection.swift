@@ -44,8 +44,10 @@ struct LockedNotesSection: View {
         } header: {
             SectionHeader("Locked notes")
         } footer: {
-            Text("Locked notes lock again when you leave the app or after five minutes without use.")
-                .font(.notesSmall).foregroundStyle(Color.ink2)
+            Footnote(
+                "Locked notes lock again when you leave the app or after five minutes without use."
+                    + (graph.lockState != .none && graph.biometrics.available()
+                        ? " \(graph.biometry.name) unlock is only on this iPhone." : ""))
         }
         .sheet(isPresented: $changing) {
             ChangeLockPassword(locks: graph.locks, biometrics: graph.biometrics) {

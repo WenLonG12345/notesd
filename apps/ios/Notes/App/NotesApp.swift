@@ -85,6 +85,7 @@ struct RootView: View {
                             )
                             .id(id)
                         case .settings: SettingsView()
+                        case .settingsSection(let section): SettingsSectionView(section: section, path: $path)
                         }
                     }
             }

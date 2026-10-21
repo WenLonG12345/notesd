@@ -6,6 +6,7 @@ enum Route: Hashable {
     /// A note by id; a new note gets its id up front and exists once it has text.
     case note(id: String, startTag: String? = nil, isNew: Bool = false)
     case settings
+    case settingsSection(SettingsSection)
 }
 
 /// The notes, newest first, in date sections; search as you type; the
