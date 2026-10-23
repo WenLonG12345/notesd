@@ -115,7 +115,9 @@ struct OnboardingView: View {
             }
         case .signIn:
             LabeledField(label: "Username", error: model.fieldErrors[.username]) {
+                // These notes are this person's; someone else removes all data first.
                 TextField("Username", text: $model.username).textContentType(.username)
+                    .disabled(model.lockedUsername != nil)
             }
             LabeledField(label: "Password", error: model.fieldErrors[.password]) {
                 SecureField("Password", text: $model.password).textContentType(.password).onSubmit(submit)

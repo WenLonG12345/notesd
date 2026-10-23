@@ -359,6 +359,31 @@ final class FlowTests: XCTestCase {
         try audit("settings server", [.sufficientElementDescription, .hitRegion])
     }
 
+    /// Signed out, the notes stay, so only their owner may sign in again: anyone else's first sync would take them.
+    func testSignInAgainKeepsTheUsername() throws {
+        try signIn()
+        app.buttons["Tags"].tap()
+        app.buttons["Settings"].tap()
+        let account = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "owner"))
+        XCTAssertTrue(account.firstMatch.waitForExistence(timeout: 5))
+        account.firstMatch.tap()
+        let signOut = app.buttons["Sign out"]
+        XCTAssertTrue(signOut.waitForExistence(timeout: 5))
+        signOut.tap()
+        // The dialog's own Sign out, after the row's.
+        XCTAssertTrue(app.staticTexts["Sign out of this server?"].waitForExistence(timeout: 5))
+        let buttons = app.buttons.matching(identifier: "Sign out")
+        buttons.element(boundBy: buttons.count - 1).tap()
+
+        let again = app.buttons["Sign in again"]
+        XCTAssertTrue(again.waitForExistence(timeout: 10))
+        again.tap()
+        let username = app.textFields["Username"]
+        XCTAssertTrue(username.waitForExistence(timeout: 5))
+        XCTAssertEqual(username.value as? String, env["NOTESD_USERNAME"] ?? "owner")
+        XCTAssertFalse(username.isEnabled, "the username is fixed while this iPhone holds its notes")
+    }
+
     func testAPictureFromAnotherDeviceShows() async throws {
         try await notesWithAPicture()
         try signIn()

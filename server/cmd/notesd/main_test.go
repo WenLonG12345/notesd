@@ -39,7 +39,7 @@ func TestOwnerFromEnv(t *testing.T) {
 	ctx := context.Background()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	newAuth := func(t *testing.T) *auth.Service {
-		db, err := database.Open(ctx, filepath.Join(t.TempDir(), "notes.db"))
+		db, err := database.OpenSystem(ctx, filepath.Join(t.TempDir(), "system.db"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -66,7 +66,7 @@ func TestOwnerFromEnv(t *testing.T) {
 		if has, err := ownerFromEnv(ctx, a, log); err != nil || !has {
 			t.Fatalf("second start: got %v, %v", has, err)
 		}
-		if err := a.CheckPassword(ctx, "correct horse battery"); err != nil {
+		if err := a.CheckPassword(ctx, 1, "correct horse battery"); err != nil {
 			t.Fatalf("login with the first password: %v", err)
 		}
 	})
@@ -84,4 +84,59 @@ func TestOwnerFromEnv(t *testing.T) {
 			t.Fatal("want an error")
 		}
 	})
+}
+
+func TestUserCommands(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	cmd := func(args ...string) error { return run(append(args, "--data-dir", dir)) }
+	t.Setenv("NOTESD_PASSWORD", "correct horse battery")
+
+	if err := cmd("create-owner", "--username", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd("reset-password"); err != nil {
+		t.Fatalf("with one user, reset-password needs no --username: %v", err)
+	}
+	if err := cmd("add-user", "--username", "kid"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd("add-user", "--username", "KID"); err == nil {
+		t.Fatal("a taken username must be refused")
+	}
+	if err := cmd("reset-password"); err == nil {
+		t.Fatal("with two users, reset-password needs --username")
+	}
+	t.Setenv("NOTESD_PASSWORD", "a whole new password")
+	if err := cmd("reset-password", "--username", "kid"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range [][]string{{"list-users"}, {"reindex"}, {"check"}, {"gc-images", "--dry-run"}} {
+		if err := cmd(c...); err != nil {
+			t.Fatalf("%v: %v", c, err)
+		}
+	}
+	if err := cmd("export", "--out", filepath.Join(dir, "out")); err == nil {
+		t.Fatal("with two users, export needs --username")
+	}
+	if err := cmd("remove-user", "--username", "owner"); err == nil {
+		t.Fatal("the last admin must not be removable")
+	}
+	if err := cmd("remove-user", "--username", "kid"); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := database.OpenSystem(ctx, filepath.Join(dir, "system.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	a := auth.NewService(db)
+	list, err := a.ListUsers(ctx)
+	if err != nil || len(list) != 1 || list[0].Username != "owner" || !list[0].IsAdmin {
+		t.Fatalf("users: %+v, %v", list, err)
+	}
+	if err := a.CheckPassword(ctx, list[0].ID, "correct horse battery"); err != nil {
+		t.Fatalf("owner's password should be untouched by kid's reset: %v", err)
+	}
 }

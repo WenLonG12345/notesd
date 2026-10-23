@@ -242,7 +242,16 @@ private fun StepContent(step: Step, vm: OnboardingViewModel, onSkip: (() -> Unit
                 if (vm.lockedServer != null) "Sign in again" else "Sign in",
                 style = Type.display.copy(fontSize = 32.sp, lineHeight = 34.sp)
             )
-            Input(vm, Field.Username, "Username", s.username, { copy(username = it) }, type = ContentType.Username)
+            Input(
+                vm,
+                Field.Username,
+                "Username",
+                s.username,
+                { copy(username = it) },
+                type = ContentType.Username,
+                // These notes are this person's; someone else removes all data first.
+                enabled = vm.lockedUsername == null
+            )
             Input(
                 vm,
                 Field.Password,
@@ -312,6 +321,7 @@ private fun Input(
     mono: Boolean = false,
     type: ContentType? = null,
     keyboard: KeyboardOptions? = null,
+    enabled: Boolean = true,
     onDone: (() -> Unit)? = null
 ) {
     NotesField(
@@ -322,6 +332,7 @@ private fun Input(
         error = vm.state.fieldErrors[field],
         secret = secret,
         mono = mono,
+        enabled = enabled,
         keyboardOptions = keyboard ?: KeyboardOptions(
             keyboardType = if (secret) KeyboardType.Password else KeyboardType.Text,
             capitalization = KeyboardCapitalization.None,
