@@ -369,11 +369,13 @@ final class FlowTests: XCTestCase {
         account.firstMatch.tap()
         let signOut = app.buttons["Sign out"]
         XCTAssertTrue(signOut.waitForExistence(timeout: 5))
+        let row = signOut.frame
         signOut.tap()
-        // The dialog's own Sign out, after the row's.
+        // The dialog has a Sign out too: the one that isn't the row.
         XCTAssertTrue(app.staticTexts["Sign out of this server?"].waitForExistence(timeout: 5))
-        let buttons = app.buttons.matching(identifier: "Sign out")
-        buttons.element(boundBy: buttons.count - 1).tap()
+        let confirm = app.buttons.matching(NSPredicate(format: "label == %@", "Sign out")).allElementsBoundByIndex
+            .first { $0.frame != row }
+        try XCTUnwrap(confirm, app.debugDescription).tap()
 
         let again = app.buttons["Sign in again"]
         XCTAssertTrue(again.waitForExistence(timeout: 10))

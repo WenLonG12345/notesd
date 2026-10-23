@@ -102,6 +102,8 @@ final class OnboardingModel {
                 errors[.confirm] = "The passwords don’t match."
             }
             if !errors.isEmpty { return self.fail(errors) }
+            // Before setup: an account made under another name would be left on the server, unused.
+            if !self.isLockedUser(self.username) { return self.fail(message: self.otherUserMessage) }
             guard let url = self.url else { return }
             let api = ApiClient(baseURL: url)
             // The fields stay bound while setup runs; login must use what setup did.

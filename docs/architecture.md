@@ -133,9 +133,6 @@ CREATE TABLE note_images (note_seq INTEGER REFERENCES notes(seq), image_id TEXT,
 -- Spaces (§7.7). name_key is the name lowercased, so names are unique ignoring case.
 CREATE TABLE spaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, name_key TEXT NOT NULL UNIQUE, icon TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
 
--- Server-wide settings from the apps: the Resend key and sender for emailing notes.
-CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-
 -- Locked notes' keyring (§10.1): the key wrapped under each secret, and the verifier's hash.
 CREATE TABLE lock_keys (id TEXT PRIMARY KEY, kind TEXT, credential_id TEXT, salt TEXT, iterations INTEGER,
                         wrapped TEXT, created_at INTEGER);

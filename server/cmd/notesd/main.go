@@ -200,7 +200,8 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%s removed and signed out. Their notes are still in %s: export them or delete the file.\n",
+		// export finds accounts by name, so it can't reach this one any more.
+		fmt.Printf("%s removed and signed out. Their notes are still in %s; delete it once you have a copy (export before remove-user, or back up the file).\n",
 			u.Username, userdata.Path(o.dataDir, u.ID))
 	case "reset-password":
 		u, err := oneUser(ctx, authSvc, o.username)

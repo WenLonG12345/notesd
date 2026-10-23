@@ -1,6 +1,7 @@
 package userdata
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -123,6 +124,17 @@ func TestUpgradeMovesTheOwnerAndTheirNotes(t *testing.T) {
 		t.Fatalf("tables left in users/1.db: %d, %v", left, err)
 	}
 
+	// Nothing of the moved tables is left in the file's bytes, nor in a WAL.
+	for _, f := range []string{Path(dir, 1), Path(dir, 1) + "-wal"} {
+		b, err := os.ReadFile(f)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if bytes.Contains(b, []byte("re_123456789")) || bytes.Contains(b, []byte("$argon2id$")) {
+			t.Fatalf("%s still holds the Resend key or the password hash", f)
+		}
+	}
+
 	// A second run has nothing to do.
 	if err := Upgrade(ctx, dir, system); err != nil {
 		t.Fatal(err)
@@ -147,6 +159,26 @@ func TestUpgradeFinishesAnInterruptedMove(t *testing.T) {
 	var n int
 	if err := system.R.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("users: %d, %v (imported once)", n, err)
+	}
+}
+
+func TestUpgradeConflictChangesNothing(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	legacyDB(t, dir, true)
+	if err := os.MkdirAll(filepath.Dir(Path(dir, 1)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(Path(dir, 1), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	system := openSystem(t, dir)
+	if err := Upgrade(ctx, dir, system); err == nil {
+		t.Fatal("both notes.db and users/1.db: want an error")
+	}
+	var n int
+	if err := system.R.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("users moved despite the conflict: %d, %v", n, err)
 	}
 }
 

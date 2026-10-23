@@ -112,6 +112,8 @@ class OnboardingViewModel(
             }
         }
         if (errors.isNotEmpty()) return@run fail(*errors.toList().toTypedArray())
+        // Before setup: an account made under another name would be left on the server, unused.
+        if (!isLockedUser(s.username)) return@run fail(message = otherUserMessage())
         val api = clientFor(url!!)
         when (val r = api.setup(s.username.trim(), s.password)) {
             is ApiResult.Ok -> Unit

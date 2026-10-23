@@ -2,7 +2,9 @@
 
 The backend from [docs/architecture.md](../docs/architecture.md): one Go binary
 serving the JSON API, the sync feed, full-text search and the embedded web
-app ([apps/web](../apps/web/README.md)), backed by one SQLite database.
+app ([apps/web](../apps/web/README.md)), backed by SQLite: a system database
+for accounts, sessions and server-wide settings, and one database per account
+for its notes.
 
 This README is the developer and API reference. To install and run notesd,
 see [docs/hosting.md](../docs/hosting.md) and

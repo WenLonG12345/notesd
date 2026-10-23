@@ -32,6 +32,11 @@ func Upgrade(ctx context.Context, dataDir string, system *database.DB) error {
 	} else if err != nil {
 		return err
 	}
+	// Before anything is written: a conflict must leave both files as they are.
+	dest := Path(dataDir, 1)
+	if _, err := os.Stat(dest); err == nil {
+		return fmt.Errorf("both %s and %s exist; keep one", legacy, dest)
+	}
 	var users int
 	if err := system.R.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&users); err != nil {
 		return err
@@ -53,10 +58,6 @@ func Upgrade(ctx context.Context, dataDir string, system *database.DB) error {
 	}
 	// Even with no owner (never set up), the notes stay: the first user
 	// created gets id 1 and with it this file.
-	dest := Path(dataDir, 1)
-	if _, err := os.Stat(dest); err == nil {
-		return fmt.Errorf("both %s and %s exist; keep one", legacy, dest)
-	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return err
 	}
@@ -67,7 +68,27 @@ func Upgrade(ctx context.Context, dataDir string, system *database.DB) error {
 			return err
 		}
 	}
-	return os.Rename(legacy, dest)
+	if err := os.Rename(legacy, dest); err != nil {
+		return err
+	}
+	return scrub(ctx, dest)
+}
+
+// scrub migrates the moved file, which drops the tables now in system.db,
+// and folds its WAL into it. A WAL left by a server that didn't shut down
+// cleanly can still hold those tables' old pages (password and session
+// hashes, the Resend key); the checkpoint overwrites them with the zeroed
+// pages secure_delete wrote.
+func scrub(ctx context.Context, path string) error {
+	db, err := database.Open(ctx, path)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	defer db.Close()
+	if err := db.ScrubWAL(ctx); err != nil {
+		return fmt.Errorf("scrub %s: %w", path, err)
+	}
+	return nil
 }
 
 // importAccounts copies the owner, sessions and settings from the legacy

@@ -38,7 +38,7 @@ sudo -u notesd notesd check --data-dir /var/lib/notesd
 | `create-owner --username NAME` | Creates the first account, an admin, if there isn't one yet. |
 | `add-user --username NAME [--admin]` | Creates another account (password from `NOTESD_PASSWORD` or stdin). It has its own notes, which no other account can see. Admins can also change server-wide settings, such as email. |
 | `list-users` | Lists the accounts, and which are admins. |
-| `remove-user --username NAME` | Deletes an account and signs it out. Its notes stay in `users/<id>.db`, whose path it prints: export them, or delete the file. The last admin can't be removed. |
+| `remove-user --username NAME` | Deletes an account and signs it out. Its notes stay in `users/<id>.db`, whose path it prints, until you delete the file. `export` finds accounts by name, so run it before `remove-user` to keep a copy. The last admin can't be removed. |
 | `version` | Prints the version. |
 
 notesd never deletes or replaces a damaged database by itself. If `check`
@@ -69,10 +69,11 @@ docker exec notesd notesd check
 docker logs -f notesd
 ```
 
-To export your notes to a folder on the host:
+To export an account's notes to a folder on the host (`--username` can be
+left out while there's only one account):
 
 ```bash
-docker exec notesd notesd export --out /tmp/export
+docker exec notesd notesd export --username sam --out /tmp/export
 docker cp notesd:/tmp/export ./notes-export
 ```
 

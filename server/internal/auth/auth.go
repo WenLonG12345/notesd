@@ -38,6 +38,7 @@ var (
 	ErrUnauthenticated    = errors.New("not authenticated")
 	ErrOwnerExists        = errors.New("an owner account already exists")
 	ErrNoUser             = errors.New("no such user")
+	ErrNoOwner            = errors.New("there's no account yet: create the first one, an admin, with create-owner or the app's setup")
 	ErrUsernameTaken      = errors.New("that username is taken")
 	ErrLastAdmin          = errors.New("can't remove the last admin")
 	ErrNotFound           = errors.New("session not found")
@@ -121,7 +122,8 @@ func (s *Service) CreateOwner(ctx context.Context, username, password string) er
 	return err
 }
 
-// AddUser creates another account. Only the command line calls it.
+// AddUser creates another account, once the first exists. Only the command
+// line calls it.
 func (s *Service) AddUser(ctx context.Context, username, password string, admin bool) (User, error) {
 	return s.create(ctx, username, password, admin, false)
 }
@@ -147,6 +149,11 @@ func (s *Service) create(ctx context.Context, username, password string, admin, 
 		}
 		if first && n > 0 {
 			return ErrOwnerExists
+		}
+		// Setup creates the first account, the admin; added ones come after,
+		// or the server could be left with no admin at all.
+		if !first && n == 0 {
+			return ErrNoOwner
 		}
 		if taken > 0 {
 			return ErrUsernameTaken

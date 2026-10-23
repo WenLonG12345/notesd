@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -92,6 +93,9 @@ func TestUserCommands(t *testing.T) {
 	cmd := func(args ...string) error { return run(append(args, "--data-dir", dir)) }
 	t.Setenv("NOTESD_PASSWORD", "correct horse battery")
 
+	if err := cmd("add-user", "--username", "kid"); !errors.Is(err, auth.ErrNoOwner) {
+		t.Fatalf("an added account before the owner would leave no admin: %v", err)
+	}
 	if err := cmd("create-owner", "--username", "owner"); err != nil {
 		t.Fatal(err)
 	}
@@ -101,8 +105,8 @@ func TestUserCommands(t *testing.T) {
 	if err := cmd("add-user", "--username", "kid"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd("add-user", "--username", "KID"); err == nil {
-		t.Fatal("a taken username must be refused")
+	if err := cmd("add-user", "--username", "KID"); !errors.Is(err, auth.ErrUsernameTaken) {
+		t.Fatalf("a taken username must be refused: %v", err)
 	}
 	if err := cmd("reset-password"); err == nil {
 		t.Fatal("with two users, reset-password needs --username")
@@ -119,11 +123,8 @@ func TestUserCommands(t *testing.T) {
 	if err := cmd("export", "--out", filepath.Join(dir, "out")); err == nil {
 		t.Fatal("with two users, export needs --username")
 	}
-	if err := cmd("remove-user", "--username", "owner"); err == nil {
-		t.Fatal("the last admin must not be removable")
-	}
-	if err := cmd("remove-user", "--username", "kid"); err != nil {
-		t.Fatal(err)
+	if err := cmd("remove-user", "--username", "owner"); !errors.Is(err, auth.ErrLastAdmin) {
+		t.Fatalf("the last admin must not be removable: %v", err)
 	}
 
 	db, err := database.OpenSystem(ctx, filepath.Join(dir, "system.db"))
@@ -132,6 +133,17 @@ func TestUserCommands(t *testing.T) {
 	}
 	defer db.Close()
 	a := auth.NewService(db)
+	kid, err := a.UserByName(ctx, "kid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CheckPassword(ctx, kid.ID, "a whole new password"); err != nil {
+		t.Fatalf("kid's password should be the reset one: %v", err)
+	}
+
+	if err := cmd("remove-user", "--username", "kid"); err != nil {
+		t.Fatal(err)
+	}
 	list, err := a.ListUsers(ctx)
 	if err != nil || len(list) != 1 || list[0].Username != "owner" || !list[0].IsAdmin {
 		t.Fatalf("users: %+v, %v", list, err)

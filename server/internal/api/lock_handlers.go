@@ -82,6 +82,6 @@ func (s *Server) resetLocks(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	s.log.Warn("locked notes keyring reset")
+	s.log.Warn("locked notes keyring reset", "username", sessionFrom(r.Context()).Username)
 	w.WriteHeader(http.StatusNoContent)
 }
