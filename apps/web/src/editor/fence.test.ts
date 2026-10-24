@@ -1,5 +1,5 @@
 import { Editor } from '@tiptap/core'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import fences from '../../../../shared/markdown-fixtures/fences.json'
 import { editorExtensions } from './extensions'
 import { buildFence, fenceOpener, parseFence } from './fence'
@@ -37,16 +37,27 @@ describe('fenceOpener', () => {
   })
 })
 
+const mounted: Editor[] = []
+afterEach(() => {
+  for (const e of mounted.splice(0)) {
+    const element = e.options.element
+    e.destroy()
+    if (element instanceof Element) element.remove()
+  }
+})
+
 // `typed` is a paragraph's text as typed, not Markdown: ``` alone would parse as a fence.
 function open(markdown: string, typed?: string) {
   const element = document.createElement('div')
   document.body.append(element)
   const doc = typed === undefined ? parse(markdown).toJSON() : { content: [{ type: 'paragraph', content: [{ type: 'text', text: typed }] }] }
-  return new Editor({
+  const e = new Editor({
     element,
     extensions: editorExtensions,
     content: { type: 'doc', content: [{ type: 'title', content: [{ type: 'text', text: 'Note' }] }, ...doc.content] },
   })
+  mounted.push(e)
+  return e
 }
 const body = (e: Editor) => {
   const doc = e.state.doc
@@ -93,6 +104,35 @@ describe('the code box', () => {
     const input = e.view.dom.querySelector('input[data-lang]')
     const list = document.getElementById(input?.getAttribute('list') ?? '')
     await expect.poll(() => list?.querySelector('option[value="go"]')).not.toBeNull()
+  })
+
+  it('a code box left with a language but no code removes the block', () => {
+    const e = open('', '```go')
+    e.commands.focus('end')
+    key(e.view.dom, 'Enter')
+    key(box(e), 'Escape')
+    expect(body(e)).not.toContain('```')
+  })
+
+  it('emptying the only block in the body or a quote leaves an empty line, not an invalid note', () => {
+    for (const markdown of ['```js\nx\n```', '> ```js\n> x\n> ```']) {
+      const e = open(markdown)
+      ;(e.view.dom.querySelector('pre[data-fence]') as HTMLElement).click()
+      box(e).value = ''
+      key(box(e), 'Escape')
+      expect(() => e.state.doc.check()).not.toThrow()
+      expect(body(e)).not.toContain('```')
+      expect(e.state.selection.$from.parent.type.name).toBe('paragraph')
+    }
+  })
+
+  it('highlights a known language and leaves an unknown one plain', async () => {
+    const e = open('```js\nconst a = "x"\n```\n\n```foobar\nconst a = "x"\n```')
+    const [known, unknown] = e.view.dom.querySelectorAll('pre[data-fence] code')
+    await expect.poll(() => known?.querySelector('.hljs-keyword')?.textContent).toBe('const')
+    expect(known?.querySelector('.hljs-string')?.textContent).toBe('"x"')
+    expect(unknown?.children.length).toBe(0)
+    expect(unknown?.textContent).toBe('const a = "x"')
   })
 
   it('other raw blocks stay read-only', () => {

@@ -180,13 +180,16 @@ export function rawBlockView(initial: PMNode, view: EditorView, getPos: () => nu
       show()
       if (pos === undefined) return
       const tr = view.state.tr
-      const empty = !newLang && !code.value
-      if (empty) tr.delete(pos, pos + node.nodeSize)
+      // No code left: the block goes, leaving an empty line where it was, so a
+      // note or quote it was alone in stays valid and the cursor has a home.
+      const empty = !code.value
+      const paragraph = view.state.schema.nodes.paragraph
+      if (empty && paragraph) tr.replaceWith(pos, pos + node.nodeSize, paragraph.create())
       else if (changed) tr.setNodeMarkup(pos, undefined, { source: buildFence(newLang, code.value) })
       if (refocus) {
-        // The cursor goes after the block (or where it was, once an empty one is gone).
-        const after = empty ? pos : pos + (tr.doc.nodeAt(pos)?.nodeSize ?? 0)
-        tr.setSelection(Selection.near(tr.doc.resolve(after)))
+        // The cursor goes into that empty line, or after the block.
+        const at = empty ? pos + 1 : pos + (tr.doc.nodeAt(pos)?.nodeSize ?? 0)
+        tr.setSelection(Selection.near(tr.doc.resolve(at)))
       }
       view.dispatch(tr)
       if (refocus) view.focus()
