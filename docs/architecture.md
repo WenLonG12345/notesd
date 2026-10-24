@@ -353,6 +353,8 @@ A restricted, documented dialect based on CommonMark with selected GitHub Flavor
 
 Images the apps add (§7.6) are first-class. Unsupported constructs (code spans and fences, tables, other images, horizontal rules, raw HTML, and anything else outside the subset) are kept as opaque raw blocks or raw inline runs: shown read-only, not editable, and written back byte-for-byte on save. Turning them into ordinary text is not enough. The serializer would escape their syntax characters and fold their line breaks, so one save on any client would corrupt a note written elsewhere (for example a code fence pasted on another device).
 
+Code fences are the one raw block the web app also writes. It shows a fence's code without the fence lines, with the info string's first word as a language label and syntax highlighting. Typing ```` ``` ```` (optionally with a language) alone in a paragraph and pressing Enter starts a fence, and clicking one opens a code box for its language and code. Leaving the box unchanged keeps the source byte-for-byte; a change writes the whole fence back as ```` ```lang ```` … ```` ``` ````, with a longer fence when the code holds one, and an emptied box removes the block. The rest stays read-only. How a fence is split for display is pinned by `shared/markdown-fixtures/fences.json`.
+
 ### 7.2 Editing model
 
 Markdown is parsed once into the native model (TextKit attributed strings on iOS, spans on Android, ProseMirror on web) and serialized during autosave. Editing must preserve cursor position, selection, undo/redo and active IME composition; saving never rebuilds the editor UI or resets the selection.
