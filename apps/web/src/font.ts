@@ -14,7 +14,7 @@ export function readFont(): FontChoice {
   }
 }
 
-/** The note editor's font (editor.module.css reads data-font); the rest of the UI keeps its own. */
+/** The note editor's font (tokens.css reads data-font); the rest of the UI keeps its own. */
 export function applyFont(choice: FontChoice) {
   if (choice === 'sans') document.documentElement.removeAttribute('data-font')
   else document.documentElement.dataset.font = choice
