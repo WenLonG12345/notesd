@@ -42,6 +42,23 @@ describe('settings', () => {
     for (const m of metas) m.remove()
   })
 
+  it('picks the font for notes and remembers it', async () => {
+    const { user } = await inSettings('Appearance')
+    const group = screen.getByRole('radiogroup', { name: 'Font' })
+    const radio = (name: string) => within(group).getByRole<HTMLInputElement>('radio', { name })
+    expect(radio('Sans').checked).toBe(true)
+
+    await user.click(radio('Mono'))
+    expect(radio('Mono').checked).toBe(true)
+    expect(document.documentElement.dataset.font).toBe('mono')
+    expect(localStorage.getItem('notes.font')).toBe('mono')
+
+    // Sans is the default: nothing to store.
+    await user.click(within(group).getByRole('radio', { name: 'Sans' }))
+    expect(document.documentElement.dataset.font).toBeUndefined()
+    expect(localStorage.getItem('notes.font')).toBeNull()
+  })
+
   it('changes the password and signs out every other session', async () => {
     const { server, user, password } = await inSettings()
 

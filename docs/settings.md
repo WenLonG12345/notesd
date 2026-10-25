@@ -63,6 +63,7 @@ the list is its own screen and a category opens on top of it with a back button.
 | Spaces: list, new, edit, delete | Spaces | account | ✓ | ✓ | ✓ |
 | Email via Resend (API key, From) | Integrations | **server** | ✓ | ✓ | ✓ |
 | Theme | Appearance | device | ✓ | ✓ | ✓ |
+| Note font (System, Sans, Serif, Book, Legible, Mono; the note's title and text only) | Appearance | device | ✓ | – | – |
 | Sync status, last synced, last error, Sync now | Sync & data | device | – | ✓ | – |
 | Remove all data from this device | Sync & data | device | – | ✓ | ✓ |
 | App version | About | device | – | ✓ | ✓ |
