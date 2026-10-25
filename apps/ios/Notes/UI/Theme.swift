@@ -40,6 +40,14 @@ nonisolated enum Palette {
     /// Behind #tags (web: .prose [data-tag]).
     static let tagBg = pair(0x4DEF_B146, 0x4DEF_B146)
 
+    // A code fence is dark in both themes, as on the web (--code, --code-ink, --code-dim).
+    static let code = pair(0xFF24_211F, 0xFF0B_0C0E)
+    static let codeInk = pair(0xFFD8_D4CD, 0xFFD8_D4CD)
+    static let codeDim = pair(0xFF8F_8C85, 0xFF8F_8C85)
+    static let codeKeyword = pair(0xFFC3_A5F9, 0xFFC3_A5F9)
+    static let codeString = pair(0xFF8B_D28D, 0xFF8B_D28D)
+    static let codeNumber = pair(0xFFFB_A962, 0xFFFB_A962)
+
     private static func pair(_ light: UInt32, _ dark: UInt32) -> UIColor {
         UIColor { $0.userInterfaceStyle == .dark ? color(dark) : color(light) }
     }

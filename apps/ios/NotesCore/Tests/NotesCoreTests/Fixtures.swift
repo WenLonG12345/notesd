@@ -18,6 +18,29 @@ enum Fixtures {
     static let plaintext = load("plaintext.json")
     static let tags = load("tags.json")
 
+    struct FenceCase: Decodable {
+        struct Shown: Decodable, Equatable {
+            var lang: String
+            var code: String
+        }
+        var name: String
+        var source: String
+        var fence: Shown?
+    }
+
+    private struct FenceSuite: Decodable {
+        var cases: [FenceCase]
+    }
+
+    static let fences: [FenceCase] = {
+        let url = sharedDir.appending(path: "markdown-fixtures/fences.json")
+        do {
+            return try JSONDecoder().decode(FenceSuite.self, from: Data(contentsOf: url)).cases
+        } catch {
+            fatalError("can't read \(url.path): \(error)")
+        }
+    }()
+
     /// The repository's shared/ directory, found from this file's path.
     static let sharedDir: URL = {
         var url = URL(fileURLWithPath: #filePath)

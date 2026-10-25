@@ -179,6 +179,24 @@ class ScreenshotTest {
         shoot("editor-$suffix")
     }
 
+    private fun code(suffix: String, qualifiers: String?) = runBlocking {
+        graph.setOnboardingDismissed(true)
+        val md = "Two ways to say hello.\n\n```go\nfunc main() {\n\t// greet\n\tfmt.Println(\"hi\", 42)\n}\n```\n\n" +
+            "```python\ndef greet(name):\n    return f\"hi {name}\"  # friendly\n```\n\n```\nplain, no language\n```\n"
+        val at = System.currentTimeMillis()
+        graph.sync.store.applyPage(SyncPage(listOf(RemoteNote("c", "Code", md, 1, 1, at, at)), 1, false, "g"))
+        launch(qualifiers)
+        compose.waitUntilExactlyOneExists(hasText("Code"))
+        compose.onNode(hasText("Code")).performClick()
+        compose.waitUntilExactlyOneExists(hasContentDescription("Undo"))
+        waitForEditor()
+        shoot("editor-code-$suffix")
+    }
+
+    @Test fun editorCodeLight() = code("light", null)
+
+    @Test fun editorCodeDark() = code("dark", "+night")
+
     @Test fun editorLight() = editor("light", null)
 
     @Test fun editorDark() = editor("dark", "+night")

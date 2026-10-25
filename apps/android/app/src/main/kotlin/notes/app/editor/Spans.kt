@@ -19,6 +19,7 @@ import android.view.View
 import kotlin.math.roundToInt
 import notes.core.doc.Container
 import notes.core.doc.Leaf
+import notes.core.markdown.Fence
 
 /** Spans the editor owns. The codec reads only these; anything else in the text is ignored. */
 interface EditorSpan
@@ -46,7 +47,9 @@ class BlockSpan(val path: List<Container>, val leaf: Leaf, val marker: Marker?, 
     fun sameAs(path: List<Container>, leaf: Leaf, marker: Marker?) =
         this.path == path && this.leaf == leaf && this.marker == marker
 
-    override fun getLeadingMargin(first: Boolean): Int = margin().toInt()
+    private val fence by lazy { (leaf as? Leaf.Raw)?.let { Fence.parse(it.source) } }
+
+    override fun getLeadingMargin(first: Boolean): Int = (margin() + if (leaf is Leaf.Raw) style.rawPad else 0f).toInt()
 
     fun margin(): Float = path.sumOf {
         (if (it is Container.Quote) style.quoteIndent else style.itemIndent).toDouble()
@@ -172,10 +175,21 @@ class BlockSpan(val path: List<Container>, val leaf: Leaf, val marker: Marker?, 
     ) {
         if (leaf !is Leaf.Raw) return
         val saved = paint.color
-        paint.color = style.hover
+        paint.color = if (fence != null) style.code else style.hover
         val margin = margin()
-        canvas.drawRect(left + margin, top.toFloat(), right.toFloat(), bottom.toFloat(), paint)
+        val first = (text as? Spanned)?.getSpanStart(this) == start
+        val boxTop = top + if (first) style.rawGap else 0f
+        canvas.drawRect(left + margin, boxTop, right.toFloat(), bottom.toFloat(), paint)
         paint.color = saved
+        // The language label sits in the room LeafStyleSpan leaves above the first line.
+        val lang = fence?.lang.orEmpty()
+        if (lang.isEmpty() || !first) return
+        val label = TextPaint(paint)
+        label.color = style.codeDim
+        label.typeface = style.typeface
+        label.textSize = paint.textSize * style.codeLabelScale
+        label.letterSpacing = 0.02f
+        canvas.drawText(lang, left + margin + style.rawPad, boxTop + style.rawGap - label.ascent(), label)
     }
 }
 
@@ -190,13 +204,18 @@ class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, val quoted: Boolean, priva
     fun sameAs(leaf: Leaf, dim: Boolean, quoted: Boolean) =
         this.leaf == leaf && this.dim == dim && this.quoted == quoted
 
+    private val fence by lazy { (leaf as? Leaf.Raw)?.let { Fence.parse(it.source) } }
+
     override fun updateMeasureState(tp: TextPaint) = apply(tp)
 
     override fun updateDrawState(tp: TextPaint) {
         apply(tp)
         when {
-            leaf is Leaf.Raw -> tp.color = style.ink2
+            // A fence's colours come from the codec's spans (SpanCodec.codeSpans).
+            leaf is Leaf.Raw -> if (fence == null) tp.color = style.ink2
+
             dim -> tp.color = style.ink3
+
             quoted && leaf == Leaf.Paragraph -> tp.color = style.ink2
         }
     }
@@ -238,7 +257,10 @@ class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, val quoted: Boolean, priva
         val height = fm.descent - fm.ascent
         val above = when (leaf) {
             is Leaf.Heading -> height * 0.3f
-            is Leaf.Raw -> height * 0.3f
+
+            // Room for the language label BlockSpan draws.
+            is Leaf.Raw -> style.rawGap + height * if (fence?.lang.isNullOrEmpty()) 0.3f else 1.1f
+
             else -> 0f
         }.toInt()
         val gap = if (leaf is Leaf.Heading) style.dp(6f).toInt() else 0
@@ -250,6 +272,8 @@ class LeafStyleSpan(val leaf: Leaf, val dim: Boolean, val quoted: Boolean, priva
         if (above + gap > 0 && start == spanned.getSpanStart(this)) {
             fm.ascent -= above + gap
             fm.top -= above + gap
+            // Layout spaces lines by their height; keep the raw block's room out of that.
+            if (leaf is Leaf.Raw) fm.descent -= (above * (style.lineSpacing - 1) / style.lineSpacing).toInt()
         }
         // Headings space their lines as on the web (line-height 1.2, then 0.2em
         // before the next block), not by the view's line spacing, which would put
@@ -343,5 +367,11 @@ fun endMarkerStart(text: Spanned): Int {
     return if (s == text.length - 1 && text.getSpanEnd(span) == text.length && text[s] == END_MARKER) s else -1
 }
 
-/** Covers a raw block's source exactly, so edits inside it can be refused. */
-class RawBlockSpan(val source: String) : EditorSpan
+/**
+ * Covers a raw block's text exactly, so edits inside it can be refused. The
+ * text is [shown]: the source, or a code fence's code without its fence lines.
+ */
+class RawBlockSpan(val source: String) : EditorSpan {
+    // A space for an empty fence: a span over no text would be dropped.
+    val shown: String = Fence.parse(source)?.code?.ifEmpty { " " } ?: source
+}
