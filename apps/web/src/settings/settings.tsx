@@ -6,6 +6,7 @@ import type { Session } from '../api/types'
 import { platformBadge, sessionName } from '../api/user-agent'
 import { useAuth } from '../auth/auth-context'
 import { genericMessage } from '../auth/errors'
+import { applyFont, readFont, type FontChoice } from '../font'
 import { useLockStatus } from '../locks/session'
 import { setEmailSettings, useEmailSettings } from '../notes/email-settings'
 import { relativeTime } from '../notes/relative-time'
@@ -247,7 +248,12 @@ function SettingsPage({
     case 'integrations':
       return <EmailCard />
     case 'appearance':
-      return <Appearance theme={theme} onChange={onTheme} />
+      return (
+        <>
+          <Appearance theme={theme} onChange={onTheme} />
+          <FontCard />
+        </>
+      )
   }
 }
 
@@ -279,6 +285,53 @@ function Appearance({ theme, onChange }: { theme: ThemeChoice; onChange: (theme:
         ))}
       </div>
       <span className={styles.muted}>Only in this browser. Your other devices keep their own theme.</span>
+    </Surface>
+  )
+}
+
+const fonts: { value: FontChoice; label: string; face: string }[] = [
+  { value: 'system', label: 'System', face: 'This device’s font' },
+  { value: 'sans', label: 'Sans', face: 'Instrument Sans' },
+  { value: 'serif', label: 'Serif', face: 'Instrument Serif' },
+  { value: 'book', label: 'Book', face: 'Literata' },
+  { value: 'legible', label: 'Legible', face: 'Atkinson Hyperlegible Next' },
+  { value: 'mono', label: 'Mono', face: 'JetBrains Mono' },
+]
+
+/** A short note in the picked font, then each choice set in its own face (tokens.css reads data-font). */
+function FontCard() {
+  const [font, setFont] = useState<FontChoice>(readFont)
+  return (
+    <Surface as="section" className={styles.card} aria-labelledby="font-kicker">
+      <Kicker id="font-kicker">Font</Kicker>
+      <div className={styles.fontSample} data-font={font} aria-hidden="true">
+        <span className={styles.fontSampleTitle}>Saturday market</span>
+        <span className={styles.fontSampleText}>
+          Sourdough, ripe tomatoes and <em>something green</em>. Ask about the late plums.
+        </span>
+        <span className={styles.fontSampleFace}>{fonts.find((f) => f.value === font)?.face}</span>
+      </div>
+      <div className={styles.fontOptions} role="radiogroup" aria-labelledby="font-kicker">
+        {fonts.map((f) => (
+          <label key={f.value} className={styles.fontOption} data-font={f.value}>
+            <input
+              type="radio"
+              name="note-font"
+              className="visually-hidden"
+              checked={font === f.value}
+              onChange={() => {
+                setFont(f.value)
+                applyFont(f.value)
+              }}
+            />
+            <span className={styles.fontGlyph} aria-hidden="true">
+              Aa
+            </span>
+            <span className={styles.fontName}>{f.label}</span>
+          </label>
+        ))}
+      </div>
+      <span className={styles.muted}>For the title and text of notes. Only in this browser.</span>
     </Surface>
   )
 }

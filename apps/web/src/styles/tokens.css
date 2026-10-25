@@ -4,6 +4,8 @@
   --font-sans: 'Instrument Sans Variable', system-ui, sans-serif;
   --font-serif: 'Instrument Serif', Georgia, serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, Menlo, monospace;
+  --font-book: 'Literata Variable', Georgia, serif;
+  --font-legible: 'Atkinson Hyperlegible Next Variable', system-ui, sans-serif;
 
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* A damped spring, slight overshoot: things that appear or move settle into place. */
@@ -66,6 +68,39 @@
   --status-saving-ink: var(--link);
   --status-failed-ink: var(--danger);
   --status-conflict-ink: var(--warn-ink);
+}
+
+/* The note font picked in Settings (font.ts): data-font on <html> sets it for the editor, and on
+   any element for a preview of one choice. Only the note reads these; the UI keeps --font-*. */
+:root,
+[data-font='sans'] {
+  --note-sans: var(--font-sans);
+  --note-serif: var(--font-serif);
+}
+
+[data-font='system'] {
+  --note-sans: system-ui, sans-serif;
+  --note-serif: system-ui, sans-serif;
+}
+
+[data-font='serif'] {
+  --note-sans: var(--font-serif);
+  --note-serif: var(--font-serif);
+}
+
+[data-font='book'] {
+  --note-sans: var(--font-book);
+  --note-serif: var(--font-book);
+}
+
+[data-font='legible'] {
+  --note-sans: var(--font-legible);
+  --note-serif: var(--font-legible);
+}
+
+[data-font='mono'] {
+  --note-sans: var(--font-mono);
+  --note-serif: var(--font-mono);
 }
 
 /* Same values twice: the OS preference when no theme was picked, and an

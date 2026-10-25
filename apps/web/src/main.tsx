@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './app'
+import { applyFont, readFont } from './font'
 import { applyTheme, readTheme } from './theme'
 import './styles/fonts.css'
 import './styles/tokens.css'
@@ -9,6 +10,7 @@ import './styles/boot.css'
 
 // Before the first render so a picked theme doesn't flash the OS one.
 applyTheme(readTheme())
+applyFont(readFont())
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root missing from index.html')

@@ -184,6 +184,12 @@
 
 .prose {
   min-height: 300px;
+  /* The note font picked in Settings (tokens.css). Every rule below names --font-sans or
+     --font-serif, so swapping both swaps the whole note; code keeps --font-mono. Set here, not
+     inherited from body, which resolved --font-sans before the swap. */
+  --font-sans: var(--note-sans);
+  --font-serif: var(--note-serif);
+  font-family: var(--font-sans);
   font-size: 17px;
   line-height: 1.6;
   color: var(--ink);
