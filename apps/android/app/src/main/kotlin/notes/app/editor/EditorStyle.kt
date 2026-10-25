@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.util.TypedValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.res.ResourcesCompat
 import notes.app.R
@@ -20,7 +21,8 @@ class EditorStyle(
     val typeface: Typeface,
     val serif: Typeface = Typeface.SERIF,
     val monospace: Typeface = Typeface.MONOSPACE,
-    val fontScale: Float = 1f
+    /** The view's body size in px: 17sp, scaled as the view scales it. */
+    val bodySize: Float = 17f * density
 ) {
     fun dp(v: Float) = v * density
 
@@ -72,7 +74,7 @@ class EditorStyle(
     /** Four monospace spaces, as tab-size: 4 on the web. */
     val tabWidth = Paint().apply {
         typeface = monospace
-        textSize = dp(17f) * fontScale * rawScale
+        textSize = bodySize * rawScale
     }.measureText("    ").toInt()
 
     /** The view's line spacing multiplier; spans that size lines account for it. */
@@ -92,7 +94,8 @@ class EditorStyle(
                 typeface = font(R.font.notes_sans, Typeface.DEFAULT),
                 serif = font(R.font.notes_serif, Typeface.SERIF),
                 monospace = font(R.font.jetbrains_mono, Typeface.MONOSPACE),
-                fontScale = context.resources.configuration.fontScale
+                // As setTextSize(COMPLEX_UNIT_SP, 17f) does, nonlinear font scaling included.
+                bodySize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 17f, context.resources.displayMetrics)
             )
         }
     }

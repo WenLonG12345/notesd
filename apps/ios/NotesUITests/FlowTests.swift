@@ -57,10 +57,13 @@ final class FlowTests: XCTestCase {
     private var token: String?
 
     /// How many pixels are about the picture's blue (0.2, 0.4, 0.7).
-    private func bluePixels(_ image: UIImage) -> Int {
+    private func bluePixels(_ image: UIImage) -> Int { pixels(image, near: (51, 102, 178)) }
+
+    /// How many pixels are about `rgb`, in a copy of `image` shrunk `shrink` times.
+    private func pixels(_ image: UIImage, near rgb: (Int, Int, Int), shrink: Int = 4) -> Int {
         guard let cg = image.cgImage else { return 0 }
-        let w = cg.width / 4
-        let h = cg.height / 4
+        let w = cg.width / shrink
+        let h = cg.height / shrink
         var px = [UInt8](repeating: 0, count: w * h * 4)
         let ctx = CGContext(
             data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
@@ -68,7 +71,7 @@ final class FlowTests: XCTestCase {
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
         var n = 0
         for i in stride(from: 0, to: px.count, by: 4)
-        where abs(Int(px[i]) - 51) < 25 && abs(Int(px[i + 1]) - 102) < 25 && abs(Int(px[i + 2]) - 178) < 25 {
+        where abs(Int(px[i]) - rgb.0) < 25 && abs(Int(px[i + 1]) - rgb.1) < 25 && abs(Int(px[i + 2]) - rgb.2) < 25 {
             n += 1
         }
         return n
@@ -419,6 +422,12 @@ final class FlowTests: XCTestCase {
         row.tap()
         XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 5))
         sleep(1)
+        // The fences are drawn into the text: look for the keyword purple and the string green,
+        // at full size, as thin strokes fade into the block when shrunk.
+        // Which fence shows what (labels, code without fence lines) is EditorTests' job.
+        let shot = app.screenshot().image
+        XCTAssertGreaterThan(pixels(shot, near: (195, 165, 249), shrink: 1), 100, "keywords are highlighted")
+        XCTAssertGreaterThan(pixels(shot, near: (139, 210, 141), shrink: 1), 100, "strings are highlighted")
         screenshot("code fence")
         try audit("code fence")
     }

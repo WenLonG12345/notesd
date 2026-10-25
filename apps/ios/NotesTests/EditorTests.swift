@@ -53,6 +53,18 @@ struct EditorTests {
         view.selectedRange = (view.textStorage.string as NSString).range(of: text)
     }
 
+    @Test func codeFencesShowTheirCodeAndSaveTheirSource() {
+        let md = "```go\nfunc main() {}\n```\n\n```python\nx = 1\n```\n\n```\nplain\n```\n\n| a |\n| - |\n"
+        load(md)
+        var labels: [String?] = []
+        view.textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: view.textStorage.length)) {
+            value, _, _ in
+            if let raw = value as? RawAttachment { labels.append(raw.accessibilityLabel) }
+        }
+        #expect(labels == ["go code: func main() {}", "python code: x = 1", "Code: plain", nil])
+        #expect(markdown == md)
+    }
+
     @Test func fixturesSurviveTheEditor() {
         var failures: [String] = []
         for c in Fixtures.roundtrip {
