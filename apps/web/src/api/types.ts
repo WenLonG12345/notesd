@@ -81,7 +81,13 @@ export type Session = {
   lastUsedAt: number
 }
 
-export type SessionInfo = { session: Session; username: string; csrfToken: string }
+export type SessionInfo = {
+  session: Session
+  username: string
+  csrfToken: string
+  /** The server's build version, such as v0.11.0. */
+  serverVersion?: string
+}
 
 export type ErrorBody = {
   error: string

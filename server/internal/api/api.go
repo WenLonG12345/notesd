@@ -30,6 +30,8 @@ type Config struct {
 	PublicURL *url.URL
 	// ResendURL overrides Resend's API base URL (tests).
 	ResendURL string
+	// Version is the server's build version, shown to signed-in clients.
+	Version string
 }
 
 // Server serves the API and web app.

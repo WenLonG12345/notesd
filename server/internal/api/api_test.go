@@ -36,7 +36,7 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	return newEnvWith(t, api.Config{})
+	return newEnvWith(t, api.Config{Version: "v1.2.3"})
 }
 
 func newEnvWith(t *testing.T, cfg api.Config) *env {
@@ -230,7 +230,7 @@ func TestWebSessionCSRF(t *testing.T) {
 	}
 	// The session endpoint hands the token back after a page reload.
 	r := c.do("GET", "/api/v1/auth/session", nil)
-	if r.status != 200 || r.body["csrfToken"] != csrf || r.body["username"] != owner {
+	if r.status != 200 || r.body["csrfToken"] != csrf || r.body["username"] != owner || r.body["serverVersion"] != "v1.2.3" {
 		t.Fatalf("session: %s", r.raw)
 	}
 	c.csrf = csrf

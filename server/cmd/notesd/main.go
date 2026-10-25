@@ -428,7 +428,7 @@ func serve(ctx context.Context, system *database.DB, users *userdata.Registry, a
 		}
 	}
 	srv := &http.Server{
-		Handler:           api.New(system, users, authSvc, log, api.Config{PublicURL: public, ResendURL: o.resendURL}).Handler(),
+		Handler:           api.New(system, users, authSvc, log, api.Config{PublicURL: public, ResendURL: o.resendURL, Version: version}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,
