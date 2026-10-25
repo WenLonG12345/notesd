@@ -226,8 +226,8 @@ function ServerVersion() {
   )
 }
 
-/** How long an update may take, restart included, before the card says it didn't finish. */
-const UPDATE_TIMEOUT = 3 * 60_000
+/** How long an update usually takes, restart included, before the card says to check the server. */
+const UPDATE_SLOW = 3 * 60_000
 
 /**
  * A newer release, on a server set up to update itself (docs/operations.md, Updating from Settings).
@@ -236,7 +236,8 @@ const UPDATE_TIMEOUT = 3 * 60_000
  */
 function UpdateCard() {
   const [status, setStatus] = useState<UpdateStatus>()
-  const [phase, setPhase] = useState<'idle' | 'updating' | 'failed'>('idle')
+  const [phase, setPhase] = useState<'idle' | 'updating'>('idle')
+  const [slow, setSlow] = useState(false)
   const [error, setError] = useState<string>()
 
   useEffect(() => {
@@ -256,20 +257,20 @@ function UpdateCard() {
 
   useEffect(() => {
     if (phase !== 'updating' || !status) return
-    const started = Date.now()
+    // A big data directory can take a while to back up: past UPDATE_SLOW the card only warns, and a
+    // late restart still reloads the page.
+    const warn = setTimeout(() => setSlow(true), UPDATE_SLOW)
     const timer = setInterval(() => {
-      if (Date.now() - started > UPDATE_TIMEOUT) {
-        clearInterval(timer)
-        setPhase('failed')
-        return
-      }
       // Fails while the server restarts; the next tick asks again.
       settings.update().then(
         (s) => s.current !== status.current && window.location.reload(),
         () => {},
       )
     }, 3000)
-    return () => clearInterval(timer)
+    return () => {
+      clearTimeout(warn)
+      clearInterval(timer)
+    }
   }, [phase, status])
 
   if (!status?.enabled || !(status.newer || phase !== 'idle')) return null
@@ -309,9 +310,10 @@ function UpdateCard() {
           Updating to {status.latest}. Notes can’t be saved for a moment; this page reloads when the server is back.
         </p>
       )}
-      {phase === 'failed' && (
+      {slow && (
         <p role="alert" className={styles.error}>
-          The update didn’t finish. On the server, run <code>journalctl -u notesd-update</code>.
+          This is taking longer than usual. To see how it’s going, run{' '}
+          <code>journalctl -u notesd-update</code> on the server.
         </p>
       )}
       {error && (

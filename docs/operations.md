@@ -80,12 +80,17 @@ service:
 - installs the newest release from GitHub, never an older one, and only if
   it matches the release's `SHA256SUMS`;
 - backs up the data directory and binary to `/var/backups/notesd` first;
-- puts both back if the new version doesn't start.
+- puts both back if the new version doesn't start;
+- keeps the newest three backups and deletes older ones.
 
-To set it up, install the script:
+To set it up, download the script from the same release as your binary
+and check it against that release's `SHA256SUMS`, then install it:
 
 ```bash
-sudo install -m 755 scripts/notesd-update /usr/local/sbin/notesd-update
+curl -fLO https://github.com/cassiozen/notesd/releases/latest/download/notesd-update
+curl -fLO https://github.com/cassiozen/notesd/releases/latest/download/SHA256SUMS
+grep ' notesd-update$' SHA256SUMS | sha256sum -c -
+sudo install -m 755 notesd-update /usr/local/sbin/notesd-update
 ```
 
 Create `/etc/systemd/system/notesd-update.service`:

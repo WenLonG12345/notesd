@@ -48,18 +48,26 @@ chmod 755 "$tmp/$asset"
 "$tmp/$asset" version
 
 echo "updating notesd $current → $latest"
-systemctl stop "$service"
 install -d -m 700 "$backups"
 backup=$backups/notesd-$current-$(date +%Y%m%d-%H%M%S)
+systemctl stop "$service"
+# Until the new binary is in place, a failure (a full disk, say) leaves the old one running again.
+trap 'rm -f "$backup.tgz"; systemctl start "$service"' ERR
 cp -a "$bin" "$backup.bin"
 tar czf "$backup.tgz" -C "$data" .
+trap 'install -m 755 "$backup.bin" "$bin"; systemctl start "$service"' ERR
 install -m 755 "$tmp/$asset" "$bin"
-systemctl start "$service"
+trap - ERR
+# A failed start is checked below, so it's rolled back rather than ending the script here.
+systemctl start "$service" || true
 
 # Type=simple units report started at once; give it time to open (and upgrade) the database.
 sleep 10
 if systemctl is-active --quiet "$service"; then
   echo "notesd $latest is running; backup in $backup.tgz"
+  # Each backup is a whole data directory: keep the newest three.
+  find "$backups" -name 'notesd-*.tgz' -printf '%T@ %p\n' | sort -rn | tail -n +4 | cut -d' ' -f2- |
+    while read -r old; do rm -f "$old" "${old%.tgz}.bin"; done
   exit 0
 fi
 

@@ -78,7 +78,9 @@ func (rs *releases) latest(ctx context.Context) string {
 		return rs.tag
 	}
 	rs.checked = time.Now() // failures too, so an outage isn't asked every time
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rs.url, nil)
+	// Not cancelled with the caller's request: a closed tab would otherwise
+	// be remembered as a failed check for an hour. The client's timeout bounds it.
+	req, err := http.NewRequestWithContext(context.WithoutCancel(ctx), http.MethodGet, rs.url, nil)
 	if err != nil {
 		return rs.tag
 	}
