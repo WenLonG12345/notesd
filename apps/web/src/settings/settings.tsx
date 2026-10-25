@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type Reac
 import { auth } from '../api/auth'
 import { settings } from '../api/settings'
 import { ApiError } from '../api/client'
-import type { Session } from '../api/types'
+import type { Session, UpdateStatus } from '../api/types'
 import { platformBadge, sessionName } from '../api/user-agent'
 import { useAuth } from '../auth/auth-context'
 import { genericMessage } from '../auth/errors'
@@ -226,6 +226,103 @@ function ServerVersion() {
   )
 }
 
+/** How long an update may take, restart included, before the card says it didn't finish. */
+const UPDATE_TIMEOUT = 3 * 60_000
+
+/**
+ * A newer release, on a server set up to update itself (docs/operations.md, Updating from Settings).
+ * Once asked, the server goes away while notesd-update swaps the binary; the page reloads when it's back
+ * with a new version, so the web app matches the server.
+ */
+function UpdateCard() {
+  const [status, setStatus] = useState<UpdateStatus>()
+  const [phase, setPhase] = useState<'idle' | 'updating' | 'failed'>('idle')
+  const [error, setError] = useState<string>()
+
+  useEffect(() => {
+    let cancelled = false
+    settings.update().then(
+      (s) => {
+        if (cancelled) return
+        setStatus(s)
+        if (s.requested) setPhase('updating')
+      },
+      () => {},
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (phase !== 'updating' || !status) return
+    const started = Date.now()
+    const timer = setInterval(() => {
+      if (Date.now() - started > UPDATE_TIMEOUT) {
+        clearInterval(timer)
+        setPhase('failed')
+        return
+      }
+      // Fails while the server restarts; the next tick asks again.
+      settings.update().then(
+        (s) => s.current !== status.current && window.location.reload(),
+        () => {},
+      )
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [phase, status])
+
+  if (!status?.enabled || !(status.newer || phase !== 'idle')) return null
+
+  async function update() {
+    setError(undefined)
+    try {
+      await settings.requestUpdate()
+      setPhase('updating')
+    } catch (err) {
+      setError(genericMessage(err))
+    }
+  }
+
+  return (
+    <Surface as="section" className={styles.card} aria-labelledby="update-kicker">
+      <Kicker id="update-kicker">Update</Kicker>
+      {phase === 'idle' && (
+        <>
+          <span className={styles.text}>
+            notesd {status.latest} is available. This server runs {status.current}.{' '}
+            <a href={`${RELEASES}/tag/${status.latest}`} target="_blank" rel="noreferrer">
+              What’s new
+            </a>
+          </span>
+          {status.editable ? (
+            <Button size="md" onClick={() => void update()}>
+              Update to {status.latest}
+            </Button>
+          ) : (
+            <span className={styles.muted}>An admin can update the server.</span>
+          )}
+        </>
+      )}
+      {phase === 'updating' && (
+        <p role="status" className={styles.text}>
+          Updating to {status.latest}. Notes can’t be saved for a moment; this page reloads when the server is back.
+        </p>
+      )}
+      {phase === 'failed' && (
+        <p role="alert" className={styles.error}>
+          The update didn’t finish. On the server, run <code>journalctl -u notesd-update</code>.
+        </p>
+      )}
+      {error && (
+        <p role="alert" className={styles.error}>
+          {error}
+        </p>
+      )}
+    </Surface>
+  )
+}
+
 function SettingsPage({
   section,
   username,
@@ -260,6 +357,7 @@ function SettingsPage({
               </Button>
             </Surface>
           </div>
+          <UpdateCard />
           <PasswordCard />
         </>
       )
