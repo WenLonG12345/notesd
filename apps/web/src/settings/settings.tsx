@@ -200,6 +200,32 @@ function useValues(theme: ThemeChoice): Record<SettingsSection, string> {
   }
 }
 
+const RELEASES = 'https://github.com/cassiozen/notesd/releases'
+
+/** Which notesd the server runs, beside where to find newer ones (docs/operations.md, Upgrading). */
+function ServerVersion() {
+  const [version, setVersion] = useState<string>()
+  useEffect(() => {
+    let cancelled = false
+    auth.session().then(
+      (info) => !cancelled && setVersion(info.serverVersion),
+      () => {},
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  if (!version) return null
+  return (
+    <span className={styles.muted}>
+      notesd {version} ·{' '}
+      <a href={RELEASES} target="_blank" rel="noreferrer">
+        Releases
+      </a>
+    </span>
+  )
+}
+
 function SettingsPage({
   section,
   username,
@@ -224,6 +250,7 @@ function SettingsPage({
               <div className={styles.who}>
                 <span className={styles.host}>{window.location.host}</span>
                 <span className={styles.muted}>Signed in as {username}</span>
+                <ServerVersion />
               </div>
             </Surface>
             <Surface as="section" className={styles.card} aria-label="Sign out">

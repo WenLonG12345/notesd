@@ -44,6 +44,31 @@ sudo -u notesd notesd check --data-dir /var/lib/notesd
 notesd never deletes or replaces a damaged database by itself. If `check`
 reports problems, stop the server and restore from a backup.
 
+## Upgrading
+
+To see which version you run, open **Settings → Server** in the web app, run
+`notesd version` (`docker exec notesd notesd version` with Docker), or look
+for `notesd started` in the logs.
+
+New versions are on the [releases page](https://github.com/cassiozen/notesd/releases).
+To hear about them, choose **Watch → Custom → Releases** on GitHub, or
+subscribe to its feed: `https://github.com/cassiozen/notesd/releases.atom`.
+
+To upgrade the binary ([systemd setup](hosting.md#keep-it-running-with-systemd)),
+back up the data directory, then replace the binary and restart:
+
+```bash
+sudo systemctl stop notesd
+sudo cp -a /var/lib/private/notesd ~/notesd-backup   # DynamicUser keeps it here
+sudo install -m 755 notesd-linux-amd64 /usr/local/bin/notesd
+sudo systemctl start notesd
+notesd version
+```
+
+With Docker, see [Docker](#docker). A new version updates the database
+when it starts. An older binary can't open a database a newer one has
+updated, so to go back, restore the backup too.
+
 ## Monitoring
 
 - `GET /healthz` answers 200 while the process runs.

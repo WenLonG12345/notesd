@@ -19,6 +19,7 @@ type sessionResponse struct {
 	AccessExpiresAt  int64        `json:"accessExpiresAt,omitempty"`
 	RefreshToken     string       `json:"refreshToken,omitempty"`
 	RefreshExpiresAt int64        `json:"refreshExpiresAt,omitempty"`
+	ServerVersion    string       `json:"serverVersion,omitempty"`
 }
 
 // GET /api/v1/auth/status — lets the apps decide between the setup and
@@ -145,7 +146,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 // returns the CSRF token, which the web app keeps only in memory.
 func (s *Server) currentSession(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFrom(r.Context())
-	writeJSON(w, http.StatusOK, sessionResponse{Session: sess, Username: sess.Username, IsAdmin: sess.IsAdmin, CSRFToken: sess.CSRFToken})
+	writeJSON(w, http.StatusOK, sessionResponse{Session: sess, Username: sess.Username, IsAdmin: sess.IsAdmin, CSRFToken: sess.CSRFToken, ServerVersion: s.cfg.Version})
 }
 
 // POST /api/v1/auth/password {"currentPassword": "...", "newPassword": "..."}
