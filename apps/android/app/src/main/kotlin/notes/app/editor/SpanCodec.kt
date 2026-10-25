@@ -3,6 +3,8 @@ package notes.app.editor
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.TabStopSpan
 import notes.core.doc.Document
 import notes.core.doc.Inline
 import notes.core.doc.Leaf
@@ -11,6 +13,7 @@ import notes.core.doc.Mark
 import notes.core.doc.linesToDocument
 import notes.core.doc.normalize
 import notes.core.doc.toLines
+import notes.core.markdown.Fence
 
 /** [Document] ⇄ the editor's [Spannable]: one line of text per block, structure in spans. */
 object SpanCodec {
@@ -24,8 +27,10 @@ object SpanCodec {
             val start = sb.length
             when (val leaf = line.leaf) {
                 is Leaf.Raw -> {
-                    sb.append(leaf.source)
-                    spans += Placement(RawBlockSpan(leaf.source), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    val raw = RawBlockSpan(leaf.source)
+                    sb.append(raw.shown)
+                    spans += Placement(raw, start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    Fence.parse(leaf.source)?.let { spans += codeSpans(it, start, style) }
                 }
 
                 else -> appendInlines(sb, line.content, style, spans)
@@ -44,6 +49,23 @@ object SpanCodec {
     }
 
     private class Placement(val span: Any, val start: Int, val end: Int, val flags: Int)
+
+    /** A fence's code colours: its ink, then each highlighted run over it. */
+    private fun codeSpans(fence: Fence, start: Int, style: EditorStyle): List<Placement> {
+        val flags = Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        val end = start + maxOf(fence.code.length, 1)
+        val ink = Placement(ForegroundColorSpan(style.codeInk), start, end, flags)
+        val tabs = Placement(TabStopSpan.Standard(style.tabWidth), start, end, flags)
+        return listOf(ink, tabs) + Fence.highlight(fence.code, fence.lang).map {
+            val color = when (it.token) {
+                Fence.Token.Comment -> style.codeDim
+                Fence.Token.Str -> style.codeString
+                Fence.Token.Number -> style.codeNumber
+                Fence.Token.Keyword -> style.codeKeyword
+            }
+            Placement(ForegroundColorSpan(color), start + it.start, start + it.end, flags)
+        }
+    }
 
     private fun appendInlines(
         sb: SpannableStringBuilder,

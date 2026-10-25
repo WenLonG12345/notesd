@@ -2,6 +2,7 @@ package notes.app.editor
 
 import android.content.Context
 import android.content.res.Configuration
+import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.res.ResourcesCompat
@@ -18,7 +19,8 @@ class EditorStyle(
     val tokens: Tokens,
     val typeface: Typeface,
     val serif: Typeface = Typeface.SERIF,
-    val monospace: Typeface = Typeface.MONOSPACE
+    val monospace: Typeface = Typeface.MONOSPACE,
+    val fontScale: Float = 1f
 ) {
     fun dp(v: Float) = v * density
 
@@ -54,6 +56,25 @@ class EditorStyle(
     val quoteScale = 20f / 17f
     val rawScale = 0.82f
 
+    // A code fence is dark in both themes, as on the web (--code, --code-ink, --code-dim).
+    val code = if (tokens == Tokens.Dark) 0xFF0B0C0E.toInt() else 0xFF24211F.toInt()
+    val codeInk = 0xFFD8D4CD.toInt()
+    val codeDim = 0xFF8F8C85.toInt()
+    val codeKeyword = 0xFFC3A5F9.toInt()
+    val codeString = 0xFF8BD28D.toInt()
+    val codeNumber = 0xFFFBA962.toInt()
+    val codeLabelScale = 11f / 17f
+
+    /** Unpainted space above a raw block, so two in a row stay apart, and its text's inset. */
+    val rawGap = dp(8f)
+    val rawPad = dp(10f)
+
+    /** Four monospace spaces, as tab-size: 4 on the web. */
+    val tabWidth = Paint().apply {
+        typeface = monospace
+        textSize = dp(17f) * fontScale * rawScale
+    }.measureText("    ").toInt()
+
     /** The view's line spacing multiplier; spans that size lines account for it. */
     val lineSpacing = 1.5f
 
@@ -70,7 +91,8 @@ class EditorStyle(
                 tokens = if (night) Tokens.Dark else Tokens.Light,
                 typeface = font(R.font.notes_sans, Typeface.DEFAULT),
                 serif = font(R.font.notes_serif, Typeface.SERIF),
-                monospace = font(R.font.jetbrains_mono, Typeface.MONOSPACE)
+                monospace = font(R.font.jetbrains_mono, Typeface.MONOSPACE),
+                fontScale = context.resources.configuration.fontScale
             )
         }
     }

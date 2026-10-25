@@ -18,14 +18,26 @@ object Fixtures {
     @Serializable
     private data class Suite(val cases: List<Case>)
 
+    @Serializable
+    data class FenceCase(val name: String, val source: String, val fence: Shown?) {
+        @Serializable
+        data class Shown(val lang: String, val code: String)
+    }
+
+    @Serializable
+    private data class FenceSuite(val cases: List<FenceCase>)
+
     private val json = Json { ignoreUnknownKeys = true }
 
     val roundtrip: List<Case> by lazy { load("roundtrip.json") }
     val plaintext: List<Case> by lazy { load("plaintext.json") }
     val tags: List<Case> by lazy { load("tags.json") }
+    val fences: List<FenceCase> by lazy { json.decodeFromString<FenceSuite>(read("fences.json")).cases }
 
-    private fun load(name: String): List<Case> {
+    private fun load(name: String): List<Case> = json.decodeFromString<Suite>(read(name)).cases
+
+    private fun read(name: String): String {
         val dir = System.getProperty("notes.sharedDir") ?: error("notes.sharedDir not set (run through Gradle)")
-        return json.decodeFromString<Suite>(File(dir, "markdown-fixtures/$name").readText()).cases
+        return File(dir, "markdown-fixtures/$name").readText()
     }
 }

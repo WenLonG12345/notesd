@@ -404,6 +404,25 @@ final class FlowTests: XCTestCase {
         try audit("picture")
     }
 
+    func testACodeFenceFromAnotherDeviceShowsItsCode() async throws {
+        let content =
+            "Two ways to say hello.\n\n```go\nfunc main() {\n\t// greet\n\tfmt.Println(\"hi\", 42)\n}\n```\n\n"
+            + "```python\ndef greet(name):\n    return f\"hi {name}\"  # friendly\n```\n\n```\nplain, no language\n```\n"
+        let note = try JSONSerialization.data(withJSONObject: [
+            "operationId": UUID().uuidString.lowercased(), "id": UUID().uuidString.lowercased(), "title": "Code",
+            "content": content,
+        ])
+        _ = try await api("POST", "api/v1/notes", body: note)
+        try signIn()
+        let row = app.staticTexts["Code"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15))
+        row.tap()
+        XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 5))
+        sleep(1)
+        screenshot("code fence")
+        try audit("code fence")
+    }
+
     /// Face ID (faked: it matches at once) is offered right after the lock
     /// password, then opens the locked note without it.
     func testFaceIDUnlocksALockedNote() throws {

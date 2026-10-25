@@ -84,7 +84,7 @@ class Normalizer(private val style: EditorStyle, private val images: ImageSpans?
 
     private fun sourceOf(span: EditorSpan) = when (span) {
         is RawInlineSpan -> span.source
-        is RawBlockSpan -> span.source
+        is RawBlockSpan -> span.shown
         else -> ""
     }
 

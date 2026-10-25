@@ -45,6 +45,16 @@ class SpanCodecTest {
         assertEquals(emptyList<String>(), failures)
     }
 
+    @Test
+    fun `a code fence shows its code and saves its source`() {
+        val md = "Before\n\n```go\nfmt.Println(1)\n```\n\n~~~\n~~~\n"
+        val doc = Document.forNote("A title", Markdown.parse(md))
+        val text = SpanCodec.toSpannable(doc, style)
+        Normalizer(style).normalize(text)
+        assertEquals("A title\nBefore\nfmt.Println(1)\n ", text.toString())
+        assertEquals(md, Markdown.serialize(SpanCodec.toDocument(text)))
+    }
+
     private fun roundTrip(doc: Document): Document {
         val text: SpannableStringBuilder = SpanCodec.toSpannable(doc, style)
         Normalizer(style).normalize(text)
