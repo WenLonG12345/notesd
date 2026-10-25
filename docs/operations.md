@@ -87,8 +87,9 @@ To set it up, download the script from the same release as your binary
 and check it against that release's `SHA256SUMS`, then install it:
 
 ```bash
-curl -fLO https://github.com/cassiozen/notesd/releases/latest/download/notesd-update
-curl -fLO https://github.com/cassiozen/notesd/releases/latest/download/SHA256SUMS
+v=$(notesd version | awk '{print $2}')
+curl -fLO "https://github.com/cassiozen/notesd/releases/download/$v/notesd-update"
+curl -fLO "https://github.com/cassiozen/notesd/releases/download/$v/SHA256SUMS"
 grep ' notesd-update$' SHA256SUMS | sha256sum -c -
 sudo install -m 755 notesd-update /usr/local/sbin/notesd-update
 ```

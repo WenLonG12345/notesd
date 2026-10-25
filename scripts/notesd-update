@@ -52,7 +52,7 @@ install -d -m 700 "$backups"
 backup=$backups/notesd-$current-$(date +%Y%m%d-%H%M%S)
 systemctl stop "$service"
 # Until the new binary is in place, a failure (a full disk, say) leaves the old one running again.
-trap 'rm -f "$backup.tgz"; systemctl start "$service"' ERR
+trap 'rm -f "$backup.tgz" "$backup.bin"; systemctl start "$service"' ERR
 cp -a "$bin" "$backup.bin"
 tar czf "$backup.tgz" -C "$data" .
 trap 'install -m 755 "$backup.bin" "$bin"; systemctl start "$service"' ERR
